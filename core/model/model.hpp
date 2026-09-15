@@ -6,13 +6,15 @@ namespace pds {
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe };
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
-struct Node { std::string id, name; bool ground = false; double x=0, y=0; };
+struct Orientation { unsigned quarter_turns=0; bool mirrored=false; };
+struct Node { std::string id, name; bool ground = false; double x=0, y=0; Orientation orientation; };
 struct Component {
     std::string id, name;
     Kind kind = Kind::resistor;
     std::string positive, negative;
     double value = 1.0, initial = 0.0, x = 0.0, y = 0.0;
     bool closed = false;
+    Orientation orientation;
 };
 struct GateEvent { double time; std::string target; bool closed; };
 enum class Method { backward_euler, trapezoidal };
@@ -30,12 +32,17 @@ struct Endpoint {
     bool operator==(const Endpoint&) const = default;
 };
 struct Wire { std::string id; Endpoint from,to; std::vector<Point> bends; };
-struct GatePattern { std::string id,name; double x=0,y=0; bool initial=false; };
+struct GatePattern { std::string id,name; double x=0,y=0; bool initial=false; Orientation orientation; bool pwm=false; double frequency=1000,duty=.5,delay=0; };
 enum class Domain { electrical, gate, signal };
 enum class Direction { conserving, input, output };
 struct PortType { Domain domain; Direction direction; };
+struct PlotBlock {
+    std::string id,name; double x=0,y=0; unsigned inputs=2;
+    double begin=0,end=-1,cursor_a=-1,cursor_b=-1;
+    Orientation orientation;
+};
 struct Project {
-    unsigned schema = 4;
+    unsigned schema = 6;
     std::string id, name;
     std::vector<Node> nodes;
     std::vector<Component> components;
@@ -45,6 +52,8 @@ struct Project {
     bool wired=false;
     std::vector<Wire> wires;
     std::vector<GatePattern> patterns;
+    std::vector<PlotBlock> plots;
+    bool scope_enabled=false;
     std::vector<std::string> scope_channels;
     double scope_begin=0,scope_end=-1,cursor_a=-1,cursor_b=-1;
 

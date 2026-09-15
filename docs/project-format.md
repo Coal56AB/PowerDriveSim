@@ -1,66 +1,86 @@
-# PowerDriveSim project format 3
+# Формат проекта PowerDriveSim 6
 
-UTF-8 (BOM допустим), LF или CRLF, текстовые записи, десятичные числа SI с точностью double.
-Первая строка: PowerDriveSim 3. Комментарии начинаются с # в первой колонке.
-Строки в кавычках используют escaping std::quoted: \" и \\.
-Идентификаторы — 36-символьные UUID в нижнем регистре; уникальны в проекте.
-Геометрия не задаёт электрическое соединение. Связность задаётся ссылками на nodes.
+UTF-8 (BOM допустим), LF или CRLF, текстовые записи, десятичные числа SI с точностью double. Первая строка — `PowerDriveSim 6`. Комментарии начинаются с `#` в первой колонке. Строки в кавычках используют escaping `std::quoted`: `\"` и `\\`.
+
+UUID состоят из 36 символов в нижнем регистре и уникальны в проекте. Имена и UUID однострочные. Геометрическое пересечение линий не задаёт электрическое соединение.
+
+## Записи
 
 Обязательные одиночные записи:
-- project "uuid" "name"
-- profile stop_seconds step_seconds integration_method
-- nonlinear max_iterations voltage_absolute_tolerance current_absolute_tolerance relative_tolerance
 
-Повторяющиеся записи:
-- node "uuid" "name" ground_boolean
-- component "uuid" "name" kind "positive_node_uuid" "negative_node_uuid" value initial x y closed_boolean
-- event time_seconds "switch_uuid" closed_boolean
+```text
+project "uuid" "name"
+profile stop_seconds step_seconds integration_method
+nonlinear max_iterations voltage_absolute_tolerance current_absolute_tolerance relative_tolerance
+wiring nets|wires
+```
 
-integration_method: BackwardEuler или Trapezoidal. kind: R, L, C, V, I, S, D. Boolean — 0 или 1.
-R: value в ohm; L в H; C в F; V в V; I в A. У S value зарезервирован. У D value=0, initial=0, closed=0; positive — анод.
-initial задаёт uC в V или iL в A; для остальных зарезервирован.
-closed используется только у S. x/y — сохранённые координаты будущего редактора.
-Дублирующие gates одного switch/time отклоняются, даже с одинаковым значением.
-stop и step положительные конечные числа. Интервал начинается с 0.
-Прочие общие поля зарезервированы и не меняют физику.
+Записи объектов:
 
-Записи с префиксом x- сохраняются дословно как непрозрачные расширения.
-Например x-scope в примерах — сохранённое пожелание выбора канала;
-реального Scope в Milestone 0 ещё нет.
-Неизвестные основные записи, лишние поля, неверные boolean и версии
-отклоняются. Миграции последовательны: v1→v2 добавляет BackwardEuler, v2→v3 — default nonlinear profile (64, 1e-9 V, 1e-12 A, 1e-9). Геометрия, UUID и extensions сохраняются. Запись только v3. Старые схемы не могут содержать D или nonlinear-записи.
-Не комментируйте новую семантику только через x-: новый физический смысл
-требует новой версии и миграционных тестов.
+```text
+node "uuid" "name" ground_boolean x y
+component "uuid" "name" kind "positive_node_uuid" "negative_node_uuid" value initial x y closed_boolean
+wire "uuid" "from_object" "from_port" "to_object" "to_port" bend_count x1 y1 ...
+pattern "uuid" "name" x y initial_boolean
+plot "uuid" "name" x y input_count time_begin time_end cursor_a cursor_b
+scope_enabled boolean
+event time_seconds "switch_or_pattern_uuid" closed_boolean
+scope "channel_key"
+scopeview time_begin time_end cursor_a cursor_b
+```
 
-CSV содержит metadata-комментарий, время, именованные каналы с SI units и UUID,
-затем исходные samples. Это экспорт, не формат snapshot/restart.
-Для полного воспроизведения сохраните исходный .pds и версию ядра вместе с CSV.
-Потоки должны использовать classic locale (стандартный CLI не меняет locale).
-Сохранение на диск с atomic replace и autosave относится к редактору Milestone 1.
-max_iterations: 1..1024. Absolute tolerances — положительные конечные числа;
-relative tolerance — конечное неотрицательное. Эти значения управляют
-проверкой complementarity, не добавляют электрическую проводимость.
-Имена и UUID в record format должны быть однострочными.
-Writer явно задаёт формат double и boolean независимо от stream flags.
+Writer всегда записывает `wiring`, `scopeview` и `scope_enabled`. `wiring` обязателен начиная с v4; при отсутствии необязательных настроек Scope используется выключенная запись и автоматический диапазон. `integration_method`: `BackwardEuler` или `Trapezoidal`. `kind`: `R`, `L`, `C`, `V`, `I`, `S`, `D`, `VP`, `IP`. Boolean — `0` или `1`.
 
-## Schema 4 — документ редактора
+## Физические параметры
 
-Текущий writer выдаёт PowerDriveSim 4; loader читает v1..v4.
-Старые схемы остаются в режиме nets до преобразования для редактора.
-Новые записи:
-- wiring nets|wires
-- node "id" "name" ground x y (v4 добавляет координаты)
-- wire "id" "from_object" "from_port" "to_object" "to_port" bend_count x1 y1 ...
-- pattern "id" "name" x y initial
-- scope "channel_key"
-- scopeview time_begin time_end cursor_a cursor_b (-1 означает auto/unset)
+- `R`: value в Ohm; `L` в H; `C` в F; `V` в V; `I` в A.
+- `S`: value зарезервирован; closed задаёт начальное состояние ключа.
+- `D`: value=0, initial=0, closed=0; `p` — анод. Состояние определяется решателем.
+- `VP`: ненагружающее измерение `u(p)-u(n)`.
+- `IP`: идеальная ветвь нулевого напряжения, положительный ток направлен от `p` к `n`.
+- initial задаёт uC в V или iL в A; для остальных компонентов поле зарезервировано.
+- stop/step — положительные конечные числа. Интервал расчёта начинается с нуля.
+- max_iterations: 1..1024. Абсолютные допуски положительные конечные, относительный — конечный неотрицательный. Допуски управляют проверкой complementarity и не добавляют проводимость.
 
-В wires-режиме authoritative connectivity задаётся только wire endpoints.
-Поля positive/negative у компонентов пустые и формируются компилятором.
-У electrical component есть p/n; switch имеет gate input; pattern — out.
-VP/IP имеют scalar out, который нельзя подключать к electrical/gate.
-Ground/junction — node endpoint. Пересечения геометрии ничего не соединяют.
-Gate events могут адресовать pattern; компилятор раздаёт их подключённым switches.
-Два драйвера одного gate отклоняются. Node UUID сохраняется для именованной сети;
-для соединённых только выводов используется детерминированный application-defined UUIDv8.
-Probe VP не нагружает сеть; IP вставляет идеальную ветвь с нулевым напряжением.
+События одного ключа в один момент времени не могут дублироваться, даже с одинаковым значением.
+
+## Соединения
+
+В режиме `nets` связность задаётся ссылками positive/negative компонентов на узлы. Wire/pattern-записи в этом режиме запрещены.
+
+В режиме `wires` связность задаётся только концами проводов. Positive/negative у компонентов заполняет компилятор после разрешения сетей. Редактор записывает эти поля пустыми.
+
+У электрического компонента есть `p` и `n`; у ключа также вход `gate`; у pattern — выход `out`. У VP/IP выход `out` относится к сигнальному домену, его нельзя соединять с electrical/gate. Блок `plot` принимает электрический потенциал (без нагрузки), scalar signal или gate на входы `in1`…`inN`, N=1..16. Каждый вход принимает один сигнал. График не изменяет электрическую топологию. У земли и узла порт называется `node`.
+
+События pattern передаются подключённым ключам. Один gate принимает один драйвер. Прямые события ключа конфликтуют с подключённым pattern. Все ground-узлы объединяются в общую опорную сеть.
+
+UUID именованного узла сохраняется для разрешённой сети (при объединении выбирается стабильный представитель). Для сети из одних выводов используется детерминированный application-defined UUIDv8. Точки проводов сохраняют геометрию, не меняя связность.
+
+## Осциллограммы и расширения
+
+Ключ аналогового канала — UUID узла или компонента. Ключ состояния ключа — `gate/UUID`. `scopeview` хранит диапазон времени и два курсора; `-1` у конца диапазона и курсоров означает auto/unset. Каждый plot хранит собственные диапазон и курсоры. Результаты расчёта и история undo/redo в проект не записываются. `scope_enabled=0` выключает сбор истории осциллограмм; графики записывают только подключённые сигналы независимо от этого флага.
+
+Записи с префиксом `x-` сохраняются дословно как непрозрачные расширения. Историческое `x-scope` в старых примерах сохраняется, но не заменяет текущие `scope`-записи.
+
+Неизвестные основные записи, лишние поля, неверные boolean и версии отклоняются. Новый физический смысл требует новой версии и миграционных тестов, а не скрытой семантики в `x-`.
+
+## Миграции и сохранение
+
+Loader читает версии 1–6, writer записывает только 6:
+
+- v1→v2: добавляется BackwardEuler;
+- v2→v3: добавляются стандартные nonlinear settings (64, 1e-9 V, 1e-12 A, 1e-9);
+- v3→v4: добавляются режим nets, координаты узлов и настройки Scope по умолчанию;
+- v4→v5: добавляется отключённая запись осциллограмм; блоки графиков отсутствуют по умолчанию.
+
+Формат v1/v2 не содержит D/nonlinear, v1–v3 не содержит VP/IP/wires/pattern. UUID и расширения сохраняются при миграции. При открытии в редакторе режим nets преобразуется в явные провода; тест проверяет неизменность численного решения.
+
+Writer использует classic locale и явно задаёт представление double/boolean. Редактор сохраняет через `QSaveFile` с атомарной заменой и отдельно записывает резервную копию.
+
+CSV содержит metadata-комментарий, время, каналы с SI units и UUID, состояния ключей и все исходные отсчёты. Это экспорт, не snapshot/restart. Для воспроизведения сохраните `.pds`, CSV и версию ядра.
+
+## Дополнения v6
+
+`orientation "UUID" quarter_turns mirrored` сохраняет поворот 0–3 четверти оборота и горизонтальное отражение 0/1. Применяется к элементам, узлам, сигналам и графикам; отсутствие записи означает исходную ориентацию.
+
+`pwm "UUID" "name" x y frequency duty delay` задаёт постоянный ШИМ: частота >0 Гц, заполнение 0..1, задержка ≥0 с. Все числа конечны. При нулевой задержке и ненулевом заполнении сигнал начинается с 1; заполнение 0 и 1 даёт постоянные уровни после задержки. Ручные события для этого же UUID запрещены. Старые v5-файлы получают исходную ориентацию и не содержат ШИМ.

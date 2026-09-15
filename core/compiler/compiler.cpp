@@ -6,7 +6,7 @@
 #include <set>
 namespace pds {
 static SimulationIR compile_flat(const Project& p) {
-    if(p.schema!=4) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+    if(p.schema!=6) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -29,7 +29,7 @@ static SimulationIR compile_flat(const Project& p) {
     for(const auto& n:nodes) {
         check_id(n.id);
         indices[n.id]=n.ground?-1:ir.node_count++;
-        if(n.ground) reached.insert(n.id);
+        if(n.ground) {reached.insert(n.id);ir.observations.push_back({{n.id,"u:"+n.name,"V"},-1,-1});}
         else ir.unknowns.push_back({n.id,"u:"+n.name,"V"});
     }
     if(reached.empty()) throw Diagnostic("missing_ground",p.id,"Add an electrical reference node");
@@ -53,6 +53,8 @@ static SimulationIR compile_flat(const Project& p) {
         if(c.kind==Kind::voltage_probe)
             ir.observations.push_back({{c.id,"u:"+c.name,"V"},s.positive,s.negative});
         else ir.stamps.push_back(s);
+        if(c.kind==Kind::resistor)ir.observations.push_back({{c.id,"i:"+c.name,"A"},s.positive,s.negative,1/c.value,0});
+        if(c.kind==Kind::current)ir.observations.push_back({{c.id,"i:"+c.name,"A"},-1,-1,0,c.value});
     }
     // Current sources do not establish a voltage-reference path.
     // State-dependent ideal loops/islands are also checked by factorization.
@@ -88,8 +90,29 @@ static SimulationIR compile_flat(const Project& p) {
     ir.sparsity.assign(pattern.begin(),pattern.end());
     return ir;
 }
-SimulationIR compile(const Project& project) {
-    return compile_flat(resolve_connections(project).project);
+SimulationIR compile(const Project& source) {
+    Project project=source;
+    (void)resolve_connections(project); // Validate parameters before generating scheduled edges.
+    if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
+    size_t generated=0;
+    for(auto& g:project.patterns)if(g.pwm){
+        if(std::any_of(project.events.begin(),project.events.end(),[&](const GateEvent& e){return e.target==g.id;}))throw Diagnostic("conflicting_gate_events",g.id,"PWM cannot have manually recorded events");
+        g.initial=g.delay==0&&g.duty>0;
+        if(g.duty==0||g.delay>project.profile.stop)continue;
+        auto edge=[&](double time,bool state){if(time>0&&time<=project.profile.stop){if(++generated>1000000)throw Diagnostic("pwm_event_limit",g.id,"PWM exceeds one million edges; reduce frequency or simulation duration");project.events.push_back({time,g.id,state});}};
+        if(g.duty==1){edge(g.delay,true);continue;}
+        double count=(project.profile.stop-g.delay)*g.frequency;
+        if(!std::isfinite(count)||count>500000)throw Diagnostic("pwm_event_limit",g.id,"PWM exceeds one million edges; reduce frequency or simulation duration");
+        for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=g.delay+static_cast<double>(k)/g.frequency;double fall=g.delay+(static_cast<double>(k)+g.duty)/g.frequency;edge(rise,true);edge(fall,false);}
+    }
+
+    auto ir=compile_flat(resolve_connections(project).project);
+    auto patterns=project.patterns;std::sort(patterns.begin(),patterns.end(),[](const GatePattern& a,const GatePattern& b){return a.id<b.id;});
+    for(const auto& pattern:patterns)ir.gate_signals.push_back({pattern.id,pattern.name,pattern.initial});
+    for(const auto& event:project.events)
+        if(std::any_of(project.patterns.begin(),project.patterns.end(),[&](const GatePattern& p){return p.id==event.target;}))ir.events.push_back(event);
+    std::sort(ir.events.begin(),ir.events.end(),[](const GateEvent& a,const GateEvent& b){return a.time==b.time?a.target<b.target:a.time<b.time;});
+    return ir;
 }
 
 }

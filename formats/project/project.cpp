@@ -1,5 +1,6 @@
 #include "formats/project/project.hpp"
 #include <iomanip>
+#include <map>
 #include <istream>
 #include <ostream>
 #include <sstream>
@@ -13,9 +14,10 @@ Project read_project(std::istream& in) {
     std::istringstream header(line);
     if(!(header >> tag >> p.schema)) throw Diagnostic("parse_error","","Malformed header");
     header >> std::ws;
-    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>4))
-        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..4");
-    bool identity=false, profile=false, nonlinear=false, wiring=false;
+    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>6))
+        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..6");
+    bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false;
+    std::map<std::string,Orientation> orientations;
     size_t number=1;
     while(std::getline(in,line)) {
         ++number;
@@ -54,6 +56,16 @@ Project read_project(std::istream& in) {
             row >> std::quoted(pattern.id) >> std::quoted(pattern.name) >> pattern.x >> pattern.y >> initial;
             if(initial!=0 && initial!=1) row.setstate(std::ios::failbit);
             pattern.initial=initial==1; p.patterns.push_back(pattern);
+        } else if(tag=="pwm" && p.schema>=6){
+            GatePattern g;g.pwm=true;row>>std::quoted(g.id)>>std::quoted(g.name)>>g.x>>g.y>>g.frequency>>g.duty>>g.delay;p.patterns.push_back(g);
+        } else if(tag=="orientation" && p.schema>=6){
+            std::string id;Orientation orientation;int mirror=-1;row>>std::quoted(id)>>orientation.quarter_turns>>mirror;
+            if(orientation.quarter_turns>3||(mirror!=0&&mirror!=1)||orientations.count(id))row.setstate(std::ios::failbit);
+            orientation.mirrored=mirror==1;orientations[id]=orientation;
+        } else if(tag=="plot" && p.schema>=5){
+            PlotBlock plot;row>>std::quoted(plot.id)>>std::quoted(plot.name)>>plot.x>>plot.y>>plot.inputs>>plot.begin>>plot.end>>plot.cursor_a>>plot.cursor_b;p.plots.push_back(plot);
+        } else if(tag=="scope_enabled" && p.schema>=5 && !recording){
+            int enabled=-1;row>>enabled;if(enabled!=0&&enabled!=1)row.setstate(std::ios::failbit);p.scope_enabled=enabled==1;recording=true;
         } else if(tag=="scopeview" && p.schema>=4) {
             row >> p.scope_begin >> p.scope_end >> p.cursor_a >> p.cursor_b;
         } else if(tag=="scope" && p.schema>=4) {
@@ -87,11 +99,15 @@ Project read_project(std::istream& in) {
     }
     if(!identity || !profile || (p.schema>=3 && !nonlinear) || (p.schema>=4 && !wiring) || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
     // v1 -> v2: default Backward Euler; v2 -> v3: explicit default nonlinear profile.
-    p.schema=4;
+    for(const auto& [id,orientation]:orientations){
+        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.patterns);apply(p.plots);
+        if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
+    }
+    p.schema=6;
     return p;
 }
 void write_project(const Project& p, std::ostream& out) {
-    if(p.schema!=4) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
+    if(p.schema!=6) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
     const auto check_text=[](const std::string& value,const std::string& object) {
         if(value.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("invalid_text",object,"Project format strings must be single-line");
@@ -109,10 +125,13 @@ void write_project(const Project& p, std::ostream& out) {
     }
     for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
-    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 4\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
+    for(const auto& plot:p.plots){check_text(plot.id,plot.id);check_text(plot.name,plot.id);}
+    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 6\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
         << p.profile.current_tolerance << ' ' << p.profile.relative_tolerance << '\n';
+    auto write_orientation=[&](const auto& object){if(object.orientation.quarter_turns>3)throw Diagnostic("invalid_orientation",object.id,"Rotation must contain 0..3 quarter turns");if(object.orientation.quarter_turns||object.orientation.mirrored)out<<"orientation "<<std::quoted(object.id)<<' '<<object.orientation.quarter_turns<<' '<<object.orientation.mirrored<<'\n';};
+    for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
     out << "wiring " << (p.wired?"wires":"nets") << '\n';
     for(const auto& wire:p.wires) {
         out << "wire " << std::quoted(wire.id) << ' ' << std::quoted(wire.from.object) << ' ' << std::quoted(wire.from.port)
@@ -120,7 +139,9 @@ void write_project(const Project& p, std::ostream& out) {
         for(const auto& point:wire.bends) out << ' ' << point.x << ' ' << point.y;
         out << '\n';
     }
-    for(const auto& g:p.patterns) out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
+    for(const auto& g:p.patterns) if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
+    for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<'\n';
+    out<<"scope_enabled "<<p.scope_enabled<<'\n';
     out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';
     for(const auto& channel:p.scope_channels) out << "scope " << std::quoted(channel) << '\n';
     for(const auto& n:p.nodes) out << "node " << std::quoted(n.id) << ' ' << std::quoted(n.name) << ' ' << n.ground << ' ' << n.x << ' ' << n.y << '\n';

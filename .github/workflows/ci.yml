@@ -1,4 +1,4 @@
-name: Core verification
+name: PowerDriveSim verification
 on: [push, pull_request]
 jobs:
   headless:
@@ -12,5 +12,53 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --config Release --parallel 2
-      - name: Unit, numerical, serialization, topology, regression, examples
+      - name: Core tests
+        run: ctest --test-dir build -C Release --output-on-failure
+  desktop:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            host: windows
+            arch: win64_msvc2019_64
+            qt_dir: msvc2019_64
+          - os: ubuntu-latest
+            host: linux
+            arch: gcc_64
+            qt_dir: gcc_64
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_VERSION: 6.5.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Qt tools
+        run: python -m pip install aqtinstall==3.3.0
+      - name: Cache Qt
+        id: qt-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/qt
+          key: qtbase-6.5.3-${{ matrix.host }}-${{ matrix.arch }}
+      - name: Install Qt base
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: python -m aqt install-qt ${{ matrix.host }} desktop 6.5.3 ${{ matrix.arch }} --outputdir "${{ runner.temp }}/qt" --archives qtbase
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libxkbcommon-dev libxkbcommon-x11-0 fonts-dejavu-core
+      - name: Configure desktop
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH="${{ runner.temp }}/qt/6.5.3/${{ matrix.qt_dir }}"
+      - name: Build desktop
+        run: cmake --build build --config Release --parallel 2
+      - name: Windows tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:PATH="${{ runner.temp }}/qt/6.5.3/${{ matrix.qt_dir }}/bin;"+$env:PATH
+          $env:QT_QPA_FONTDIR='C:/Windows/Fonts'
+          ctest --test-dir build -C Release --output-on-failure
+      - name: Linux tests
+        if: runner.os == 'Linux'
         run: ctest --test-dir build -C Release --output-on-failure

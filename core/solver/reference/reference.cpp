@@ -46,12 +46,40 @@ std::vector<double> StampSystem::solve(const SimulationIR& ir,double time) const
     }
     return x;
 }
-Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
+std::vector<Channel> available_channels(const SimulationIR& ir){
+    auto channels=ir.unknowns;for(const auto& o:ir.observations)channels.push_back(o.channel);
+    for(const auto& s:ir.stamps)if(s.component.kind==Kind::ideal_switch)channels.push_back({"gate/"+s.component.id,"gate:"+s.component.name,"bool"});
+    for(const auto& signal:ir.gate_signals)channels.push_back({"gate/"+signal.id,signal.name,"bool"});
+    return channels;
+}
+Result select_result(const Result& source,const std::vector<std::string>& keys){
+    std::set<std::string> selected(keys.begin(),keys.end());Result result;
+    result.project_id=source.project_id;result.backend=source.backend;result.precision=source.precision;result.engine=source.engine;result.profile=source.profile;
+    result.accepted_steps=source.accepted_steps;result.linear_solves=source.linear_solves;result.max_step_iterations=source.max_step_iterations;result.cancelled=source.cancelled;result.max_scaled_residual=source.max_scaled_residual;result.last_time=source.last_time;
+    std::vector<size_t> analog,gates;
+    for(size_t i=0;i<source.channels.size();++i)if(selected.count(source.channels[i].object)){analog.push_back(i);result.channels.push_back(source.channels[i]);}
+    for(size_t i=0;i<source.gate_objects.size();++i)if(selected.count("gate/"+source.gate_objects[i])){gates.push_back(i);result.gate_objects.push_back(source.gate_objects[i]);}
+    if(analog.empty()&&gates.empty())return result;
+    result.samples.reserve(source.samples.size());
+    for(const auto& old:source.samples){Sample sample;sample.time=old.time;for(auto i:analog)sample.values.push_back(old.values[i]);for(auto i:gates)sample.gates.push_back(old.gates[i]);result.samples.push_back(std::move(sample));}
+    return result;
+}
+Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording) {
     if(ir.unknowns.empty() || !std::isfinite(ir.profile.step) || ir.profile.step<=0 || !std::isfinite(ir.profile.stop) || ir.profile.stop<=0)
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
-    Result result; result.project_id=ir.project_id; result.profile=ir.profile; result.channels=ir.unknowns;
-    for(const auto& observation:ir.observations) result.channels.push_back(observation.channel);
+    Result result; result.project_id=ir.project_id; result.profile=ir.profile;
+    const std::set<std::string> requested=recording?std::set<std::string>(recording->channels.begin(),recording->channels.end()):std::set<std::string>();
+    auto selected=[&](const std::string& key){return !recording||recording->all||requested.count(key);};
+    std::vector<size_t> analog_indices,gate_indices;
+    auto catalog=available_channels(ir);
+    if(recording&&!recording->all)for(const auto& key:requested)
+        if(std::none_of(catalog.begin(),catalog.end(),[&](const Channel& c){return c.object==key;}))throw Diagnostic("missing_recording_channel",key,"Recording channel does not exist");
+    const size_t analog_count=ir.unknowns.size()+ir.observations.size();
+    for(size_t i=0;i<analog_count;++i)if(selected(catalog[i].object)){analog_indices.push_back(i);result.channels.push_back(catalog[i]);}
+    for(size_t i=analog_count;i<catalog.size();++i)if(selected(catalog[i].object)){gate_indices.push_back(i-analog_count);result.gate_objects.push_back(catalog[i].object.substr(5));}
+    std::vector<size_t> switch_indices;
+    std::vector<bool> signal_values;for(const auto& signal:ir.gate_signals)signal_values.push_back(signal.initial);
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     const bool trapezoidal=ir.profile.method==Method::trapezoidal;
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size());
@@ -61,15 +89,15 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
     for(size_t i=0;i<ir.stamps.size();++i) {
         states[i]=ir.stamps[i].component.initial;
         gates[i]=ir.stamps[i].component.closed;
-        if(ir.stamps[i].component.kind==Kind::ideal_switch) result.gate_objects.push_back(ir.stamps[i].component.id);
+        if(ir.stamps[i].component.kind==Kind::ideal_switch) switch_indices.push_back(i);
     }
     size_t next_event=0;
     auto apply_events=[&](double t) {
         bool changed=false;
         while(next_event<ir.events.size() && ir.events[next_event].time==t) {
             const auto& e=ir.events[next_event++];
-            for(size_t i=0;i<ir.stamps.size();++i) if(ir.stamps[i].component.id==e.target) gates[i]=e.closed;
-            changed=true;
+            for(size_t i=0;i<ir.stamps.size();++i) if(ir.stamps[i].component.id==e.target){gates[i]=e.closed;changed=true;}
+            for(size_t i=0;i<ir.gate_signals.size();++i)if(ir.gate_signals[i].id==e.target)signal_values[i]=e.closed;
         }
         return changed;
     };
@@ -193,11 +221,17 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
         }
         return values;
     };
-    auto record=[&](double t,std::vector<double> values) {
-        for(const auto& o:ir.observations)
-            values.push_back((o.positive<0?0:values[o.positive])-(o.negative<0?0:values[o.negative]));
-        Sample sample{t,std::move(values),{}};
-        for(size_t i=0;i<ir.stamps.size();++i) if(ir.stamps[i].component.kind==Kind::ideal_switch) sample.gates.push_back(gates[i]);
+    auto record=[&](double t,const std::vector<double>& values) {
+        result.last_time=t;
+        if(simulated_time) simulated_time->store(t,std::memory_order_relaxed);
+        // No sample or history allocation when recording is disabled.
+        if(analog_indices.empty()&&gate_indices.empty())return;
+        Sample sample;sample.time=t;sample.values.reserve(analog_indices.size());sample.gates.reserve(gate_indices.size());
+        for(size_t index:analog_indices){
+            if(index<ir.unknowns.size())sample.values.push_back(values[index]);
+            else {const auto& o=ir.observations[index-ir.unknowns.size()];sample.values.push_back(((o.positive<0?0:values[o.positive])-(o.negative<0?0:values[o.negative]))*o.gain+o.offset);}
+        }
+        for(size_t index:gate_indices)sample.gates.push_back(index<switch_indices.size()?gates[switch_indices[index]]:signal_values[index-switch_indices.size()]);
         result.samples.push_back(std::move(sample));
     };
     apply_events(0);

@@ -6,139 +6,121 @@
 - [Инструкции разработки и уточнение README](docs/specifications/PowerDriveSim_Codex_Instructions_RU.md)
 - [План и карта критериев](docs/plan.md)
 
-## Назначение проекта
+## Назначение и обязательная архитектура
 
 Настольный симулятор силовой электроники, преобразователей, электрических машин и электроприводов.
 
-## Обязательные архитектурные инварианты
+Visual Schematic → Model Graph → Validation/Flattening → Topology Analysis → Equation Generation → Simulation IR → Optimization → Backend Execution → Results.
 
-Visual Schematic → Model Graph → Validation/Flattening → Topology Analysis →
-Equation Generation → Simulation IR → Optimization → Backend Execution → Results.
+- GUI не содержит solver logic; компоненты не зависят от widgets.
+- IR не зависит от CPU/GPU API; Reference CPU остаётся проверяемым эталоном.
+- Любая поддерживаемая атомарная схема имеет generic execution path.
+- Составные преобразователи должны раскрываться до редактируемых атомов.
+- Controller/ADC/MCU/C++ runtime только в Milestone 6; постоянный параметрический PWM разрешён новым прямым запросом пользователя; инвертор принимает готовые gates.
+- Запрещены скрытые стабилизаторы, изменение физики и подмена незавершённых функций заглушками.
 
-- GUI не содержит solver logic; компоненты не зависят от widgets
-- IR не зависит от CPU/GPU API; Reference CPU остаётся проверяемым эталоном
-- Любая поддерживаемая атомарная схема имеет generic execution path
-- Составные преобразователи раскрываются до редактируемых атомов
-- Controller/ADC/MCU/PWM/C++ runtime только в Milestone 6; инвертор принимает готовые gates
-- Запрещены скрытые стабилизаторы, изменение физики и подмена незавершённых функций заглушками
+## Текущий этап и точка продолжения
 
-## Текущий этап
+**M0 принят. Активен M1, полная приёмка ещё не выполнена.**
 
-Milestone 0 выполнен по всем четырём критериям. Активен Milestone 1, он не завершён.
-Реализован первый блок M1: Trapezoidal, ideal diode и bounded active-set solve.
-Текущая работа: модель соединений/документа завершена, создание Qt 6 desktop.
-core/model/connectivity.cpp разрешает явные провода в электрические сети; core/editor/document.cpp хранит транзакции и undo/redo.
-Первый невыполненный критерий M1 — создание, соединение и запуск схемы в GUI.
-Типизированные electrical/gate/signal порты и probes добавлены. Desktop, hierarchy, Inspector и Scope UI ещё отсутствуют.
+Выполнен блок плоского атомарного редактора Qt 6: холст, библиотека, порты, провода, свойства, история команд, сохранение/восстановление, worker Run/Stop и Scope. Первый следующий крупный невыполненный критерий — hierarchy и редактируемые составные преобразователи.
 
-## Выполнено и проверено
+Не переходить к M2 до проверки всех критериев M1. Не начинать Controller раньше M6.
 
-- C++20 Reference CPU: sparse MNA stamps, R/L/C/V/I/S/D, исходные C/L состояния
-- Backward Euler и Trapezoidal; два порядка сходимости проверены по аналитике
-- Точные recorded gate edges, одновременные события, повторяемость и порядок UUID
-- Ideal diode: forward/reverse, current-driven, RC charge/hold, bridge обеих полярностей, RL freewheel
-- Формат v4 с явными проводами, gate patterns и Scope settings; последовательные миграции v1→v2→v3; UUID, геометрия, extensions, solver profile
-- CSV с units, UUID, method/backend/precision и nonlinear settings; CLI и benchmark
-- Последняя Release-сборка MSVC 19.29 успешна без предупреждений
-- Проверка после модели редактора: 8/8 групп, 1.56 s (unit/numerical/serialization/topology/regression/examples/diode)
-- RC BE error 0.000183863 V; RLC BE 0.00038693 V
-- RC Trap error 3.0657e-6 V; RLC Trap 3.89624e-6 V; LC energy и gate history проверены
-- Пять bundled examples проходят assertions; freewheel CLI: 1500 steps, residual 1.7764e-16
-- CI всех четырёх функциональных/обзорных коммитов, включая e659b31, успешен на Windows и Linux
-- Отчёты: docs/verification-m0.md и docs/verification-m1-core.md
+## Что реализовано и проверено
+
+- C++20 Reference CPU: sparse MNA stamps, R/L/C/V/I/S/D, исходные C/L состояния.
+- Backward Euler и Trapezoidal, аналитические проверки RC/RLC/LC и порядка сходимости.
+- Точные записанные gate edges, одновременные события, повторяемость и стабильный порядок UUID.
+- Ideal diode: forward/reverse, current-driven, RC charge/hold, bridge обеих полярностей, RL freewheel; bounded active-set solve.
+- Schema 6: явные провода, типизированные electrical/gate/signal порты, gate patterns, Scope settings; loader v1..v6.
+- Разрешение проводов в сети, разрыв сети при удалении, преобразование nets→wires без изменения численного результата.
+- Voltage probe без нагрузки и current probe как идеальная нулевая ветвь, SI parsing.
+- Document transactions, undo/redo (100 изменений), удаление зависимых wires/events.
+- Qt 6 desktop с RU/EN ресурсами; размещение и соединение мышью, свойства, перемещение, grid/pan/zoom, подсветка сети, простая ортогональная маршрутизация и ручные точки провода.
+- QSaveFile atomic save, отдельный autosave каждые 15 s, восстановление как несохранённого документа.
+- Worker получает копию проекта; Stop и время расчёта передаются через atomics; busy действует до обработки результата в UI-потоке.
+- Graph blocks с 1–16 signal/gate inputs и независимыми окнами/курсорами/экспортом; schema6, graph wiring и undo/redo.
+- Осциллограммы выключены по умолчанию и создаются лениво. Recording plan пишет union подключённых graphs и явно выбранных scope channels. Нет подписок — нет samples и history allocation. CLI сохраняет полный набор по умолчанию.
+- QFuture::takeResult исключает вторую копию истории; отключение Scope освобождает каналы, не нужные graphs.
+- Scope u/i/gates, time zoom/fit, два курсора, экспорт только соответствующих каналов. Экран сохраняет экстремумы, цифровые сигналы рисуются ступенями.
+- Последняя полная функциональная проверка Windows: 11/11 групп CTest, 3.46 s. Включены desktop-launch и отдельная группа recording.
+- UI-тест создаёт RC мышью, запускает 5000 шагов, сравнивает с аналитикой, проверяет properties/undo/redo/save/recover/Stop/диагностику/gate patterns/probes/Scope.
+- Реальный снимок docs/images/desktop-rc.png снят из тестируемого окна и визуально проверен.
+- Отчёты: docs/verification-m0.md, docs/verification-m1-core.md, docs/verification-m1-desktop.md.
 
 ## Следующие действия
 
-1. Создать Qt 6 desktop: холст/порты/провода, Inspector, фоновый Run/Stop и Scope поверх общего ядра
-2. Проверить создание новой схемы мышью, правку, сохранение и запуск без C++
-3. Реализовать command history и save/load/autosave для editor document
-4. Добавить hierarchy/public ports/open internals/edit definition/detach/flatten с тестами UUID и независимого экземпляра
-5. Создать атомарные 2L VSI и 3L NPC с отдельными diodes/snubber/DC-link/gates; проверить изменённые топологии
-6. Scope u/i/gates, zoom/cursors/CSV; worker Run/Stop, UI tests и остальные критерии M1
-7. Не переходить к M2 до полной приёмки M1; не начинать Controller раньше M6
+1. Hierarchy: public ports, open internals, edit definition, detach и flatten. Сначала определить сериализацию definition/instance и стабильные UUID путей; проверить независимые экземпляры, вложенность, циклы и undo/redo.
+2. Визуальные операции иерархии поверх того же Document/compiler, без numerical logic в GUI.
+3. Атомарные 2L VSI и 3L NPC: отдельные switches, diodes, snubber, DC-link и внешние gates. Проверить изменённые топологии через общий solver.
+4. Дополнить topology analysis: идеальные source loops, токовые разрывы, состояния switches/diodes и адресная диагностика.
+5. Проверить responsiveness на больших схемах, измерить latency Stop, уточнить лимиты RAM и согласованные performance gates.
+6. Пройти всю таблицу M1 в docs/plan.md; дополнить недостающие UI/сериализационные/численные проверки. Только после полной приёмки переходить к M2.
 
 ## Сборка и запуск
 
-CMake >=3.20 и C++20 compiler. Проверен MSVC 19.29 (Visual Studio 2019).
-Core собирается без внешних зависимостей, GUI, GPU или сети.
-Для будущего GUI выбран Qt 6; локально обнаруженный Qt 5.15 не является GUI-зависимостью проекта.
+Core: CMake >=3.20, C++20 compiler; Qt и сеть не нужны.
 
-    cmake -S . -B build
-    cmake --build build --config Release
-    ctest --test-dir build -C Release --output-on-failure
+```text
+cmake -S . -B build-core
+cmake --build build-core --config Release
+ctest --test-dir build-core -C Release --output-on-failure
+```
 
-Windows multi-config:
+Desktop: Qt >=6.5 Widgets/Concurrent, QtTest для UI-тестов. Локально установлен Qt 6.5.3 qtbase MSVC 2019 в игнорируемой `.deps/qt/6.5.3/msvc2019_64`.
 
-    build/Release/powerdrive-cli examples/rc.pds build/rc.csv
-    build/Release/powerdrive-cli examples/rlc.pds build/rlc.csv
-    build/Release/powerdrive-cli examples/switch.pds build/switch.csv
-    build/Release/powerdrive-cli examples/rc-trapezoidal.pds build/rc-trapezoidal.csv
-    build/Release/powerdrive-cli examples/diode-freewheel.pds build/diode-freewheel.csv
+```text
+cmake -S . -B build -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH=F:/Work/Projects/SIMULATOR/.deps/qt/6.5.3/msvc2019_64
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure
+```
 
-Linux single-config: убрать Release из пути; для Release задать -DCMAKE_BUILD_TYPE=Release.
+Пути адаптировать под машину. На Windows тестам нужен Qt/bin в PATH; offscreen plugin берётся через импортированную CMake-цель. Для изображений offscreen задайте QT_QPA_FONTDIR=C:/Windows/Fonts и PDS_SCREENSHOT_PATH=<PNG path>.
 
-## Тестирование
+`build/Release/powerdrive-desktop.exe` — приложение; `--lang en` переключает язык. Примеры копируются рядом в `examples`. Локально windeployqt уже скопировал Qt DLL рядом с EXE; MSVC runtime на машине установлен, отдельно не упакован. Подробности: docs/desktop.md.
 
-    ctest --test-dir build -C Release --output-on-failure
-    ctest --test-dir build -C Release -R "numerical|diode" --output-on-failure
-    build/Release/powerdrive-benchmark examples/rlc.pds 10
-    build/Release/powerdrive-benchmark examples/diode-freewheel.pds 10
+CLI: `build/Release/powerdrive-cli examples/rc.pds build/rc.csv`.
+Linux single-config: убрать Release из пути, при конфигурации указать -DCMAKE_BUILD_TYPE=Release.
 
-Нельзя запускать старые test binaries после проваленной сборки и считать это проверкой изменений.
-Workflow .github/workflows/ci.yml выполняет все CTest-группы на Windows/Linux.
+Не запускать старые test binaries после неудачной сборки. Workflow проверяет headless и Qt desktop отдельно на Windows/Linux.
 
-## Структура проекта
+## Модули и решения
 
-- core/model, core/compiler, core/ir — граф, проверка и формирование уравнений
-- core/solver/reference — sparse stamps, численный решатель и events
-- formats/project, results — формат, миграции и CSV
-- apps/cli — headless-приложение; apps/desktop ещё не создан
-- tests, examples, benchmarks — автоматическая верификация и измерения
-- docs — архитектура, схемы формата, отчёты и исходные требования
+- core/model/connectivity — типы портов и разрешение явных сетей.
+- core/editor/document — транзакции, undo/redo; не зависит от Qt.
+- core/compiler, core/ir — проверки и формирование уравнений.
+- core/solver/reference — sparse reference solver и events; без Qt.
+- formats/project, results — формат/миграции/CSV.
+- apps/desktop — редактор/worker/views; apps/cli — запуск без GUI.
+- tests, examples, benchmarks — автоматическая проверка и измерения.
 
-## Принятые решения
+Принято: std::map sparse reference, будущий Eigen SparseLU, Qt 6 GUI, независимый GPU contract и кандидат Vulkan Compute. Eigen/GPU пока не реализованы. Fast paths отсутствуют. Fixture v1/v2/v3 сохранять для миграционных регрессий.
 
-См. docs/architecture.md: std::map sparse reference, будущий Eigen SparseLU,
-целевой Qt 6, независимый от API GPU contract и кандидат Vulkan Compute.
-Это архитектурный выбор; Eigen/Qt/GPU implementation пока не поставляются.
-Нет fast paths: все реализованные схемы рассчитываются generic solver.
-Format v1/v2 fixtures сохранять для регрессионной проверки миграций.
+## Ограничения
 
-## Известные проблемы и ограничения
+- Пока нет hierarchy, 2L/NPC, машин и ускоренных backend.
+- Scope имеет общую Y-шкалу. Поворот, отражение, копирование, настраиваемые клавиши и прямые ненагружающие voltage taps графиков реализованы.
+- Автоматический маршрут проводов простой; сложный маршрут задаётся точками в Inspector. Пересечения линий не соединяют сети.
+- Одна последняя autosave-копия на каталог приложения; нескольких окон с одним recovery dir избегать.
+- Идеальные DAE loops с неуникальными токами/импульсами диагностируются; index reduction отсутствует.
+- Diode search ограничен iteration budget; общая сходимость сложных идеальных сетей не гарантирована.
+- Естественные diode zero crossings — на концах шагов; scheduled gates — точно.
+- Результаты в RAM; Stop между шагами, отдельная факторизация не прерывается.
+- Источники питания только DC; управление — записанные события и постоянный ШИМ, не Controller.
+- Benchmark оценивает result payload, не peak RAM.
+- MSVC выдаёт предупреждение C4701 внутри заголовка Qt 6.5.3 QtTest qtestmouse.h; в коде приложения предупреждений нет.
 
-- Нет GUI, hierarchy, probes UI, Scope, 2L/NPC, машин и ускоренных backend
-- Идеальные DAE loops с неуникальными токами/импульсами диагностируются; index reduction отсутствует
-- Поиск diode states ограничен iteration budget; общая сходимость сложных идеальных сетей не гарантирована
-- Естественные diode zero crossings разрешаются на концах шагов; scheduled gate edges — точно
-- Результаты в RAM; Stop проверяется между шагами и не прерывает отдельную факторизацию
-- Только DC источники и записанные switch events; waveform/signal blocks ещё не добавлены
-- Диагностика singular/ideal sources ещё требует отдельного подробного topology analysis для M1
-- Benchmark показывает оценку result payload, не peak RAM; согласованных performance gates ещё нет
+## README и Git
 
-## Стиль README
+README обзорный: назначение, фактические возможности, реальные иллюстрации, краткая установка. **Не добавлять «Технологии» и не приписывать работу пользователю.** Подробности сборки держать в docs/desktop.md.
 
-README обзорный: назначение, особенности, реальные иллюстрации, готовые возможности
-и короткая установка. Не добавлять раздел «Технологии» и не приписывать работу пользователю.
-График docs/images/reference-examples.png построен из CLI CSV и визуально проверен.
-Воспроизведение: создать rc-trapezoidal/rlc/switch CSV в build, затем
-python docs/render_examples.py (только для иллюстрации нужны matplotlib и numpy).
+main, origin: https://github.com/Coal56AB/PowerDriveSim.git. Прямой push main после логических проверенных шагов, сообщения коммитов на русском без Conventional Commits и agent attribution. Не коммитить build/.deps и установленные зависимости. Полное ТЗ не сокращать.
 
-## Git
+Предыдущий опубликованный функциональный шаг: c665014 — модель атомарного редактора. Текущий шаг добавляет оформленный Qt desktop, графики с подключаемыми сигналами, отключаемую выборочную запись и обзорный README. После публикации проверить новый workflow, исправить реальные CI-сбои и зафиксировать подтверждённый результат.
 
-Основная ветка main, origin — https://github.com/Coal56AB/PowerDriveSim.git.
-Осмысленные коммиты на русском, без Conventional Commits; прямой push main.
-Опубликованы в порядке создания:
-- ee8b421 — Добавлен начальный каркас PowerDriveSim
-- e8b1fee — Добавлен метод интегрирования Trapezoidal
-- 872a3db — Переработан обзор проекта в README
-- e659b31 — Реализованы идеальные диоды и нелинейный расчёт схем
+## Последние требования пользователя
 
-Последний опубликованный функциональный шаг — e659b31: идеальные диоды и schema v3.
-CI: https://github.com/Coal56AB/PowerDriveSim/actions/runs/34981148062 — обе платформы success.
-Этот документальный шаг фиксирует приёмку CI и handoff; исходники после e659b31 не менялись.
-Перед завершением следующего сеанса обновить этот файл, собрать, проверить и push.
+Время/шаг/метод находятся сверху перед «Пуск». Библиотека — дерево категорий; узел создаётся через Ctrl+W или продолжение провода, не находится в библиотеке. Диагностика и Scope — вкладки. Export только у соответствующего графика. Визуал должен выглядеть как законченная программа, не структурный каркас; выводы маленькие, с большей невидимой областью попадания и hover-подсветкой. Не возвращать прежнюю компоновку и always-on запись.
 
-## Обновление модели редактора
-Проверены разрыв сети при удалении провода, преобразование старой RC без изменения результата,
-независимые типы портов, voltage/current probes, SI input, gate fanout, транзакции и undo/redo.
-Qt 6.5.3 qtbase загружен в игнорируемую .deps/qt для MSVC 2019; не коммитить зависимости.
+Дополнительные требования: вставка по двойному щелчку с полупрозрачным предпросмотром; провод перетаскиванием с живым маршрутом и ответвлением в любой точке провода; Space поворот, Ctrl+M отражение, ПКМ действия, настраиваемые сочетания. Время в секундах с `10e-3`. Постоянный ШИМ явно разрешён пользователем сейчас: frequency/duty/delay, без Controller runtime.

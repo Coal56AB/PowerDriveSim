@@ -16,14 +16,18 @@ public:
 };
 struct Sample { double time; std::vector<double> values; std::vector<bool> gates; };
 struct Result {
-    std::string project_id, backend="Reference CPU", precision="float64", engine="0.3.0";
+    std::string project_id, backend="Reference CPU", precision="float64", engine="0.4.0";
     Profile profile;
     std::vector<Channel> channels;
     std::vector<std::string> gate_objects;
     std::vector<Sample> samples;
     size_t accepted_steps=0, linear_solves=0, max_step_iterations=0;
     bool cancelled=false;
-    double max_scaled_residual=0.0;
+    double max_scaled_residual=0.0, last_time=0.0;
 };
-Result execute(const SimulationIR& ir, const std::atomic_bool* cancel=nullptr);
+struct Recording { bool all=true; std::vector<std::string> channels; };
+std::vector<Channel> available_channels(const SimulationIR& ir);
+Result select_result(const Result& result,const std::vector<std::string>& channels);
+Result execute(const SimulationIR& ir, const std::atomic_bool* cancel=nullptr,
+               std::atomic<double>* simulated_time=nullptr,const Recording* recording=nullptr);
 }

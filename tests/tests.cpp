@@ -259,7 +259,7 @@ static void serialization() {
     auto downgrade_nodes=[](std::string original) {
         std::istringstream input(original); std::string line,output;
         while(std::getline(input,line)) {
-            if(line.rfind("wiring ",0)==0 || line.rfind("scopeview ",0)==0) continue;
+            if(line.rfind("scope_enabled ",0)==0 || line.rfind("wiring ",0)==0 || line.rfind("scopeview ",0)==0) continue;
             if(line.rfind("node ",0)==0) {
                 line.erase(line.find_last_of(' ')); line.erase(line.find_last_of(' '));
             }
@@ -274,13 +274,13 @@ static void serialization() {
     require(method_at!=std::string::npos,"Fixture contains v2 method");
     old.erase(method_at,14);
     std::istringstream old_in(old); auto migrated=read_project(old_in);
-    require(migrated.schema==4 && migrated.profile.method==Method::backward_euler,"Explicit v1 migration");
+    require(migrated.schema==6 && migrated.profile.method==Method::backward_euler,"Explicit v1 migration");
     require(migrated.extensions==p.extensions,"Migration preserves unknown extensions");
     std::string v2=downgrade_nodes(text); v2.replace(0,15,"PowerDriveSim 2");
     const auto v2_nonlinear=v2.find("nonlinear ");
     v2.erase(v2_nonlinear,v2.find('\n',v2_nonlinear)-v2_nonlinear+1);
     std::istringstream v2_in(v2); const auto migrated_v2=read_project(v2_in);
-    require(migrated_v2.schema==4 && migrated_v2.profile.max_iterations==64,"Explicit v2 migration");
+    require(migrated_v2.schema==6 && migrated_v2.profile.max_iterations==64,"Explicit v2 migration");
     require(saved(migrated_v2)==text,"Migration v2 preserves entire semantics");
     error("parse_error",[]{std::istringstream s("PowerDriveSim 3\nproject id name\nprofile 1 .1 BackwardEuler\n"); read_project(s);});
     error("invalid_method",[]{parse_method("magic");});
