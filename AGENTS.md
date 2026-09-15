@@ -44,7 +44,7 @@ Desktop target, typed signal/gate ports, hierarchy, Inspector и Scope ещё о
 - RC BE error 0.000183863 V; RLC BE 0.00038693 V
 - RC Trap error 3.0657e-6 V; RLC Trap 3.89624e-6 V; LC energy и gate history проверены
 - Пять bundled examples проходят assertions; freewheel CLI: 1500 steps, residual 1.7764e-16
-- CI первых трёх опубликованных коммитов успешен на Windows и Linux; последний новый commit проверять отдельно
+- CI всех четырёх функциональных/обзорных коммитов, включая e659b31, успешен на Windows и Linux
 - Отчёты: docs/verification-m0.md и docs/verification-m1-core.md
 
 ## Следующие действия
@@ -131,7 +131,9 @@ python docs/render_examples.py (только для иллюстрации ну�
 - ee8b421 — Добавлен начальный каркас PowerDriveSim
 - e8b1fee — Добавлен метод интегрирования Trapezoidal
 - 872a3db — Переработан обзор проекта в README
+- e659b31 — Реализованы идеальные диоды и нелинейный расчёт схем
 
-Текущий законченный шаг для публикации: идеальные диоды и профиль schema v3.
-Его точный SHA и синхронизацию с origin/main проверить через git log/status.
+Последний опубликованный функциональный шаг — e659b31: идеальные диоды и schema v3.
+CI: https://github.com/Coal56AB/PowerDriveSim/actions/runs/34981148062 — обе платформы success.
+Этот документальный шаг фиксирует приёмку CI и handoff; исходники после e659b31 не менялись.
 Перед завершением следующего сеанса обновить этот файл, собрать, проверить и push.

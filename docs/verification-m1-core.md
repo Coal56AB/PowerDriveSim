@@ -67,9 +67,10 @@ Payload estimate не включает полную RAM allocator/solver и не
 
 ## Удалённая проверка
 
-CI первых трёх опубликованных коммитов ee8b421/e8b1fee/872a3db успешен.
-Для нового блока диодов статус последнего SHA проверяется после push.
-Workflow запускает все CTest-группы на windows-latest и ubuntu-latest.
+CI ee8b421/e8b1fee/872a3db/e659b31 успешен.
+[Проверка блока диодов e659b31](https://github.com/Coal56AB/PowerDriveSim/actions/runs/34981148062):
+headless (windows-latest) — success; headless (ubuntu-latest) — success.
+Workflow выполнил все семь CTest-групп на обеих платформах.
 
 ## Следующий шаг
 
