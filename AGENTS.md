@@ -33,7 +33,7 @@ Visual Schematic → Model Graph → Validation/Flattening → Topology Analysis
 - Backward Euler и Trapezoidal, аналитические проверки RC/RLC/LC и порядка сходимости.
 - Точные записанные gate edges, одновременные события, повторяемость и стабильный порядок UUID.
 - Ideal diode: forward/reverse, current-driven, RC charge/hold, bridge обеих полярностей, RL freewheel; bounded active-set solve.
-- Schema 6: явные провода, типизированные electrical/gate/signal порты, gate patterns, Scope settings; loader v1..v6.
+- Schema 7: явные провода, типизированные порты, gate patterns, Scope и локальные определения/экземпляры подсхем; loader v1..v7. Ядро иерархии: public ports, числовые параметры, вложенность, детерминированный flatten, deep detach, grouping и undo/redo. См. docs/hierarchy.md; GUI иерархии ещё не подключён.
 - Разрешение проводов в сети, разрыв сети при удалении, преобразование nets→wires без изменения численного результата.
 - Voltage probe без нагрузки и current probe как идеальная нулевая ветвь, SI parsing.
 - Document transactions, undo/redo (100 изменений), удаление зависимых wires/events.
@@ -60,7 +60,7 @@ Visual Schematic → Model Graph → Validation/Flattening → Topology Analysis
 
 Отдельное невыполненное требование пользователя: **тёмная тема**. Реализовать согласованно для главного окна, библиотеки, свойств, схемы, графиков, легенд, курсоров и диалогов. Проверить читаемость текста, проводов, выделения и иконок. Пока не реализована; не считать задачу закрытой по наличию одного переключателя или смене фона.
 
-1. Hierarchy: public ports, open internals, edit definition, detach и flatten. Сначала определить сериализацию definition/instance и стабильные UUID путей; проверить независимые экземпляры, вложенность, циклы и undo/redo.
+1. Подключить готовое ядро hierarchy к GUI: public ports, open internals, edit definition, detach, flatten и breadcrumbs. Модель, schema 7 и headless-регрессии уже реализованы; 14/14 CTest. Не считать пользовательскую иерархию завершённой без UI-проверки.
 2. Визуальные операции иерархии поверх того же Document/compiler, без numerical logic в GUI.
 3. Атомарные 2L VSI и 3L NPC: отдельные switches, diodes, snubber, DC-link и внешние gates. Проверить изменённые топологии через общий solver.
 4. Дополнить topology analysis: идеальные source loops, токовые разрывы, состояния switches/diodes и адресная диагностика.
@@ -108,7 +108,7 @@ Linux single-config: убрать Release из пути, при конфигур
 
 ## Ограничения
 
-- Пока нет hierarchy, 2L/NPC, машин и ускоренных backend.
+- Иерархия доступна пока только через модель/формат; визуальная интеграция не завершена. Пока нет 2L/NPC, машин и ускоренных backend.
 - Scope поддерживает общую Y-шкалу и сетку до 16 дисплеев с распределением сигналов. Поворот, отражение, копирование, настраиваемые клавиши и прямые ненагружающие voltage taps графиков реализованы.
 - Автоматический маршрут использует локальный поиск; сегменты, изгибы и концы редактируются мышью, координаты доступны в Inspector. Пересечения линий не соединяют сети.
 - Одна последняя autosave-копия на каталог приложения; нескольких окон с одним recovery dir избегать.

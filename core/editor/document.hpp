@@ -33,6 +33,11 @@ public:
     void arrange(const std::vector<std::string>& ids,const std::string& mode);
     void erase(const std::vector<std::string>& ids);
     void remove_junction(const std::string& id, std::vector<Point> first_route, std::vector<Point> second_route);
+    std::string create_definition(const std::vector<std::string>& ids,const std::string& name);
+    std::string add_instance(const std::string& definition,double x,double y);
+    void edit_definition(const std::string& id,const std::function<void(Definition&)>& change);
+    void detach_instance(const std::string& id);
+    void expand_instance(const std::string& id);
 private:
     struct Change { std::string label; Project before,after; };
     Project current_;

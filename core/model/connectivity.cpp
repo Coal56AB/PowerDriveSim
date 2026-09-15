@@ -1,10 +1,14 @@
 #include "core/model/connectivity.hpp"
+#include "core/model/hierarchy.hpp"
 #include <algorithm>
 #include <cmath>
 #include <set>
 namespace pds {
 std::string endpoint_key(const Endpoint& e) { return e.object+"/"+e.port; }
 PortType port_type(const Project& p,const Endpoint& e) {
+    for(const auto& i:p.instances)if(i.id==e.object) {
+        for(const auto& port:definition(p,i.definition).ports)if(port.id==e.port)return {port.domain,port.direction};
+    }
     for(const auto& n:p.nodes) if(n.id==e.object && e.port=="node") return {Domain::electrical,Direction::conserving};
     for(const auto& c:p.components) if(c.id==e.object) {
         if(e.port=="p" || e.port=="n") return {Domain::electrical,Direction::conserving};
@@ -27,6 +31,15 @@ void validate_wire(const Project& p,const Wire& w) {
         if(!std::isfinite(point.x)||!std::isfinite(point.y)) throw Diagnostic("invalid_geometry",w.id,"Wire points must be finite");
 }
 ResolvedGraph resolve_connections(const Project& source) {
+    if(!source.instances.empty()) {
+        auto expanded=flatten(source);
+        auto resolved=resolve_connections(expanded.project);
+        for(const auto& [key,terminal]:expanded.terminals) {
+            auto net=resolved.nets.find(endpoint_key(terminal));
+            if(net!=resolved.nets.end())resolved.nets[key]=net->second;
+        }
+        return resolved;
+    }
     if(!source.wired) {
         if(!source.wires.empty() || !source.patterns.empty() || !source.plots.empty()) throw Diagnostic("invalid_wiring",source.id,"Wire records require wired mode");
         return {source,{}};
@@ -137,6 +150,7 @@ ResolvedGraph resolve_connections(const Project& source) {
     return result;
 }
 std::vector<std::string> plot_channels(const Project& p,const std::string& id){
+    if(!p.instances.empty())return plot_channels(flatten(p).project,id);
     std::vector<std::string> result;
     auto plot=std::find_if(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==id;});
     if(plot==p.plots.end())return result;

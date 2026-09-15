@@ -1,4 +1,5 @@
 #include "core/editor/document.hpp"
+#include "core/model/hierarchy.hpp"
 #include <algorithm>
 #include <set>
 #include <map>
@@ -10,6 +11,7 @@ void Document::apply(const std::string& label,const std::function<void(Project&)
     auto next=current_; change(next);
     if(next == current_) return;
     // Connectivity is validated without solving an incomplete circuit.
+    validate_hierarchy(next);
     (void)resolve_connections(next);
     undo_.push_back({label,current_,next});
     if(undo_.size()>100) undo_.erase(undo_.begin());
@@ -46,12 +48,16 @@ bool same_simulation(const Project& a,const Project& b) {
     auto normalize=[](Project p){
         p.name.clear();
         auto strip=[](auto& objects){for(auto& o:objects){o.name.clear();o.x=0;o.y=0;o.orientation={};}};
-        strip(p.components);strip(p.nodes);strip(p.patterns);strip(p.plots);
-        for(auto& w:p.wires)w.bends.clear();
-        for(auto& g:p.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;}
+        auto schematic=[&](Schematic& s){
+            strip(s.components);strip(s.nodes);strip(s.patterns);strip(s.plots);strip(s.instances);
+            for(auto& w:s.wires)w.bends.clear();
+            for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;}
+            s.labels.clear();s.view_options.clear();
+        };
+        schematic(p);
+        for(auto& d:p.definitions){d.name.clear();schematic(d);for(auto& port:d.ports)port.name.clear();for(auto& param:d.parameters){param.name.clear();param.unit.clear();}}
         p.scope_begin=0;p.scope_end=-1;p.cursor_a=-1;p.cursor_b=-1;
         p.scope_enabled=false;p.scope_channels.clear();
-        p.labels.clear();p.view_options.clear();
         return p;
     };
     return normalize(a)==normalize(b);
@@ -123,6 +129,8 @@ Project Document::copy(const std::vector<std::string>& list) const {
     for(const auto& n:current_.nodes)if(ids.count(n.id))result.nodes.push_back(n);
     for(const auto& g:current_.patterns)if(ids.count(g.id))result.patterns.push_back(g);
     for(const auto& g:current_.plots)if(ids.count(g.id))result.plots.push_back(g);
+    for(const auto& i:current_.instances)if(ids.count(i.id))result.instances.push_back(i);
+    if(!result.instances.empty())result.definitions=current_.definitions;
     for(const auto& w:current_.wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
     for(const auto& e:current_.events)if(ids.count(e.target))result.events.push_back(e);
     for(const auto& options:current_.view_options)if(ids.count(options.plot))result.view_options.push_back(options);
@@ -132,10 +140,22 @@ Project Document::copy(const std::vector<std::string>& list) const {
 std::vector<std::string> Document::paste(const Project& source,double dx,double dy){
     auto fragment=make_wired(source);std::vector<std::string> added;
     apply("Paste objects",[&](Project& p){
+        std::map<std::string,std::string> definitions;
+        const bool conflict=std::any_of(fragment.definitions.begin(),fragment.definitions.end(),[&](const auto& d){return std::any_of(p.definitions.begin(),p.definitions.end(),[&](const auto& existing){return existing.id==d.id&&existing!=d;});});
+        for(const auto& d:fragment.definitions) {
+            definitions[d.id]=conflict?new_uuid():d.id;
+        }
+        for(auto d:fragment.definitions) {
+            d.id=definitions.at(d.id);
+            if(std::any_of(p.definitions.begin(),p.definitions.end(),[&](const auto& v){return v.id==d.id;}))continue;
+            for(auto& i:d.instances)i.definition=definitions.at(i.definition);
+            p.definitions.push_back(std::move(d));
+        }
+        for(auto& i:fragment.instances)i.definition=definitions.at(i.definition);
         std::map<std::string,std::string> ids;std::set<std::string> names;
         auto remember=[&](const auto& objects){for(const auto& o:objects)names.insert(o.name);};remember(p.components);remember(p.nodes);remember(p.patterns);remember(p.plots);
         auto copy=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;auto base=object.name;unsigned suffix=2;while(names.count(object.name))object.name=base+" ("+std::to_string(suffix++)+")";names.insert(object.name);to.push_back(std::move(object));}};
-        copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);
+        copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}
         for(auto event:fragment.events)if(ids.count(event.target)){event.target=ids.at(event.target);p.events.push_back(event);}
         for(auto options:fragment.view_options)if(ids.count(options.plot)){options.plot=ids.at(options.plot);p.view_options.push_back(options);}
@@ -147,7 +167,7 @@ void Document::transform(const std::vector<std::string>& list,int turns,bool mir
     apply("Transform objects",[&](Project& p){
         double cx=0,cy=0;size_t count=0;
         auto center=[&](const auto& objects){for(const auto& o:objects)if(ids.count(o.id)){cx+=o.x;cy+=o.y;++count;}};
-        center(p.components);center(p.nodes);center(p.patterns);center(p.plots);
+        center(p.components);center(p.nodes);center(p.patterns);center(p.plots);center(p.instances);
         if(count){cx=std::round(cx/count/20)*20;cy=std::round(cy/count/20)*20;}
         auto point=[&](double& x,double& y){x-=cx;y-=cy;if(mirror)x=-x;else {int n=(turns%4+4)%4;while(n--){double old=x;x=-y;y=old;}}x+=cx;y+=cy;};
         auto change=[&](auto& objects){for(auto& object:objects)if(ids.count(object.id)){
@@ -155,13 +175,13 @@ void Document::transform(const std::vector<std::string>& list,int turns,bool mir
             auto& o=object.orientation;if(mirror)o.mirrored=!o.mirrored;
             int amount=o.mirrored?-turns:turns;o.quarter_turns=static_cast<unsigned>((static_cast<int>(o.quarter_turns)+amount%4+4)%4);
         }};
-        change(p.components);change(p.nodes);change(p.patterns);change(p.plots);
+        change(p.components);change(p.nodes);change(p.patterns);change(p.plots);change(p.instances);
         if(count>1)for(auto& wire:p.wires)if(ids.count(wire.from.object)&&ids.count(wire.to.object))for(auto& b:wire.bends)point(b.x,b.y);
     });
 }
 void Document::arrange(const std::vector<std::string>& list,const std::string& mode){
     std::set<std::string> ids(list.begin(),list.end());
-    apply("Arrange objects",[&](Project& p){std::vector<std::pair<double*,double*>> points;auto add=[&](auto& objects){for(auto& o:objects)if(ids.count(o.id))points.push_back({&o.x,&o.y});};add(p.components);add(p.nodes);add(p.patterns);add(p.plots);if(points.size()<2)return;
+    apply("Arrange objects",[&](Project& p){std::vector<std::pair<double*,double*>> points;auto add=[&](auto& objects){for(auto& o:objects)if(ids.count(o.id))points.push_back({&o.x,&o.y});};add(p.components);add(p.nodes);add(p.patterns);add(p.plots);add(p.instances);if(points.size()<2)return;
         bool horizontal=mode=="left"||mode=="right"||mode=="horizontal";
         auto coordinate=[&](auto point)->double&{return horizontal?*point.first:*point.second;};
         std::sort(points.begin(),points.end(),[&](auto a,auto b){return coordinate(a)<coordinate(b);});double low=coordinate(points.front()),high=coordinate(points.back());
@@ -177,6 +197,7 @@ void Document::erase(const std::vector<std::string>& list) {
         std::erase_if(p.nodes,[&](const Node& n){return ids.count(n.id);});
         std::erase_if(p.plots,[&](const PlotBlock& g){return ids.count(g.id);});
         std::erase_if(p.patterns,[&](const GatePattern& g){return ids.count(g.id);});
+        std::erase_if(p.instances,[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.events,[&](const GateEvent& e){return ids.count(e.target);});
         std::erase_if(p.wires,[&](const Wire& w){return ids.count(w.id)||ids.count(w.from.object)||ids.count(w.to.object);});
     });

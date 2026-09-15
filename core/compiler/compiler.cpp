@@ -1,12 +1,13 @@
 #include "core/ir/ir.hpp"
 #include "core/model/connectivity.hpp"
+#include "core/model/hierarchy.hpp"
 #include <algorithm>
 #include <cmath>
 #include <map>
 #include <set>
 namespace pds {
 static SimulationIR compile_flat(const Project& p) {
-    if(p.schema!=6) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+    if(p.schema!=7) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -90,7 +91,7 @@ static SimulationIR compile_flat(const Project& p) {
     ir.sparsity.assign(pattern.begin(),pattern.end());
     return ir;
 }
-SimulationIR compile(const Project& source) {
+static SimulationIR compile_wired(const Project& source) {
     Project project=source;
     (void)resolve_connections(project); // Validate parameters before generating scheduled edges.
     if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
@@ -113,6 +114,26 @@ SimulationIR compile(const Project& source) {
         if(std::any_of(project.patterns.begin(),project.patterns.end(),[&](const GatePattern& p){return p.id==event.target;}))ir.events.push_back(event);
     std::sort(ir.events.begin(),ir.events.end(),[](const GateEvent& a,const GateEvent& b){return a.time==b.time?a.target<b.target:a.time<b.time;});
     return ir;
+}
+
+SimulationIR compile(const Project& source) {
+    auto expanded=flatten(source);
+    try {
+        if(!source.instances.empty()) {
+            for(const auto& [terminal,net]:resolve_connections(expanded.project).nets) {
+                auto origin=expanded.origins.find(terminal.substr(0,terminal.find('/')));
+                if(origin!=expanded.origins.end())expanded.origins.try_emplace(net,origin->second);
+            }
+        }
+        auto ir=compile_wired(expanded.project);
+        ir.origins=std::move(expanded.origins);
+        return ir;
+    } catch(Diagnostic& error) {
+        if(auto origin=expanded.origins.find(error.object);origin!=expanded.origins.end()) {
+            error.object=origin->second.object;error.path=origin->second.instances;
+        }
+        throw;
+    }
 }
 
 }

@@ -67,7 +67,7 @@ Result select_result(const Result& source,const std::vector<std::string>& keys){
     for(const auto& old:source.samples){Sample sample;sample.time=old.time;for(auto i:analog)sample.values.push_back(old.values[i]);for(auto i:gates)sample.gates.push_back(old.gates[i]);result.samples.push_back(std::move(sample));}
     return result;
 }
-Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream) {
+static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream) {
     if(ir.unknowns.empty() || !std::isfinite(ir.profile.step) || ir.profile.step<=0 || !std::isfinite(ir.profile.stop) || ir.profile.stop<=0)
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
@@ -233,5 +233,12 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic
         if(stream && result.accepted_steps%1024==0 && std::chrono::steady_clock::now()>=next_publish){publish();next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);}
     }
     return result;
+}
+Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream) {
+    try{return execute_impl(ir,cancel,simulated_time,recording,paused,stream);}
+    catch(Diagnostic& error) {
+        if(auto origin=ir.origins.find(error.object);origin!=ir.origins.end()){error.object=origin->second.object;error.path=origin->second.instances;}
+        throw;
+    }
 }
 }

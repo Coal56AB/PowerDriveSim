@@ -78,13 +78,29 @@ struct ViewOptions {
     bool manual_y=false,free_cursors=false,separate_axes=false,grid=true,legend=false;
     bool operator==(const ViewOptions&) const = default;
 };
-struct Project {
-    unsigned schema = 6;
-    std::string id, name;
+struct Instance {
+    std::string id, name, definition;
+    double x=0,y=0;
+    Orientation orientation;
+    std::vector<std::pair<std::string,double>> parameters;
+    bool operator==(const Instance&) const = default;
+};
+struct PublicPort {
+    std::string id,name;
+    Endpoint terminal;
+    Domain domain=Domain::electrical;
+    Direction direction=Direction::conserving;
+    bool operator==(const PublicPort&) const = default;
+};
+struct PublicParameter {
+    std::string id,name,unit,object,field;
+    double value=0;
+    bool operator==(const PublicParameter&) const = default;
+};
+struct Schematic {
     std::vector<Node> nodes;
     std::vector<Component> components;
     std::vector<GateEvent> events;
-    Profile profile;
     std::vector<std::string> extensions;
     bool wired=false;
     std::vector<Wire> wires;
@@ -92,6 +108,25 @@ struct Project {
     std::vector<PlotBlock> plots;
     std::vector<LabelLayout> labels;
     std::vector<ViewOptions> view_options;
+    std::vector<Instance> instances;
+    bool operator==(const Schematic&) const = default;
+};
+struct Definition : Schematic {
+    std::string id,name;
+    std::vector<PublicPort> ports;
+    std::vector<PublicParameter> parameters;
+    bool operator==(const Definition&) const = default;
+};
+struct ObjectPath {
+    std::vector<std::string> instances;
+    std::string object;
+    bool operator==(const ObjectPath&) const = default;
+};
+struct Project : Schematic {
+    unsigned schema = 7;
+    std::string id, name;
+    Profile profile;
+    std::vector<Definition> definitions;
     bool scope_enabled=false;
     std::vector<std::string> scope_channels;
     double scope_begin=0,scope_end=-1,cursor_a=-1,cursor_b=-1;
@@ -100,6 +135,7 @@ struct Project {
 };
 struct Diagnostic : std::runtime_error {
     std::string code, object;
+    std::vector<std::string> path;
     double time;
     Diagnostic(std::string code, std::string object, std::string message, double time = 0.0);
 };

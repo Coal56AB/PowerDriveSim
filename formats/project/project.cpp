@@ -1,4 +1,5 @@
 #include "formats/project/project.hpp"
+#include "core/model/hierarchy.hpp"
 #include <iomanip>
 #include <map>
 #include <istream>
@@ -7,7 +8,7 @@
 #include <cmath>
 #include <algorithm>
 namespace pds {
-Project read_project(std::istream& in) {
+static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     Project p;
     std::string line, tag;
     if(!std::getline(in,line)) throw Diagnostic("parse_error","","Empty project");
@@ -16,8 +17,8 @@ Project read_project(std::istream& in) {
     std::istringstream header(line);
     if(!(header >> tag >> p.schema)) throw Diagnostic("parse_error","","Malformed header");
     header >> std::ws;
-    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>6))
-        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..6");
+    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>7))
+        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..7");
     bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false;
     std::map<std::string,Orientation> orientations;
     size_t number=1;
@@ -27,6 +28,37 @@ Project read_project(std::istream& in) {
         if(line.empty() || line[0]=='#') continue;
         std::istringstream row(line);
         row >> tag;
+        if(tag=="definition"&&p.schema>=7) {
+            if(!definitions_allowed)throw Diagnostic("parse_error",p.id,"Definitions must be in the project catalog");
+            Definition d;row>>std::quoted(d.id)>>std::quoted(d.name);
+            if(row.fail())throw Diagnostic("parse_error",p.id,"Malformed definition");
+            row>>std::ws;if(!row.eof())throw Diagnostic("parse_error",d.id,"Trailing definition fields");
+            bool body=false,ended=false;std::ostringstream content;
+            while(std::getline(in,line)) {
+                ++number;if(!line.empty()&&line.back()=='\r')line.pop_back();
+                if(line=="end_definition"){ended=true;break;}
+                if(body){content<<line<<'\n';continue;}
+                if(line=="body"){body=true;continue;}
+                if(line.empty()||line.front()=='#')continue;
+                std::istringstream meta(line);std::string kind;meta>>kind;
+                if(kind=="public_port") {
+                    PublicPort port;unsigned domain=0,direction=0;
+                    meta>>std::quoted(port.id)>>std::quoted(port.name)>>std::quoted(port.terminal.object)>>std::quoted(port.terminal.port)>>domain>>direction;
+                    if(domain>unsigned(Domain::signal)||direction>unsigned(Direction::output))meta.setstate(std::ios::failbit);
+                    port.domain=Domain(domain);port.direction=Direction(direction);d.ports.push_back(port);
+                } else if(kind=="public_parameter") {
+                    PublicParameter param;meta>>std::quoted(param.id)>>std::quoted(param.name)>>std::quoted(param.unit)>>std::quoted(param.object)>>std::quoted(param.field)>>param.value;
+                    d.parameters.push_back(param);
+                } else throw Diagnostic("parse_error",d.id,"Unknown definition metadata: "+kind);
+                if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata");
+                meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata");
+            }
+            if(!body||!ended)throw Diagnostic("parse_error",d.id,"Unterminated definition body");
+            std::istringstream input(content.str());auto nested=read_project_impl(input,false);
+            if(nested.id!=d.id||nested.name!=d.name)throw Diagnostic("parse_error",d.id,"Definition body identity mismatch");
+            static_cast<Schematic&>(d)=std::move(static_cast<Schematic&>(nested));
+            p.definitions.push_back(std::move(d));continue;
+        }
         if(tag=="x-view") {
             ViewOptions v;int manual=-1,free=-1,separate=-1,grid=-1,legend=-1;
             row>>std::quoted(v.plot)>>v.y_low>>v.y_high>>manual>>free>>separate>>grid>>legend>>v.line_width>>v.time_span>>std::quoted(v.cursor_channel_a)>>std::quoted(v.cursor_channel_b)>>v.cursor_y_a>>v.cursor_y_b;
@@ -103,6 +135,12 @@ Project read_project(std::istream& in) {
             std::string mode; row >> mode;
             if(mode!="nets" && mode!="wires") throw Diagnostic("parse_error","","Expected nets or wires mode");
             p.wired=mode=="wires"; wiring=true;
+        } else if(tag=="instance"&&p.schema>=7) {
+            Instance instance;size_t count=0;
+            row>>std::quoted(instance.id)>>std::quoted(instance.name)>>std::quoted(instance.definition)>>instance.x>>instance.y>>count;
+            if(count>10000)throw Diagnostic("parse_error",instance.id,"Too many instance parameters");
+            for(size_t i=0;i<count;++i){std::string key;double value=0;row>>std::quoted(key)>>value;instance.parameters.emplace_back(key,value);}
+            p.instances.push_back(std::move(instance));
         } else if(tag=="wire" && p.schema>=4) {
             Wire wire; size_t count=0;
             row >> std::quoted(wire.id) >> std::quoted(wire.from.object) >> std::quoted(wire.from.port)
@@ -159,16 +197,19 @@ Project read_project(std::istream& in) {
     if(!identity || !profile || (p.schema>=3 && !nonlinear) || (p.schema>=4 && !wiring) || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
     // v1 -> v2: default Backward Euler; v2 -> v3: explicit default nonlinear profile.
     for(const auto& [id,orientation]:orientations){
-        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.patterns);apply(p.plots);
+        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.patterns);apply(p.plots);apply(p.instances);
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
-    p.schema=6;
+    p.schema=7;
     for(const auto& v:p.view_options)if(!v.plot.empty()&&std::none_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& plot){return plot.id==v.plot;}))throw Diagnostic("missing_view_target",v.plot,"View target does not exist");
-    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
+    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
+Project read_project(std::istream& in) {
+    auto p=read_project_impl(in,true);validate_hierarchy(p);return p;
+}
 void write_project(const Project& p, std::ostream& out) {
-    if(p.schema!=6) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
+    if(p.schema!=7) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
     const auto check_text=[](const std::string& value,const std::string& object) {
         if(value.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("invalid_text",object,"Project format strings must be single-line");
@@ -187,14 +228,17 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
     for(const auto& plot:p.plots){check_text(plot.id,plot.id);check_text(plot.name,plot.id);}
+    for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
-    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 6\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
+    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 7\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
         << p.profile.current_tolerance << ' ' << p.profile.relative_tolerance << '\n';
     auto write_orientation=[&](const auto& object){if(object.orientation.quarter_turns>3)throw Diagnostic("invalid_orientation",object.id,"Rotation must contain 0..3 quarter turns");if(object.orientation.quarter_turns||object.orientation.mirrored)out<<"orientation "<<std::quoted(object.id)<<' '<<object.orientation.quarter_turns<<' '<<object.orientation.mirrored<<'\n';};
     for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
+    for(const auto& i:p.instances)write_orientation(i);
+    for(const auto& i:p.instances){out<<"instance "<<std::quoted(i.id)<<' '<<std::quoted(i.name)<<' '<<std::quoted(i.definition)<<' '<<i.x<<' '<<i.y<<' '<<i.parameters.size();for(const auto& [key,value]:i.parameters)out<<' '<<std::quoted(key)<<' '<<value;out<<'\n';}
     out << "wiring " << (p.wired?"wires":"nets") << '\n';
     for(const auto& wire:p.wires) {
         out << "wire " << std::quoted(wire.id) << ' ' << std::quoted(wire.from.object) << ' ' << std::quoted(wire.from.port)
@@ -218,6 +262,20 @@ void write_project(const Project& p, std::ostream& out) {
         if(e.rfind("x-",0)!=0 || e.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("extension_error",p.id,"Extensions must be single x- records");
         out << e << '\n';
+    }
+    for(const auto& d:p.definitions) {
+        check_text(d.id,d.id);check_text(d.name,d.id);
+        out<<"definition "<<std::quoted(d.id)<<' '<<std::quoted(d.name)<<'\n';
+        for(const auto& port:d.ports) {
+            for(const auto* value:{&port.id,&port.name,&port.terminal.object,&port.terminal.port})check_text(*value,d.id);
+            out<<"public_port "<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.terminal.object)<<' '<<std::quoted(port.terminal.port)<<' '<<unsigned(port.domain)<<' '<<unsigned(port.direction)<<'\n';
+        }
+        for(const auto& v:d.parameters) {
+            for(const auto* value:{&v.id,&v.name,&v.unit,&v.object,&v.field})check_text(*value,d.id);
+            out<<"public_parameter "<<std::quoted(v.id)<<' '<<std::quoted(v.name)<<' '<<std::quoted(v.unit)<<' '<<std::quoted(v.object)<<' '<<std::quoted(v.field)<<' '<<v.value<<'\n';
+        }
+        Project body;static_cast<Schematic&>(body)=d;body.id=d.id;body.name=d.name;
+        out<<"body\n";write_project(body,out);out<<"end_definition\n";
     }
     if(!out) throw Diagnostic("write_error",p.id,"Project write failed");
 }
