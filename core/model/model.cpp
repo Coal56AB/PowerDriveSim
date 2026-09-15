@@ -20,11 +20,12 @@ std::string kind_name(Kind k) {
     case Kind::voltage: return "V";
     case Kind::current: return "I";
     case Kind::ideal_switch: return "S";
+    case Kind::diode: return "D";
     }
     throw Diagnostic("unknown_component", "", "Unsupported component kind");
 }
 Kind parse_kind(const std::string& s) {
-    for(auto k : {Kind::resistor, Kind::capacitor, Kind::inductor, Kind::voltage, Kind::current, Kind::ideal_switch})
+    for(auto k : {Kind::resistor, Kind::capacitor, Kind::inductor, Kind::voltage, Kind::current, Kind::ideal_switch, Kind::diode})
         if(kind_name(k) == s) return k;
     throw Diagnostic("unknown_component", s, "Unsupported component type");
 }

@@ -5,7 +5,7 @@
 #include <set>
 namespace pds {
 SimulationIR compile(const Project& p) {
-    if(p.schema!=2) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+    if(p.schema!=3) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -14,6 +14,11 @@ SimulationIR compile(const Project& p) {
     if(!std::isfinite(p.profile.stop) || !std::isfinite(p.profile.step) || p.profile.stop<=0 || p.profile.step<=0)
         throw Diagnostic("invalid_profile",p.id,"Stop time and step must be positive finite SI values");
     (void)method_name(p.profile.method);
+    if(p.profile.max_iterations<1 || p.profile.max_iterations>1024
+       || !std::isfinite(p.profile.voltage_tolerance) || p.profile.voltage_tolerance<=0
+       || !std::isfinite(p.profile.current_tolerance) || p.profile.current_tolerance<=0
+       || !std::isfinite(p.profile.relative_tolerance) || p.profile.relative_tolerance<0)
+        throw Diagnostic("invalid_profile",p.id,"Nonlinear tolerances must be finite/positive; iteration budget must be 1..1024");
     SimulationIR ir; ir.project_id=p.id; ir.profile=p.profile;
     auto nodes=p.nodes; auto components=p.components;
     std::sort(nodes.begin(),nodes.end(),[](const Node& a,const Node& b){return a.id<b.id;});
@@ -37,6 +42,8 @@ SimulationIR compile(const Project& p) {
             throw Diagnostic("invalid_parameter",c.id,"Parameters must be finite");
         if((c.kind==Kind::resistor || c.kind==Kind::capacitor || c.kind==Kind::inductor) && c.value<=0)
             throw Diagnostic("invalid_parameter",c.id,"R, L and C must be strictly positive");
+        if(c.kind==Kind::diode && (c.value!=0 || c.initial!=0 || c.closed))
+            throw Diagnostic("invalid_parameter",c.id,"Ideal diode uses value=0, initial=0 and closed=0; its state is solved automatically");
         Stamp s{c,indices.at(c.positive),indices.at(c.negative),-1};
         if(c.kind!=Kind::resistor && c.kind!=Kind::current) {
             s.branch=static_cast<int>(ir.unknowns.size());

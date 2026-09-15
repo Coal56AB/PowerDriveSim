@@ -13,9 +13,9 @@ int main(int argc,char** argv) {
         const auto t0=Clock::now();
         auto ir=pds::compile(p);
         const auto t1=Clock::now();
-        size_t steps=0,stored=0; double residual=0,checksum=0;
+        size_t steps=0,stored=0,solves=0; double residual=0,checksum=0;
         for(int i=0;i<repeats;++i) {
-            auto r=pds::execute(ir); steps+=r.accepted_steps;
+            auto r=pds::execute(ir); steps+=r.accepted_steps; solves+=r.linear_solves;
             stored=r.samples.size()*(sizeof(pds::Sample)+ir.unknowns.size()*sizeof(double));
             residual=std::max(residual,r.max_scaled_residual);
             for(double v:r.samples.back().values) checksum+=v;
@@ -31,7 +31,7 @@ int main(int argc,char** argv) {
             <<"\nwall_seconds="<<elapsed<<"\nsteps="<<steps<<"\nsteps_per_second="<<steps/elapsed
             <<"\nwall_per_simulated_second="<<elapsed/(p.profile.stop*repeats)
             <<"\nresult_payload_estimate_bytes="<<stored
-            <<"\nmax_scaled_residual="<<residual<<"\nchecksum="<<checksum<<'\n';
+            <<"\nlinear_solves="<<solves<<"\nmax_scaled_residual="<<residual<<"\nchecksum="<<checksum<<'\n';
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

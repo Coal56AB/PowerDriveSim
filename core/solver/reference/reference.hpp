@@ -16,12 +16,12 @@ public:
 };
 struct Sample { double time; std::vector<double> values; std::vector<bool> gates; };
 struct Result {
-    std::string project_id, backend="Reference CPU", precision="float64", engine="0.1.0";
+    std::string project_id, backend="Reference CPU", precision="float64", engine="0.2.0";
     Profile profile;
     std::vector<Channel> channels;
     std::vector<std::string> gate_objects;
     std::vector<Sample> samples;
-    size_t accepted_steps=0;
+    size_t accepted_steps=0, linear_solves=0, max_step_iterations=0;
     bool cancelled=false;
     double max_scaled_residual=0.0;
 };

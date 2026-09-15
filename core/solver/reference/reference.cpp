@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <deque>
+#include <set>
+#include <sstream>
 namespace pds {
 void StampSystem::add(int r,int c,double v) { if(r>=0 && c>=0 && v!=0.0) rows.at(r)[c]+=v; }
 void StampSystem::inject(int r,double v) { if(r>=0) rhs.at(r)+=v; }
@@ -50,7 +53,10 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
     Result result; result.project_id=ir.project_id; result.profile=ir.profile; result.channels=ir.unknowns;
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     const bool trapezoidal=ir.profile.method==Method::trapezoidal;
-    std::vector<bool> gates(ir.stamps.size());
+    std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size());
+    std::vector<size_t> diode_indices;
+    for(size_t i=0;i<ir.stamps.size();++i)
+        if(ir.stamps[i].component.kind==Kind::diode) diode_indices.push_back(i);
     for(size_t i=0;i<ir.stamps.size();++i) {
         states[i]=ir.stamps[i].component.initial;
         gates[i]=ir.stamps[i].component.closed;
@@ -67,34 +73,108 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
         return changed;
     };
     auto solve=[&](double t,double h,bool initialize) {
-        StampSystem system(ir.unknowns.size());
-        for(size_t i=0;i<ir.stamps.size();++i) {
-            const auto& s=ir.stamps[i]; const auto& c=s.component;
-            int p=s.positive,n=s.negative,b=s.branch;
-            if(b>=0) system.incidence(p,n,b);
-            switch(c.kind) {
-            case Kind::resistor: system.conductance(p,n,1/c.value); break;
-            case Kind::current: system.inject(p,-c.value); system.inject(n,c.value); break;
-            case Kind::voltage: system.add(b,p,1); system.add(b,n,-1); system.inject(b,c.value); break;
-            case Kind::capacitor:
-                system.add(b,p,1); system.add(b,n,-1);
-                if(!initialize) system.add(b,b,-h/(c.value*(trapezoidal?2:1)));
-                system.inject(b,states[i]+(!initialize && trapezoidal?h/(2*c.value)*history[i]:0)); break;
-            case Kind::inductor:
-                if(initialize) { system.add(b,b,1); system.inject(b,states[i]); }
-                else {
-                    const double factor=c.value/h*(trapezoidal?2:1);
-                    system.add(b,p,1); system.add(b,n,-1); system.add(b,b,-factor);
-                    system.inject(b,-factor*states[i]-(trapezoidal?history[i]:0));
+        auto build_system=[&](const std::vector<bool>& active) {
+            StampSystem system(ir.unknowns.size());
+            for(size_t i=0;i<ir.stamps.size();++i) {
+                const auto& s=ir.stamps[i]; const auto& c=s.component;
+                int p=s.positive,n=s.negative,b=s.branch;
+                if(b>=0) system.incidence(p,n,b);
+                switch(c.kind) {
+                case Kind::resistor: system.conductance(p,n,1/c.value); break;
+                case Kind::current: system.inject(p,-c.value); system.inject(n,c.value); break;
+                case Kind::voltage: system.add(b,p,1); system.add(b,n,-1); system.inject(b,c.value); break;
+                case Kind::capacitor:
+                    system.add(b,p,1); system.add(b,n,-1);
+                    if(!initialize) system.add(b,b,-h/(c.value*(trapezoidal?2:1)));
+                    system.inject(b,states[i]+(!initialize && trapezoidal?h/(2*c.value)*history[i]:0)); break;
+                case Kind::inductor:
+                    if(initialize) { system.add(b,b,1); system.inject(b,states[i]); }
+                    else {
+                        const double factor=c.value/h*(trapezoidal?2:1);
+                        system.add(b,p,1); system.add(b,n,-1); system.add(b,b,-factor);
+                        system.inject(b,-factor*states[i]-(trapezoidal?history[i]:0));
+                    }
+                    break;
+                case Kind::diode:
+                    if(active[i]) { system.add(b,p,1); system.add(b,n,-1); }
+                    else system.add(b,b,1);
+                    break;
+                case Kind::ideal_switch:
+                    if(gates[i]) { system.add(b,p,1); system.add(b,n,-1); }
+                    else system.add(b,b,1);
+                    break;
                 }
-                break;
-            case Kind::ideal_switch:
-                if(gates[i]) { system.add(b,p,1); system.add(b,n,-1); }
-                else system.add(b,b,1);
-                break;
+            }
+            return system;
+            };
+        std::deque<std::vector<bool>> pending;
+        if(!diode_indices.empty()) pending.push_back(diode_states);
+        std::set<std::vector<bool>> visited;
+        StampSystem system(ir.unknowns.size());
+        std::vector<double> values;
+        bool converged=false;
+        unsigned iterations=0;
+        std::string offending=ir.project_id, last_linear;
+        double residual_v=0, residual_i=0;
+        if(diode_indices.empty()) {
+            system=build_system(diode_states);
+            ++result.linear_solves;
+            values=system.solve(ir,t);
+            converged=true; iterations=1;
+        }
+        while(!pending.empty() && iterations<ir.profile.max_iterations) {
+            auto active=std::move(pending.front()); pending.pop_front();
+            if(!visited.insert(active).second) continue;
+            ++iterations;
+            system=build_system(active);
+            try {
+                ++result.linear_solves;
+                values=system.solve(ir,t);
+            } catch(const Diagnostic& d) {
+                if(d.code!="singular_matrix" || diode_indices.empty()) throw;
+                offending=d.object; last_linear=d.what();
+                // An invalid trial state can float a node even when another
+                // diode state is solvable. Explore neighboring active sets.
+                for(size_t index:diode_indices) {
+                    auto neighbor=active; neighbor[index]=!neighbor[index];
+                    if(!visited.count(neighbor) && pending.size()<ir.profile.max_iterations)
+                        pending.push_back(std::move(neighbor));
+                }
+                continue;
+            }
+            std::vector<size_t> violations;
+            residual_v=0; residual_i=0;
+            for(size_t index:diode_indices) {
+                const auto& stamp=ir.stamps[index];
+                const double up=stamp.positive<0?0:values[stamp.positive];
+                const double un=stamp.negative<0?0:values[stamp.negative];
+                const double v=up-un, current=values[stamp.branch];
+                const double vt=ir.profile.voltage_tolerance+ir.profile.relative_tolerance*std::max(std::abs(up),std::abs(un));
+                const double it=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);
+                residual_v=std::max(residual_v,std::max(0.0,v));
+                residual_i=std::max(residual_i,std::max(0.0,-current));
+                if((active[index] && current < -it) || (!active[index] && v > vt)) {
+                    violations.push_back(index); offending=stamp.component.id;
+                }
+            }
+            if(violations.empty()) { diode_states=std::move(active); converged=true; break; }
+            auto simultaneous=active;
+            for(size_t index:violations) simultaneous[index]=!simultaneous[index];
+            if(!visited.count(simultaneous)) pending.push_front(std::move(simultaneous));
+            for(size_t index:violations) {
+                auto neighbor=active; neighbor[index]=!neighbor[index];
+                if(!visited.count(neighbor) && pending.size()<ir.profile.max_iterations)
+                    pending.push_back(std::move(neighbor));
             }
         }
-        auto values=system.solve(ir,t);
+        result.max_step_iterations=std::max(result.max_step_iterations,static_cast<size_t>(iterations));
+        if(!converged) {
+            std::ostringstream message;
+            message << "Diode active-set solve failed after " << iterations
+                << " iterations; voltage residual=" << residual_v << " V; current residual=" << residual_i
+                << " A. Check ideal loops, initial states, tolerances and iteration budget. " << last_linear;
+            throw Diagnostic("nonlinear_convergence",offending,message.str(),t);
+        }
         for(size_t r=0;r<system.rows.size();++r) {
             double residual=-system.rhs[r],scale=std::abs(system.rhs[r]);
             for(const auto& [column,coefficient]:system.rows[r]) { residual+=coefficient*values[column]; scale+=std::abs(coefficient*values[column]); }

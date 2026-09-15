@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch };
+enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode };
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
 struct Node { std::string id, name; bool ground = false; };
@@ -21,9 +21,11 @@ Method parse_method(const std::string& name);
 struct Profile {
     double stop = 0.01, step = 0.00001;
     Method method = Method::backward_euler;
+    unsigned max_iterations = 64;
+    double voltage_tolerance = 1e-9, current_tolerance = 1e-12, relative_tolerance = 1e-9;
 };
 struct Project {
-    unsigned schema = 2;
+    unsigned schema = 3;
     std::string id, name;
     std::vector<Node> nodes;
     std::vector<Component> components;

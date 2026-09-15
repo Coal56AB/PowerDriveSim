@@ -27,7 +27,7 @@
 | 12: четыре bundled examples | examples | RC/RLC/2L/NPC assertions |
 | 13: CI | .github/workflows | unit/numerical/serialization/examples |
 
-Ближайший шаг M1: Trapezoidal с корректной инициализацией истории и событиями,
-затем ideal diode / active-set solve и физические проверки. GUI — после ядра
+Trapezoidal и ideal diode / active-set solve реализованы и проверены.
+Ближайший шаг M1 — типизированные порты, документ редактора и Qt 6 GUI поверх ядра
 этих операций; полный M1 нельзя объявлять по наличию solver или красивой оболочки.
 Остальные Milestone строго по полному ТЗ, без параллельного раннего Controller.

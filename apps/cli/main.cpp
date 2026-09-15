@@ -11,7 +11,7 @@ int main(int argc,char** argv) {
         auto result=pds::execute(pds::compile(project));
         if(argc==3) { std::ofstream out(argv[2]); pds::write_csv(result,out); }
         std::cout << "Reference CPU | float64 | " << pds::method_name(result.profile.method) << " | steps=" << result.accepted_steps
-                  << " | samples=" << result.samples.size() << " | residual=" << result.max_scaled_residual << '\n';
+                  << " | linear_solves=" << result.linear_solves << " | samples=" << result.samples.size() << " | residual=" << result.max_scaled_residual << '\n';
         return 0;
     } catch(const pds::Diagnostic& e) {
         std::cerr << e.code << " object=" << e.object << " time=" << e.time << ": " << e.what() << '\n'; return 1;

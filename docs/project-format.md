@@ -1,7 +1,7 @@
-# PowerDriveSim project format 2
+# PowerDriveSim project format 3
 
-UTF-8, текстовые записи, десятичные числа SI с точностью double.
-Первая строка: PowerDriveSim 2. Комментарии начинаются с # в первой колонке.
+UTF-8 (BOM допустим), LF или CRLF, текстовые записи, десятичные числа SI с точностью double.
+Первая строка: PowerDriveSim 3. Комментарии начинаются с # в первой колонке.
 Строки в кавычках используют escaping std::quoted: \" и \\.
 Идентификаторы — 36-символьные UUID в нижнем регистре; уникальны в проекте.
 Геометрия не задаёт электрическое соединение. Связность задаётся ссылками на nodes.
@@ -9,14 +9,15 @@ UTF-8, текстовые записи, десятичные числа SI с т
 Обязательные одиночные записи:
 - project "uuid" "name"
 - profile stop_seconds step_seconds integration_method
+- nonlinear max_iterations voltage_absolute_tolerance current_absolute_tolerance relative_tolerance
 
 Повторяющиеся записи:
 - node "uuid" "name" ground_boolean
 - component "uuid" "name" kind "positive_node_uuid" "negative_node_uuid" value initial x y closed_boolean
 - event time_seconds "switch_uuid" closed_boolean
 
-integration_method: BackwardEuler или Trapezoidal. kind: R, L, C, V, I, S. Boolean — 0 или 1.
-R: value в ohm; L в H; C в F; V в V; I в A. У S value зарезервирован.
+integration_method: BackwardEuler или Trapezoidal. kind: R, L, C, V, I, S, D. Boolean — 0 или 1.
+R: value в ohm; L в H; C в F; V в V; I в A. У S value зарезервирован. У D value=0, initial=0, closed=0; positive — анод.
 initial задаёт uC в V или iL в A; для остальных зарезервирован.
 closed используется только у S. x/y — сохранённые координаты будущего редактора.
 Дублирующие gates одного switch/time отклоняются, даже с одинаковым значением.
@@ -27,7 +28,7 @@ stop и step положительные конечные числа. Интер�
 Например x-scope в примерах — сохранённое пожелание выбора канала;
 реального Scope в Milestone 0 ещё нет.
 Неизвестные основные записи, лишние поля, неверные boolean и версии
-отклоняются. Версия 1 читается и мигрирует в v2: отсутствующий method становится BackwardEuler; геометрия, UUID и extensions сохраняются. Запись выполняется только в v2.
+отклоняются. Миграции последовательны: v1→v2 добавляет BackwardEuler, v2→v3 — default nonlinear profile (64, 1e-9 V, 1e-12 A, 1e-9). Геометрия, UUID и extensions сохраняются. Запись только v3. Старые схемы не могут содержать D или nonlinear-записи.
 Не комментируйте новую семантику только через x-: новый физический смысл
 требует новой версии и миграционных тестов.
 
@@ -36,3 +37,8 @@ CSV содержит metadata-комментарий, время, именова
 Для полного воспроизведения сохраните исходный .pds и версию ядра вместе с CSV.
 Потоки должны использовать classic locale (стандартный CLI не меняет locale).
 Сохранение на диск с atomic replace и autosave относится к редактору Milestone 1.
+max_iterations: 1..1024. Absolute tolerances — положительные конечные числа;
+relative tolerance — конечное неотрицательное. Эти значения управляют
+проверкой complementarity, не добавляют электрическую проводимость.
+Имена и UUID в record format должны быть однострочными.
+Writer явно задаёт формат double и boolean независимо от stream flags.

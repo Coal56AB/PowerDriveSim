@@ -147,11 +147,102 @@ static void trapezoidal_tests() {
         near(value(r,s,6),expected,0.00002,"Gate edge C continuity and derivative restart");
     }
 }
+
+static Project freewheel(Method method) {
+    auto p=base(); p.nodes.push_back({id(5),"switch_output",false});
+    p.profile={.015,.00001,method};
+    p.components={part(10,Kind::voltage,3,2,10),part(11,Kind::ideal_switch,3,5,0),
+        part(12,Kind::resistor,5,4,10),part(13,Kind::inductor,4,2,.1),
+        part(14,Kind::diode,2,5,0)};
+    p.components[1].closed=true; p.events={{.0053,id(11),false}};
+    return p;
+}
+static void diode_tests() {
+    for(auto method:{Method::backward_euler,Method::trapezoidal}) {
+        auto p=base(); p.profile.method=method;
+        p.components={part(10,Kind::voltage,3,2,5),part(11,Kind::diode,3,4,0),
+            part(12,Kind::resistor,4,2,10)};
+        auto r=execute(compile(p));
+        near(value(r,r.samples.front(),4),5,1e-12,"Forward diode voltage");
+        near(value(r,r.samples.front(),11),.5,1e-12,"Forward diode current");
+        require(r.max_step_iterations>=2,"Active set finds forward diode state");
+        p.components[0].value=-5; r=execute(compile(p));
+        near(value(r,r.samples.back(),4),0,1e-12,"Reverse diode voltage");
+        near(value(r,r.samples.back(),11),0,1e-12,"Reverse diode current");
+        // A current-driven diode has a singular off trial, but a valid on state.
+        p=base(); p.nodes.pop_back(); p.profile.method=method;
+        p.components={part(10,Kind::current,2,3,2),part(11,Kind::diode,3,2,0)};
+        r=execute(compile(p));
+        near(value(r,r.samples.front(),3),0,1e-12,"Current driven diode voltage");
+        near(value(r,r.samples.front(),11),2,1e-12,"Current driven diode current");
+        // RC charging through an ideal diode: same independent analytic curve.
+        p=rc(); p.profile.method=method; p.nodes.push_back({id(5),"after_diode",false});
+        p.components[1].positive=id(5); p.components.push_back(part(15,Kind::diode,3,5,0));
+        r=execute(compile(p));
+        for(const auto& sample:r.samples)
+            near(value(r,sample,4),1-std::exp(-sample.time/.001),method==Method::trapezoidal?1e-7:.0002,"Diode RC charging");
+        p.components[0].value=0; p.components[2].initial=2;
+        r=execute(compile(p));
+        for(const auto& sample:r.samples) near(value(r,sample,4),2,1e-12,"Reverse diode holds capacitor charge");
+        // Bridge is an ordinary atom graph, including floating trial states.
+        for(double supply:{5.0,-5.0}) {
+            p=base(); p.profile.method=method;
+            p.nodes.push_back({id(5),"bridge_minus",false});
+            p.components={part(10,Kind::voltage,3,2,supply),part(11,Kind::resistor,4,5,10),
+                part(12,Kind::diode,3,4,0),part(13,Kind::diode,2,4,0),
+                part(14,Kind::diode,5,3,0),part(15,Kind::diode,5,2,0)};
+            r=execute(compile(p));
+            const auto& sample=r.samples.back();
+            near(value(r,sample,4)-value(r,sample,5),5,1e-12,"Atomic bridge rectifies both polarities");
+            for(unsigned n:{12,13,14,15}) require(value(r,sample,n)>=-1e-12,"Diode current is nonnegative");
+            const double source_power=supply*value(r,sample,10);
+            near(source_power+2.5,0,1e-12,"Bridge energy / source power sign");
+            std::reverse(p.components.begin(),p.components.end());
+            auto permuted=execute(compile(p));
+            require(permuted.samples.back().values==sample.values,"Diode ordering deterministic");
+        }
+        p=freewheel(method); r=execute(compile(p));
+        const double iedge=1-std::exp(-.0053/.01);
+        bool saw_edge=false;
+        for(const auto& sample:r.samples) {
+            const double expected=sample.time<=.0053?1-std::exp(-sample.time/.01):iedge*std::exp(-(sample.time-.0053)/.01);
+            near(value(r,sample,13),expected,method==Method::trapezoidal?1e-7:.0002,"Freewheel inductor current");
+            if(sample.time==.0053) saw_edge=true;
+            if(sample.time>=.0053) {
+                near(value(r,sample,5),0,1e-12,"Freewheel diode clamps voltage");
+                near(value(r,sample,14),value(r,sample,13),1e-12,"Freewheel diode carries inductor current");
+            }
+        }
+        require(saw_edge,"Freewheel gate edge exact");
+        require(r.max_scaled_residual<1e-12,"Diode KCL/KVL residual");
+    }
+    auto p=base();
+    p.components={part(10,Kind::voltage,3,2,5),part(11,Kind::diode,3,4,0),part(12,Kind::resistor,4,2,10)};
+    p.profile.max_iterations=1;
+    error("nonlinear_convergence",[&]{execute(compile(p));});
+    p.profile.max_iterations=0;
+    error("invalid_profile",[&]{compile(p);});
+    p.profile.max_iterations=64; p.profile.voltage_tolerance=-1;
+    error("invalid_profile",[&]{compile(p);});
+    p.profile.voltage_tolerance=1e-9; p.components[1].value=1;
+    error("invalid_parameter",[&]{compile(p);});
+    p=freewheel(Method::trapezoidal);
+    p.profile.max_iterations=48; p.profile.current_tolerance=1e-11;
+    std::istringstream encoded(saved(p)); const auto q=read_project(encoded);
+    require(saved(q)==saved(p),"Diode profile and model round trip");
+    auto a=execute(compile(p)),b=execute(compile(q));
+    require(a.samples.back().values==b.samples.back().values,"Diode saved simulation repeatability");
+}
+
 static void serialization() {
     auto p=switching(); p.name="Unicode схема / quoted \"name\""; p.components[0].x=123.5;
     p.extensions={"x-test future_extension {keep this exactly}"};
     auto text=saved(p); std::istringstream in(text); auto q=read_project(in);
     require(saved(q)==text,"Lossless save/load including UUID, geometry, events, unknown extension");
+    std::string windows="\xef\xbb\xbf";
+    for(char c:text) { if(c=='\n') windows+='\r'; windows+=c; }
+    std::istringstream windows_in(windows);
+    require(saved(read_project(windows_in))==text,"UTF-8 BOM and CRLF round trip");
     auto a=execute(compile(p)),b=execute(compile(q));
     require(a.samples.back().values==b.samples.back().values,"Semantics round trip");
     error("schema_version",[]{std::istringstream s("PowerDriveSim 99\n"); read_project(s);});
@@ -166,15 +257,29 @@ static void serialization() {
 
     // CTest uses build as cwd, so migration also has a self-contained fixture.
     std::string old=text; old.replace(0,15,"PowerDriveSim 1");
+    const auto nonlinear_at=old.find("nonlinear ");
+    old.erase(nonlinear_at,old.find('\n',nonlinear_at)-nonlinear_at+1);
     const auto method_at=old.find(" BackwardEuler");
     require(method_at!=std::string::npos,"Fixture contains v2 method");
     old.erase(method_at,14);
     std::istringstream old_in(old); auto migrated=read_project(old_in);
-    require(migrated.schema==2 && migrated.profile.method==Method::backward_euler,"Explicit v1 migration");
+    require(migrated.schema==3 && migrated.profile.method==Method::backward_euler,"Explicit v1 migration");
     require(migrated.extensions==p.extensions,"Migration preserves unknown extensions");
+    std::string v2=text; v2.replace(0,15,"PowerDriveSim 2");
+    const auto v2_nonlinear=v2.find("nonlinear ");
+    v2.erase(v2_nonlinear,v2.find('\n',v2_nonlinear)-v2_nonlinear+1);
+    std::istringstream v2_in(v2); const auto migrated_v2=read_project(v2_in);
+    require(migrated_v2.schema==3 && migrated_v2.profile.max_iterations==64,"Explicit v2 migration");
+    require(saved(migrated_v2)==text,"Migration v2 preserves entire semantics");
+    error("parse_error",[]{std::istringstream s("PowerDriveSim 3\nproject id name\nprofile 1 .1 BackwardEuler\n"); read_project(s);});
     error("invalid_method",[]{parse_method("magic");});
     p.extensions={"x-invalid\nnode"};
     error("extension_error",[&]{saved(p);});
+    p=switching(); p.name="invalid\nname";
+    error("invalid_text",[&]{saved(p);});
+    p=switching();
+    std::ostringstream flags; flags << std::boolalpha << std::fixed;
+    write_project(p,flags); require(flags.str()==saved(p),"Format independent of numeric stream flags");
 }
 static void topology() {
     auto p=rc(); p.nodes[0].ground=false;
@@ -229,7 +334,7 @@ static void regression() {
     near(value(a,a.samples.back(),4),0,1e-12,"Stop-time events");
 }
 static void examples(const std::string& root) {
-    for(const auto& name:{"rc","rlc","switch","rc-trapezoidal"}) {
+    for(const auto& name:{"rc","rlc","switch","rc-trapezoidal","diode-freewheel"}) {
         std::ifstream in(root+"/examples/"+name+".pds"); auto p=read_project(in); auto r=execute(compile(p));
         require(!r.samples.empty() && r.samples.back().time==p.profile.stop,"Example completes");
         if(std::string(name)=="rc" || std::string(name)=="rc-trapezoidal") near(value(r,r.samples.back(),4),1-std::exp(-5),0.0002,"RC example");
@@ -237,6 +342,7 @@ static void examples(const std::string& root) {
             double t=p.profile.stop;
             near(value(r,r.samples.back(),4),1-std::exp(-100*t)*(std::cos(300*t)+std::sin(300*t)/3),0.001,"RLC example");
         }
+        if(std::string(name)=="diode-freewheel") near(value(r,r.samples.back(),13),(1-std::exp(-.53))*std::exp(-.97),1e-7,"Freewheel example");
         if(std::string(name)=="switch") near(value(r,r.samples.back(),4),0,1e-12,"Switch example");
     }
 }
@@ -245,6 +351,7 @@ int main(int argc,char** argv) {
         std::string group=argc>1?argv[1]:"all",root=argc>2?argv[2]:".";
         if(group=="unit" || group=="all") unit();
         if(group=="numerical" || group=="all") { numerical(); trapezoidal_tests(); }
+        if(group=="diode" || group=="all") diode_tests();
         if(group=="serialization" || group=="all") serialization();
         if(group=="topology" || group=="all") topology();
         if(group=="regression" || group=="all") regression();
