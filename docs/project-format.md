@@ -1,21 +1,21 @@
-# PowerDriveSim project format 1
+# PowerDriveSim project format 2
 
 UTF-8, текстовые записи, десятичные числа SI с точностью double.
-Первая строка: PowerDriveSim 1. Комментарии начинаются с # в первой колонке.
+Первая строка: PowerDriveSim 2. Комментарии начинаются с # в первой колонке.
 Строки в кавычках используют escaping std::quoted: \" и \\.
 Идентификаторы — 36-символьные UUID в нижнем регистре; уникальны в проекте.
 Геометрия не задаёт электрическое соединение. Связность задаётся ссылками на nodes.
 
 Обязательные одиночные записи:
 - project "uuid" "name"
-- profile stop_seconds step_seconds
+- profile stop_seconds step_seconds integration_method
 
 Повторяющиеся записи:
 - node "uuid" "name" ground_boolean
 - component "uuid" "name" kind "positive_node_uuid" "negative_node_uuid" value initial x y closed_boolean
 - event time_seconds "switch_uuid" closed_boolean
 
-kind: R, L, C, V, I, S. Boolean — 0 или 1.
+integration_method: BackwardEuler или Trapezoidal. kind: R, L, C, V, I, S. Boolean — 0 или 1.
 R: value в ohm; L в H; C в F; V в V; I в A. У S value зарезервирован.
 initial задаёт uC в V или iL в A; для остальных зарезервирован.
 closed используется только у S. x/y — сохранённые координаты будущего редактора.
@@ -27,7 +27,7 @@ stop и step положительные конечные числа. Интер�
 Например x-scope в примерах — сохранённое пожелание выбора канала;
 реального Scope в Milestone 0 ещё нет.
 Неизвестные основные записи, лишние поля, неверные boolean и версии
-отклоняются. Версия 1 — первая публичная; миграций старых форматов пока нет.
+отклоняются. Версия 1 читается и мигрирует в v2: отсутствующий method становится BackwardEuler; геометрия, UUID и extensions сохраняются. Запись выполняется только в v2.
 Не комментируйте новую семантику только через x-: новый физический смысл
 требует новой версии и миграционных тестов.
 

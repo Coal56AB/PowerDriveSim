@@ -11,8 +11,8 @@ Project read_project(std::istream& in) {
     std::istringstream header(line);
     if(!(header >> tag >> p.schema)) throw Diagnostic("parse_error","","Malformed header");
     header >> std::ws;
-    if(!header.eof() || tag!="PowerDriveSim" || p.schema!=1)
-        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1");
+    if(!header.eof() || tag!="PowerDriveSim" || (p.schema!=1 && p.schema!=2))
+        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1 or 2");
     bool identity=false, profile=false;
     size_t number=1;
     while(std::getline(in,line)) {
@@ -24,7 +24,13 @@ Project read_project(std::istream& in) {
         if(tag=="project" && !identity) {
             row >> std::quoted(p.id) >> std::quoted(p.name); identity=true;
         } else if(tag=="profile" && !profile) {
-            row >> p.profile.stop >> p.profile.step; profile=true;
+            row >> p.profile.stop >> p.profile.step;
+            if(p.schema>=2) {
+                std::string method;
+                if(!(row >> method)) throw Diagnostic("parse_error",std::to_string(number),"Missing integration method");
+                p.profile.method=parse_method(method);
+            }
+            profile=true;
         } else if(tag=="node") {
             Node n; int g=-1;
             row >> std::quoted(n.id) >> std::quoted(n.name) >> g;
@@ -48,12 +54,13 @@ Project read_project(std::istream& in) {
         if(!row.eof()) throw Diagnostic("parse_error",std::to_string(number),"Trailing fields");
     }
     if(!identity || !profile || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
+    p.schema=2; // Explicit v1 -> v2 migration: v1 always used Backward Euler.
     return p;
 }
 void write_project(const Project& p, std::ostream& out) {
-    if(p.schema!=1) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
-    out << std::setprecision(17) << "PowerDriveSim 1\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
-        << "\nprofile " << p.profile.stop << ' ' << p.profile.step << '\n';
+    if(p.schema!=2) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
+    out << std::setprecision(17) << "PowerDriveSim 2\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
+        << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     for(const auto& n:p.nodes) out << "node " << std::quoted(n.id) << ' ' << std::quoted(n.name) << ' ' << n.ground << '\n';
     for(const auto& c:p.components) out << "component " << std::quoted(c.id) << ' ' << std::quoted(c.name) << ' '
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '

@@ -18,7 +18,7 @@ Controller/ADC/MCU/PWM/C++ runtime только в Milestone 6; инвертор
 
 ## Текущий этап
 Milestone 0 выполнен по четырём критериям приёмки. Следующий активный этап — Milestone 1.
-Точка работы: проверен core/solver/reference/reference.cpp с Backward Euler; следующий шаг — Trapezoidal и diode в этом модуле.
+Точка работы: Reference CPU поддерживает Backward Euler и Trapezoidal. Следующий модуль — ideal diode и active-set iteration.
 
 ## Выполнено и проверено
 Сохранены полные исходные документы. Инициализирован main и правильный origin.
@@ -27,12 +27,16 @@ RC: max error 0.000183863 V < 0.0002 V; RLC: 0.00038693 V < 0.001 V.
 Идеальные ключи, atomic/off-grid events, повторный запуск IR, перестановка объектов проверены.
 Backward Euler: первый порядок, RC initial state, пассивная RLC energy и residual проверены.
 Три CLI examples завершаются; RLC benchmark 200000 steps, 205028 steps/s (локальный baseline).
+Trapezoidal: RC error 3.0657e-6 V (h=10 μs), RLC error 3.89624e-6 V (h=20 μs).
+Второй порядок, сохранение энергии идеальной LC и история на gate edges проверены.
+Формат v2 сохраняет integration method; миграция v1→v2 сохраняет BE и extensions.
+Четвёртый пример rc-trapezoidal.pds проходит CLI и example tests.
 Подробный отчёт: docs/verification-m0.md. Полный GUI Milestone 1 ещё не реализован.
 
 ## Следующие действия
-1. Реализовать Trapezoidal с начальными производными и обновлением истории на gate edges
-2. Добавить ideal diode / active-set solve с тестами forward/reverse, rectification и convergence
-3. Расширить versioned schema явным integration method и nonlinear profile с миграцией v1
+1. Реализовать ideal diode и active-set iteration с контролируемой диагностикой несходимости
+2. Проверить forward/reverse diode, RC charging и bridge rectification для обоих методов
+3. Добавить nonlinear profile и миграционные тесты, затем desktop/editor и типизированный граф
 4. Далее desktop/editor, иерархия и атомарные 2L VSI/3L NPC
 
 ## Сборка и запуск
@@ -60,10 +64,10 @@ tests — проверки; benchmarks — измерения; examples — пр
 GPU не реализуется раньше Milestone 4.
 
 ## Известные проблемы и ограничения
-Desktop, иерархия, Trapezoidal и diode пока отсутствуют. Сложные идеальные DAE loops диагностируются; импульсы не поддержаны.
+Desktop, иерархия и diode пока отсутствуют. Сложные идеальные DAE loops диагностируются; импульсы не поддержаны.
 GitHub доступен вне песочницы. Локальная среда требовала расширенного запуска из-за setup refresh error.
 
 ## Git
 Основная ветка main. Прямые осмысленные коммиты на русском; без Conventional Commits.
 После законченного блока обновлять этот файл, проверять diff/tests, commit и push origin main.
-Текущий готовый шаг для публикации: начальный прототип с принятым Milestone 0. Статус публикации проверять через git log и origin/main.
+Опубликован ee8b421 — «Добавлен начальный каркас PowerDriveSim». Следующий готовый шаг: Trapezoidal и миграция формата v1→v2. Проверять git log и origin/main.

@@ -1,6 +1,17 @@
 #include "core/model/model.hpp"
 #include <cctype>
 namespace pds {
+std::string method_name(Method method) {
+    switch(method) {
+    case Method::backward_euler: return "BackwardEuler";
+    case Method::trapezoidal: return "Trapezoidal";
+    }
+    throw Diagnostic("invalid_method","","Unsupported integration method");
+}
+Method parse_method(const std::string& name) {
+    for(auto m:{Method::backward_euler,Method::trapezoidal}) if(method_name(m)==name) return m;
+    throw Diagnostic("invalid_method",name,"Unsupported integration method");
+}
 std::string kind_name(Kind k) {
     switch(k) {
     case Kind::resistor: return "R";

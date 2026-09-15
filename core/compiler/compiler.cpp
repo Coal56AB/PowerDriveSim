@@ -5,7 +5,7 @@
 #include <set>
 namespace pds {
 SimulationIR compile(const Project& p) {
-    if(p.schema!=1) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+    if(p.schema!=2) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -13,6 +13,7 @@ SimulationIR compile(const Project& p) {
     check_id(p.id);
     if(!std::isfinite(p.profile.stop) || !std::isfinite(p.profile.step) || p.profile.stop<=0 || p.profile.step<=0)
         throw Diagnostic("invalid_profile",p.id,"Stop time and step must be positive finite SI values");
+    (void)method_name(p.profile.method);
     SimulationIR ir; ir.project_id=p.id; ir.profile=p.profile;
     auto nodes=p.nodes; auto components=p.components;
     std::sort(nodes.begin(),nodes.end(),[](const Node& a,const Node& b){return a.id<b.id;});

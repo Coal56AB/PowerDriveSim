@@ -15,3 +15,5 @@
 ctest группа examples проверяет выполнение и ожидаемые метрики;
 numerical проверяет всю аналитическую кривую, convergence и энергию.
 Примеры 2L и NPC появятся вместе с атомарной иерархией в Milestone 1.
+- rc-trapezoidal.pds: та же RC-цепь, Trapezoidal h=10 μs.
+  Максимальная ошибка 3.0657 μV при допуске 4 μV; method хранится в schema v2.

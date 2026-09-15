@@ -9,7 +9,7 @@ static std::string quote(const std::string& s) {
 }
 void write_csv(const Result& r,std::ostream& out) {
     out << "# PowerDriveSim " << r.engine << "; project=" << r.project_id << "; backend=" << r.backend
-        << "; precision=" << r.precision << "; method=BackwardEuler; step=" << std::setprecision(17) << r.profile.step
+        << "; precision=" << r.precision << "; method=" << method_name(r.profile.method) << "; step=" << std::setprecision(17) << r.profile.step
         << "; stop=" << r.profile.stop << "; cancelled=" << r.cancelled << "\ntime[s]";
     for(const auto& c:r.channels) out << ',' << quote(c.name+"["+c.unit+"]{"+c.object+"}");
     for(const auto& id:r.gate_objects) out << ',' << quote("gate{"+id+"}[bool]");

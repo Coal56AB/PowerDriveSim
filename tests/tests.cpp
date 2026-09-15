@@ -110,6 +110,43 @@ static void numerical() {
     }
     require(r.max_scaled_residual<1e-12,"KCL/KVL residual");
 }
+static void trapezoidal_tests() {
+    auto p=rc(); p.profile.method=Method::trapezoidal; p.profile.step=0.00001;
+    const double e=rc_error(p); p.profile.step*=2;
+    const double coarse=rc_error(p);
+    require(e<0.000004,"Trapezoidal RC 4 uV tolerance");
+    require(coarse/e>3.95 && coarse/e<4.05,"Trapezoidal second-order convergence");
+    p=rlc(); p.profile.method=Method::trapezoidal; p.profile.step=0.00002;
+    auto r=execute(compile(p)); double max_error=0;
+    for(const auto& sample:r.samples) {
+        double t=sample.time;
+        double expected=1-std::exp(-100*t)*(std::cos(300*t)+std::sin(300*t)/3);
+        max_error=std::max(max_error,std::abs(value(r,sample,4)-expected));
+    }
+    require(max_error<0.00001,"Trapezoidal RLC 10 uV tolerance");
+    std::cout<<"Trapezoidal RC max_abs_error="<<e<<" V; RLC max_abs_error="<<max_error<<" V\n";
+    // Lossless LC, no source: trapezoidal preserves quadratic stored energy.
+    p=base(); p.nodes.pop_back(); p.profile={0.1,0.001,Method::trapezoidal};
+    p.components={part(10,Kind::capacitor,3,2,.001,1),part(11,Kind::inductor,3,2,.01)};
+    r=execute(compile(p));
+    for(const auto& s:r.samples) {
+        double v=value(r,s,3),i=value(r,s,11);
+        near(.5*.001*v*v+.5*.01*i*i,.0005,1e-14,"Trapezoidal lossless LC energy");
+    }
+    // A gate edge changes the RC driving voltage; the post-event capacitor
+    // current must initialize the next trapezoidal interval.
+    p=switching(); p.events.resize(2);
+    p.profile={.01,.00001,Method::trapezoidal};
+    p.nodes.push_back({id(6),"capacitor",false});
+    p.components.push_back(part(20,Kind::resistor,4,6,1000));
+    p.components.push_back(part(21,Kind::capacitor,6,2,1e-6));
+    r=execute(compile(p));
+    const double at_edge=5*(1-std::exp(-.0043/.001));
+    for(const auto& s:r.samples) {
+        double expected=s.time<=.0043?5*(1-std::exp(-s.time/.001)):10+(at_edge-10)*std::exp(-(s.time-.0043)/.001);
+        near(value(r,s,6),expected,0.00002,"Gate edge C continuity and derivative restart");
+    }
+}
 static void serialization() {
     auto p=switching(); p.name="Unicode схема / quoted \"name\""; p.components[0].x=123.5;
     p.extensions={"x-test future_extension {keep this exactly}"};
@@ -123,6 +160,19 @@ static void serialization() {
     error("parse_error",[]{std::istringstream s("PowerDriveSim 1\nunknown 5\n"); read_project(s);});
     error("parse_error",[&]{std::istringstream s(text+"profile 1 0.1\n"); read_project(s);});
     error("parse_error",[&]{std::istringstream s(text+"event 0.01 \"id\" 2\n"); read_project(s);});
+    p.profile.method=Method::trapezoidal;
+    auto method_text=saved(p); std::istringstream method_in(method_text);
+    require(read_project(method_in).profile.method==Method::trapezoidal,"Method round trip");
+
+    // CTest uses build as cwd, so migration also has a self-contained fixture.
+    std::string old=text; old.replace(0,15,"PowerDriveSim 1");
+    const auto method_at=old.find(" BackwardEuler");
+    require(method_at!=std::string::npos,"Fixture contains v2 method");
+    old.erase(method_at,14);
+    std::istringstream old_in(old); auto migrated=read_project(old_in);
+    require(migrated.schema==2 && migrated.profile.method==Method::backward_euler,"Explicit v1 migration");
+    require(migrated.extensions==p.extensions,"Migration preserves unknown extensions");
+    error("invalid_method",[]{parse_method("magic");});
     p.extensions={"x-invalid\nnode"};
     error("extension_error",[&]{saved(p);});
 }
@@ -147,6 +197,10 @@ static void topology() {
     error("conflicting_gate_events",[&]{compile(p);});
     p=switching(); p.events[0].time=-1;
     error("invalid_event",[&]{compile(p);});
+    p=switching(); p.events[0].time=std::numeric_limits<double>::quiet_NaN();
+    error("invalid_event",[&]{compile(p);});
+    p=rc(); p.profile.method=static_cast<Method>(99);
+    error("invalid_method",[&]{compile(p);});
     p=base(); p.nodes.pop_back(); p.components={part(10,Kind::current,2,3,1)};
     error("floating_node",[&]{compile(p);});
     p=base(); p.nodes.pop_back(); p.components={part(10,Kind::ideal_switch,2,3,0)};
@@ -175,10 +229,10 @@ static void regression() {
     near(value(a,a.samples.back(),4),0,1e-12,"Stop-time events");
 }
 static void examples(const std::string& root) {
-    for(const auto& name:{"rc","rlc","switch"}) {
+    for(const auto& name:{"rc","rlc","switch","rc-trapezoidal"}) {
         std::ifstream in(root+"/examples/"+name+".pds"); auto p=read_project(in); auto r=execute(compile(p));
         require(!r.samples.empty() && r.samples.back().time==p.profile.stop,"Example completes");
-        if(std::string(name)=="rc") near(value(r,r.samples.back(),4),1-std::exp(-5),0.0002,"RC example");
+        if(std::string(name)=="rc" || std::string(name)=="rc-trapezoidal") near(value(r,r.samples.back(),4),1-std::exp(-5),0.0002,"RC example");
         if(std::string(name)=="rlc") {
             double t=p.profile.stop;
             near(value(r,r.samples.back(),4),1-std::exp(-100*t)*(std::cos(300*t)+std::sin(300*t)/3),0.001,"RLC example");
@@ -190,7 +244,7 @@ int main(int argc,char** argv) {
     try {
         std::string group=argc>1?argv[1]:"all",root=argc>2?argv[2]:".";
         if(group=="unit" || group=="all") unit();
-        if(group=="numerical" || group=="all") numerical();
+        if(group=="numerical" || group=="all") { numerical(); trapezoidal_tests(); }
         if(group=="serialization" || group=="all") serialization();
         if(group=="topology" || group=="all") topology();
         if(group=="regression" || group=="all") regression();

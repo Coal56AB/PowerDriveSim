@@ -15,9 +15,15 @@ struct Component {
     bool closed = false;
 };
 struct GateEvent { double time; std::string target; bool closed; };
-struct Profile { double stop = 0.01, step = 0.00001; };
+enum class Method { backward_euler, trapezoidal };
+std::string method_name(Method method);
+Method parse_method(const std::string& name);
+struct Profile {
+    double stop = 0.01, step = 0.00001;
+    Method method = Method::backward_euler;
+};
 struct Project {
-    unsigned schema = 1;
+    unsigned schema = 2;
     std::string id, name;
     std::vector<Node> nodes;
     std::vector<Component> components;

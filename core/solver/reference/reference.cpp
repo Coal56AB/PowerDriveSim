@@ -46,8 +46,10 @@ std::vector<double> StampSystem::solve(const SimulationIR& ir,double time) const
 Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
     if(ir.unknowns.empty() || !std::isfinite(ir.profile.step) || ir.profile.step<=0 || !std::isfinite(ir.profile.stop) || ir.profile.stop<=0)
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
+    (void)method_name(ir.profile.method);
     Result result; result.project_id=ir.project_id; result.profile=ir.profile; result.channels=ir.unknowns;
-    std::vector<double> states(ir.stamps.size());
+    std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
+    const bool trapezoidal=ir.profile.method==Method::trapezoidal;
     std::vector<bool> gates(ir.stamps.size());
     for(size_t i=0;i<ir.stamps.size();++i) {
         states[i]=ir.stamps[i].component.initial;
@@ -76,11 +78,15 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
             case Kind::voltage: system.add(b,p,1); system.add(b,n,-1); system.inject(b,c.value); break;
             case Kind::capacitor:
                 system.add(b,p,1); system.add(b,n,-1);
-                if(!initialize) system.add(b,b,-h/c.value);
-                system.inject(b,states[i]); break;
+                if(!initialize) system.add(b,b,-h/(c.value*(trapezoidal?2:1)));
+                system.inject(b,states[i]+(!initialize && trapezoidal?h/(2*c.value)*history[i]:0)); break;
             case Kind::inductor:
                 if(initialize) { system.add(b,b,1); system.inject(b,states[i]); }
-                else { system.add(b,p,1); system.add(b,n,-1); system.add(b,b,-c.value/h); system.inject(b,-c.value/h*states[i]); }
+                else {
+                    const double factor=c.value/h*(trapezoidal?2:1);
+                    system.add(b,p,1); system.add(b,n,-1); system.add(b,b,-factor);
+                    system.inject(b,-factor*states[i]-(trapezoidal?history[i]:0));
+                }
                 break;
             case Kind::ideal_switch:
                 if(gates[i]) { system.add(b,p,1); system.add(b,n,-1); }
@@ -98,8 +104,9 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
         }
         for(size_t i=0;i<ir.stamps.size();++i) {
             const auto& s=ir.stamps[i];
-            if(s.component.kind==Kind::capacitor) states[i]=(s.positive<0?0:values[s.positive])-(s.negative<0?0:values[s.negative]);
-            if(s.component.kind==Kind::inductor) states[i]=values[s.branch];
+            const double voltage=(s.positive<0?0:values[s.positive])-(s.negative<0?0:values[s.negative]);
+            if(s.component.kind==Kind::capacitor) { states[i]=voltage; history[i]=values[s.branch]; }
+            if(s.component.kind==Kind::inductor) { states[i]=values[s.branch]; history[i]=voltage; }
         }
         return values;
     };
