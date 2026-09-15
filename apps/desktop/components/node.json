@@ -1,0 +1,19 @@
+{
+  "type": "node",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    }
+  ],
+  "palette": {
+    "id": 101,
+    "label": "node",
+    "category": null,
+    "short": "node",
+    "fixed": false,
+    "hidden": true
+  }
+}

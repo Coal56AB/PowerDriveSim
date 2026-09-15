@@ -21,6 +21,11 @@ int main(int argc,char** argv) {
     try {
         Project p; p.id=new_uuid(); p.name="New circuit"; p.wired=true; p.profile={.005,1e-6};
         Document doc(p);
+        doc.set_view("",.001,.005,.002,.004);
+        check(!doc.can_undo(),"Viewing results does not create model history");
+        auto visual=doc.project();visual.scope_begin=.003;check(same_simulation(visual,doc.project()),"View does not invalidate numerical results");
+        visual.scope_enabled=true;visual.scope_channels={"view-only"};check(same_simulation(visual,doc.project()),"Recording preferences do not invalidate existing results");
+        doc.apply("No change",[](Project&){});check(!doc.can_undo(),"Empty transaction does not consume undo history");
         const auto g=doc.add_node(true,0,240);
         const auto v=doc.add_component(Kind::voltage,0,0);
         const auto r=doc.add_component(Kind::resistor,220,0);
@@ -50,6 +55,11 @@ int main(int argc,char** argv) {
         check(resolved.project.events.size()==2 && resolved.project.events[0].target==sw,"Pattern becomes gate events");
         auto pattern2=doc.add_pattern(400,400);
         error("multiple_gate_drivers",[&]{doc.connect({pattern2,"out"},{sw,"gate"});});
+        const auto old_driver=save(doc.project());
+        doc.connect_anchors({{pattern2,"out"}},{{sw,"gate"}},{},"",true);
+        check(doc.project().events.size()==2,"Replacing driver preserves the old source's own events");
+        check(resolve_connections(doc.project()).project.events.empty(),"Only the connected source drives the switch");
+        doc.undo();check(save(doc.project())==old_driver,"Driver replacement is one undoable transaction");
         doc.erase({pattern2,sw,pattern});
         check(doc.project().events.empty(),"Deletion removes dependent events and wires");
         doc.apply("Route and scope",[&](Project& project){project.wires[0].bends={{-120,100},{-120,240}}; project.scope_channels={probe};});
@@ -80,6 +90,23 @@ int main(int argc,char** argv) {
         measured.connect({source,"p"},{resistor,"p"}); measured.connect({resistor,"n"},{current,"p"});
         measured.connect({current,"n"},{ground,"node"}); measured.connect({source,"n"},{ground,"node"});
         check(std::abs(output(execute(compile(measured.project())),current)-.001)<1e-12,"Current probe polarity");
+        // Removing a degree-two node preserves electrical continuity and is one undo step.
+        auto joint=measured.add_node(false,100,0);
+        auto direct=measured.project().wires.front().id;
+        measured.erase({direct});
+        measured.connect({joint,"node"},{source,"p"});
+        measured.connect({resistor,"p"},{joint,"node"});
+        measured.apply("Observe net",[&](Project& p){p.scope_channels={resolve_connections(p).nets.at(endpoint_key({source,"p"}))};});
+        const auto before_joint=save(measured.project());
+        const auto before_current=output(execute(compile(measured.project())),current);
+        measured.remove_junction(joint,{{100,0},{100,40},{0,40},{0,0}},{{200,0},{100,0}});
+        check(measured.project().nodes.size()==1,"Only pass-through node removed");
+        check(measured.project().wires.size()==4,"Two adjacent wires merged");
+        check(measured.project().scope_channels.front()==resolve_connections(measured.project()).nets.at(endpoint_key({source,"p"})),"Scope subscription follows merged net");
+        check(output(execute(compile(measured.project())),current)==before_current,"Removing point preserves physical result");
+        const auto after_joint=save(measured.project());
+        measured.undo();check(save(measured.project())==before_joint,"Junction undo restores full geometry");
+        measured.redo();check(save(measured.project())==after_joint,"Junction redo restores merged wire");
         std::cout<<"PASS editor model: wiring, probes, undo, SI, schema4, migration, gates\n";
         return 0;
     } catch(const Diagnostic& d) { std::cerr<<d.code<<" "<<d.object<<": "<<d.what()<<'\n'; return 1;

@@ -1,0 +1,19 @@
+{
+  "type": "ground",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    }
+  ],
+  "palette": {
+    "id": 100,
+    "label": "ground",
+    "category": null,
+    "short": "ground",
+    "fixed": true,
+    "hidden": false
+  }
+}

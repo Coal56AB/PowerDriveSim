@@ -2,6 +2,7 @@
 #include "core/ir/ir.hpp"
 #include <atomic>
 #include <map>
+#include <functional>
 namespace pds {
 class StampSystem {
 public:
@@ -29,5 +30,7 @@ struct Recording { bool all=true; std::vector<std::string> channels; };
 std::vector<Channel> available_channels(const SimulationIR& ir);
 Result select_result(const Result& result,const std::vector<std::string>& channels);
 Result execute(const SimulationIR& ir, const std::atomic_bool* cancel=nullptr,
-               std::atomic<double>* simulated_time=nullptr,const Recording* recording=nullptr);
+               std::atomic<double>* simulated_time=nullptr,const Recording* recording=nullptr,
+               const std::atomic_bool* paused=nullptr,
+               const std::function<void(Result&&)>& stream={});
 }

@@ -4,6 +4,8 @@
 #include <istream>
 #include <ostream>
 #include <sstream>
+#include <cmath>
+#include <algorithm>
 namespace pds {
 Project read_project(std::istream& in) {
     Project p;
@@ -25,6 +27,63 @@ Project read_project(std::istream& in) {
         if(line.empty() || line[0]=='#') continue;
         std::istringstream row(line);
         row >> tag;
+        if(tag=="x-view") {
+            ViewOptions v;int manual=-1,free=-1,separate=-1,grid=-1,legend=-1;
+            row>>std::quoted(v.plot)>>v.y_low>>v.y_high>>manual>>free>>separate>>grid>>legend>>v.line_width>>v.time_span>>std::quoted(v.cursor_channel_a)>>std::quoted(v.cursor_channel_b)>>v.cursor_y_a>>v.cursor_y_b;
+            bool parsed=!row.fail();row>>std::ws;
+            if(parsed&&!row.eof()) {
+                size_t count=0;row>>v.display_columns>>count;
+                if(row.fail()||v.display_columns<1||v.display_columns>4||count>10000)throw Diagnostic("parse_error",std::to_string(number),"Invalid display grid");
+                for(size_t i=0;i<count;++i){std::string channel;unsigned display;row>>std::quoted(channel)>>display;
+                    if(row.fail()||display>15||std::any_of(v.signal_displays.begin(),v.signal_displays.end(),[&](const auto& binding){return binding.first==channel;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid display binding");
+                    v.signal_displays.emplace_back(channel,display);
+                }
+                parsed=!row.fail();row>>std::ws;
+            }
+            if(parsed&&!row.eof()) {
+                size_t count=0;row>>count;
+                if(row.fail()||count>10000)throw Diagnostic("parse_error",std::to_string(number),"Invalid hidden channels");
+                for(size_t i=0;i<count;++i){std::string channel;row>>std::quoted(channel);
+                    if(row.fail()||channel.empty()||std::find(v.hidden_channels.begin(),v.hidden_channels.end(),channel)!=v.hidden_channels.end())throw Diagnostic("parse_error",std::to_string(number),"Invalid hidden channel");
+                    v.hidden_channels.push_back(channel);
+                }
+                parsed=!row.fail();row>>std::ws;
+            }
+            if(parsed&&!row.eof()) {
+                size_t count=0;row>>count;
+                if(row.fail()||count>10000)throw Diagnostic("parse_error",std::to_string(number),"Invalid curve styles");
+                for(size_t i=0;i<count;++i){CurveStyle style;unsigned line_kind,marker;
+                    row>>std::quoted(style.channel)>>line_kind>>style.width>>marker>>style.marker_size;
+                    if(row.fail()||style.channel.empty()||line_kind>unsigned(CurveLine::none)||marker>unsigned(CurveMarker::triangle_down)||!std::isfinite(style.width)||style.width<=0||style.width>10||!std::isfinite(style.marker_size)||style.marker_size<1||style.marker_size>24||std::any_of(v.curve_styles.begin(),v.curve_styles.end(),[&](const auto& s){return s.channel==style.channel;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid curve style");
+                    style.line=CurveLine(line_kind);style.marker=CurveMarker(marker);v.curve_styles.push_back(style);
+                }
+                size_t positions=0;row>>positions;
+                if(row.fail()||positions>16)throw Diagnostic("parse_error",std::to_string(number),"Invalid legend positions");
+                for(size_t i=0;i<positions;++i){LegendPosition pos;row>>pos.display>>pos.x>>pos.y;
+                    if(row.fail()||pos.display>15||!std::isfinite(pos.x)||!std::isfinite(pos.y)||pos.x<0||pos.x>1||pos.y<0||pos.y>1||std::any_of(v.legend_positions.begin(),v.legend_positions.end(),[&](const auto& p){return p.display==pos.display;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid legend position");
+                    v.legend_positions.push_back(pos);
+                }
+                parsed=!row.fail();row>>std::ws;
+            }
+            if(parsed&&!row.eof()) {
+                size_t count=0;row>>count;
+                if(row.fail()||count>10000)throw Diagnostic("parse_error",std::to_string(number),"Invalid curve names");
+                for(size_t i=0;i<count;++i){std::string channel,name;row>>std::quoted(channel)>>std::quoted(name);
+                    if(row.fail()||channel.empty()||name.empty()||name.find_first_of("\r\n")!=std::string::npos||std::any_of(v.curve_names.begin(),v.curve_names.end(),[&](const auto& entry){return entry.first==channel;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid curve name");
+                    v.curve_names.emplace_back(channel,name);
+                }
+                parsed=!row.fail();row>>std::ws;
+            }
+            if(!parsed||!row.eof()||!std::isfinite(v.y_low)||!std::isfinite(v.y_high)||v.y_low>=v.y_high||!std::isfinite(v.time_span)||v.time_span<0||!std::isfinite(v.line_width)||v.line_width<=0||v.line_width>10||!std::isfinite(v.cursor_y_a)||!std::isfinite(v.cursor_y_b)||manual<0||manual>1||free<0||free>1||separate<0||separate>1||grid<0||grid>1||legend<0||legend>1||std::any_of(p.view_options.begin(),p.view_options.end(),[&](const ViewOptions& o){return o.plot==v.plot;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid view settings");
+            v.manual_y=manual;v.free_cursors=free;v.separate_axes=separate;v.grid=grid;v.legend=legend;p.view_options.push_back(v);continue;
+        }
+        if(tag=="x-label") {
+            LabelLayout label;int mirror=-1;
+            row>>std::quoted(label.object)>>std::quoted(label.role)>>label.x>>label.y>>label.orientation.quarter_turns>>mirror;
+            const bool parsed=!row.fail();row>>std::ws;
+            if(!parsed||!row.eof()||!std::isfinite(label.x)||!std::isfinite(label.y)||label.orientation.quarter_turns>3||(mirror!=0&&mirror!=1)||(label.role!="name"&&label.role!="value")||std::any_of(p.labels.begin(),p.labels.end(),[&](const LabelLayout& l){return l.object==label.object&&l.role==label.role;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid label layout");
+            label.orientation.mirrored=mirror==1;p.labels.push_back(label);continue;
+        }
         if(tag.rfind("x-",0)==0) { p.extensions.push_back(line); continue; }
         if(tag=="project" && !identity) {
             row >> std::quoted(p.id) >> std::quoted(p.name); identity=true;
@@ -104,6 +163,8 @@ Project read_project(std::istream& in) {
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
     p.schema=6;
+    for(const auto& v:p.view_options)if(!v.plot.empty()&&std::none_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& plot){return plot.id==v.plot;}))throw Diagnostic("missing_view_target",v.plot,"View target does not exist");
+    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
 void write_project(const Project& p, std::ostream& out) {
@@ -126,6 +187,8 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
     for(const auto& plot:p.plots){check_text(plot.id,plot.id);check_text(plot.name,plot.id);}
+    for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);}
+    for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
     out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 6\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
@@ -149,6 +212,8 @@ void write_project(const Project& p, std::ostream& out) {
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';
+    for(const auto& l:p.labels)out<<"x-label "<<std::quoted(l.object)<<' '<<std::quoted(l.role)<<' '<<l.x<<' '<<l.y<<' '<<l.orientation.quarter_turns<<' '<<(l.orientation.mirrored?1:0)<<'\n';
+    for(const auto& v:p.view_options){out<<"x-view "<<std::quoted(v.plot)<<' '<<v.y_low<<' '<<v.y_high<<' '<<v.manual_y<<' '<<v.free_cursors<<' '<<v.separate_axes<<' '<<v.grid<<' '<<v.legend<<' '<<v.line_width<<' '<<v.time_span<<' '<<std::quoted(v.cursor_channel_a)<<' '<<std::quoted(v.cursor_channel_b)<<' '<<v.cursor_y_a<<' '<<v.cursor_y_b<<' '<<v.display_columns<<' '<<v.signal_displays.size();for(const auto& binding:v.signal_displays)out<<' '<<std::quoted(binding.first)<<' '<<binding.second;out<<' '<<v.hidden_channels.size();for(const auto& channel:v.hidden_channels)out<<' '<<std::quoted(channel);out<<' '<<v.curve_styles.size();for(const auto& style:v.curve_styles)out<<' '<<std::quoted(style.channel)<<' '<<unsigned(style.line)<<' '<<style.width<<' '<<unsigned(style.marker)<<' '<<style.marker_size;out<<' '<<v.legend_positions.size();for(const auto& pos:v.legend_positions)out<<' '<<pos.display<<' '<<pos.x<<' '<<pos.y;out<<' '<<v.curve_names.size();for(const auto& name:v.curve_names)out<<' '<<std::quoted(name.first)<<' '<<std::quoted(name.second);out<<'\n';}
     for(const auto& e:p.extensions) {
         if(e.rfind("x-",0)!=0 || e.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("extension_error",p.id,"Extensions must be single x- records");

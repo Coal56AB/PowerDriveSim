@@ -1,0 +1,10 @@
+{
+  "type": "wire",
+  "fields": [
+    {
+      "key": "bends",
+      "editor": "points",
+      "label": "bends"
+    }
+  ]
+}

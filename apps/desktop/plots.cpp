@@ -1,15 +1,45 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/ui_icons.hpp"
 #include <QCheckBox>
 #include <QDialog>
+#include <QGraphicsPathItem>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QTabWidget>
 #include <QVBoxLayout>
+#include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
+#include <iterator>
 #include <set>
 namespace pds::desktop {
+void EditorWindow::append_simulation_result(Result batch) {
+    if (!result_) {
+        result_ = std::move(batch);
+        return;
+    }
+    auto samples = std::move(result_->samples);
+    samples.insert(samples.end(), std::make_move_iterator(batch.samples.begin()),
+                   std::make_move_iterator(batch.samples.end()));
+    result_ = std::move(batch);
+    result_->samples = std::move(samples);
+}
+void EditorWindow::drain_simulation_stream() {
+    std::deque<Result> batches;
+    {
+        std::lock_guard lock(stream_mutex_);
+        batches.swap(stream_queue_);
+    }
+    if (batches.empty())
+        return;
+    for (auto &batch : batches)
+        append_simulation_result(std::move(batch));
+    if (scope_)
+        scope_->set_result(&*result_, result_indices(project().scope_channels), project());
+    update_graphs();
+}
 void EditorWindow::clear_result() {
     if (scope_)
         scope_->set_result(nullptr, {}, project());
@@ -18,8 +48,15 @@ void EditorWindow::clear_result() {
         if (view)
             view->set_result(nullptr, {}, project());
     }
+    if (result_ && result_->samples.size() > 100000) {
+        // Detach views first, then release a large old history away from the UI
+        // thread. Starting the next worker must not wait for millions of frees.
+        (void)QtConcurrent::run([retired = std::move(*result_)]() mutable { retired.samples.clear(); });
+    }
     result_.reset();
+    result_project_.reset();
     scope_export_->setEnabled(false);
+    scope_fit_->setEnabled(false);
 }
 std::vector<std::string> EditorWindow::recording_keys() const {
     std::set<std::string> keys;
@@ -51,11 +88,13 @@ void EditorWindow::sync_scope() {
     scope_enable_->setChecked(project().scope_enabled);
     rebuilding_ = prior;
     scope_hint_->setVisible(!project().scope_enabled);
+    scope_fit_->hide();
     if (!project().scope_enabled) {
         delete scope_content_;
         scope_content_ = nullptr;
         scope_ = nullptr;
         channels_ = nullptr;
+        update_wires();
         scope_export_->setEnabled(false);
         return;
     }
@@ -70,21 +109,46 @@ void EditorWindow::sync_scope() {
     channels_->setMaximumWidth(300);
     layout->addWidget(channels_);
     scope_ = new Scope;
-    layout->addWidget(scope_, 1);
+    scope_->set_wheel_modifiers(scope_wheel_x_, scope_wheel_y_);
+    for (const auto &options : project().view_options)
+        if (options.plot.empty())
+            scope_->load_view_options(options);
+    auto *chart = new QVBoxLayout;
+    chart->addWidget(scope_->navigation());
+    chart->addWidget(scope_, 1);
+    layout->addLayout(chart, 1);
     scope_layout_->addWidget(scope_content_, 1);
-    connect(channels_, &QListWidget::itemChanged, this, [this] {
-        if (!rebuilding_)
+    connect(channels_, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
+        if (running()) {
+            QSignalBlocker block(channels_);
+            const auto key = item->data(Qt::UserRole).toString().toStdString();
+            const bool checked = std::find(project().scope_channels.begin(), project().scope_channels.end(),
+                                           key) != project().scope_channels.end();
+            item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+        } else if (!rebuilding_)
             choose_channels();
     });
-    scope_->changed = [this](double a, double b, double ca, double cb) {
-        if (running())
+    connect(channels_, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *item) {
+        if (rebuilding_)
             return;
-        document_->apply("Scope view", [&](Project &p) {
-            p.scope_begin = a;
-            p.scope_end = b;
-            p.cursor_a = ca;
-            p.cursor_b = cb;
-        });
+        update_wires();
+        if (!item)
+            return;
+        // Keep keyboard focus and edit selection unchanged: this is a source preview.
+        for (const auto &[id, atom] : atoms_)
+            if (atom->data(channel_highlight_role).toBool()) {
+                canvas_->ensureVisible(atom);
+                return;
+            }
+        for (const auto &[id, wire] : wires_)
+            if (wire->data(channel_highlight_role).toBool()) {
+                canvas_->ensureVisible(wire);
+                return;
+            }
+    });
+    scope_->changed = [this](double a, double b, double ca, double cb) {
+        document_->set_view("", a, b, ca, cb);
+        document_->set_view_options(scope_->view_options());
         update_title();
     };
 }
@@ -96,6 +160,9 @@ void EditorWindow::set_scope_enabled(bool enabled) {
     sync_scope();
     refresh_channel_catalog();
     if (!enabled && result_) {
+        for (auto &[id, view] : plot_views_)
+            if (view)
+                view->set_result(nullptr, {}, project());
         result_ = select_result(*result_, recording_keys());
         update_graphs();
     }
@@ -108,6 +175,8 @@ void EditorWindow::refresh_channel_catalog() {
         return;
     bool prior = rebuilding_;
     rebuilding_ = true;
+    const auto selected_channel =
+        channels_->currentItem() ? channels_->currentItem()->data(Qt::UserRole) : QVariant();
     channels_->clear();
     try {
         for (const auto &channel : available_channels(compile(project()))) {
@@ -118,11 +187,14 @@ void EditorWindow::refresh_channel_catalog() {
             bool checked = std::find(project().scope_channels.begin(), project().scope_channels.end(),
                                      channel.object) != project().scope_channels.end();
             item->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
-            item->setToolTip(text("record_next_run"));
+            item->setToolTip(text("channel_source_hint") + "\n" + text("record_next_run"));
+            if (item->data(Qt::UserRole) == selected_channel)
+                channels_->setCurrentItem(item);
         }
     } catch (const Diagnostic &) { /* Incomplete circuits are diagnosed by Run. */
     }
     rebuilding_ = prior;
+    update_wires();
 }
 void EditorWindow::observe_object(const std::string &id) {
     if (running())
@@ -178,50 +250,52 @@ void EditorWindow::open_plot(const std::string &id) {
     window->resize(940, 520);
     window->setMinimumSize(650, 370);
     auto *layout = new QVBoxLayout(window);
-    layout->setContentsMargins(20, 18, 20, 18);
-    layout->setSpacing(14);
+    layout->setContentsMargins(8, 6, 8, 6);
+    layout->setSpacing(4);
     auto *header = new QHBoxLayout;
     auto *name = new QLabel(QString::fromStdString(plot->name));
     name->setObjectName("plot_heading");
     name->setStyleSheet("font-size:18px;font-weight:600;color:#253e60;");
     header->addWidget(name);
     header->addStretch();
-    auto *export_button = new QPushButton(text("export_plot"));
+    auto *export_button = new QPushButton(ui_icon(UiIcon::export_data), QString());
+    export_button->setToolTip(text("export_plot"));
+    export_button->setAccessibleName(text("export_plot"));
+    export_button->setIconSize({22, 22});
+    export_button->setFixedSize(32, 32);
+    export_button->setStyleSheet("padding:3px;");
     export_button->setObjectName("plot_export");
+    export_button->setAutoDefault(false);
+    export_button->setDefault(false);
     header->addWidget(export_button);
     layout->addLayout(header);
-    auto *legend = new QLabel;
-    legend->setObjectName("plot_legend");
-    legend->setWordWrap(true);
-    layout->addWidget(legend);
     auto *view = new Scope;
+    layout->addWidget(view->channel_controls());
+    view->set_wheel_modifiers(scope_wheel_x_, scope_wheel_y_);
+    view->set_live(running());
+    for (const auto &options : project().view_options)
+        if (options.plot == id)
+            view->load_view_options(options);
+    layout->addWidget(view->navigation());
     layout->addWidget(view, 1);
-    auto *help = new QLabel(text("plot_navigation"));
-    help->setStyleSheet("color:#7b8da4;");
-    layout->addWidget(help);
+    view->setToolTip(text("plot_navigation"));
     plot_windows_[id] = window;
     plot_views_[id] = view;
     connect(export_button, &QPushButton::clicked, this,
             [this, id] { export_csv(plot_channels(project(), id)); });
     view->changed = [this, id](double a, double b, double ca, double cb) {
-        if (running())
-            return;
-        document_->apply("Plot view", [&](Project &p) {
-            for (auto &plot : p.plots)
-                if (plot.id == id) {
-                    plot.begin = a;
-                    plot.end = b;
-                    plot.cursor_a = ca;
-                    plot.cursor_b = cb;
-                }
-        });
+        document_->set_view(id, a, b, ca, cb);
+        if (plot_views_[id]) {
+            auto options = plot_views_[id]->view_options();
+            options.plot = id;
+            document_->set_view_options(options);
+        }
         update_title();
     };
     update_graphs();
     window->show();
 }
 void EditorWindow::update_graphs() {
-    const QStringList colors{"#146cca", "#c56819", "#17866d", "#935ad5", "#d04769"};
     for (auto &[id, window] : plot_windows_) {
         if (!window)
             continue;
@@ -235,18 +309,6 @@ void EditorWindow::update_graphs() {
         window->findChild<QLabel *>("plot_heading")->setText(QString::fromStdString(plot->name));
         auto keys = plot_channels(project(), id);
         auto indexes = result_indices(keys);
-        QStringList labels;
-        for (size_t i = 0; i < indexes.size(); ++i) {
-            int index = indexes[i];
-            QString name = index < static_cast<int>(result_->channels.size())
-                               ? QString::fromStdString(result_->channels[index].name + " [" +
-                                                        result_->channels[index].unit + "]")
-                               : QString::fromStdString("gate [bool]");
-            labels << "<span style='color:" + colors[static_cast<int>(i) % colors.size()] + "'>● " +
-                          name.toHtmlEscaped() + "</span>";
-        }
-        window->findChild<QLabel *>("plot_legend")
-            ->setText(labels.empty() ? text("plot_connect_hint") : labels.join(" &nbsp; &nbsp; "));
         window->findChild<QPushButton *>("plot_export")
             ->setEnabled(result_ && !result_->samples.empty() && !indexes.empty());
         Project view_state;

@@ -1,0 +1,26 @@
+{
+  "type": "plot",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "inputs",
+      "editor": "integer",
+      "label": "plot_inputs",
+      "min": 1,
+      "max": 16
+    }
+  ],
+  "palette": {
+    "id": 103,
+    "label": "plot",
+    "category": null,
+    "short": "plot",
+    "fixed": true,
+    "hidden": false
+  }
+}

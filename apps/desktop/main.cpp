@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QMessageBox>
 #include <QTemporaryDir>
 #include <QTimer>
 int main(int argc, char **argv) {
@@ -17,15 +18,23 @@ int main(int argc, char **argv) {
     parser.addPositionalArgument("project", "Project file (.pds)");
     parser.process(app);
     QTemporaryDir smoke_dir;
-    pds::desktop::EditorWindow window(parser.value("lang"),
-                                      parser.isSet(smoke) ? smoke_dir.path() : QString());
-    if (!parser.positionalArguments().empty()) {
-        bool loaded = window.open_project(parser.positionalArguments().front());
-        if (parser.isSet(smoke) && !loaded)
-            return 1;
+    try {
+        pds::desktop::EditorWindow window(parser.value("lang"),
+                                          parser.isSet(smoke) ? smoke_dir.path() : QString());
+        app.setWindowIcon(QIcon(":/icons/application.png"));
+        window.setWindowIcon(app.windowIcon());
+        if (!parser.positionalArguments().empty()) {
+            bool loaded = window.open_project(parser.positionalArguments().front());
+            if (parser.isSet(smoke) && !loaded)
+                return 1;
+        }
+        if (parser.isSet(smoke))
+            QTimer::singleShot(250, &app, &QCoreApplication::quit);
+        window.show();
+        return app.exec();
+    } catch (const std::exception &e) {
+        if (!parser.isSet(smoke))
+            QMessageBox::critical(nullptr, "PowerDriveSim", QString::fromUtf8(e.what()));
+        return 1;
     }
-    if (parser.isSet(smoke))
-        QTimer::singleShot(250, &app, &QCoreApplication::quit);
-    window.show();
-    return app.exec();
 }

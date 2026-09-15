@@ -1,0 +1,32 @@
+{
+  "type": "C",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "value",
+      "editor": "number",
+      "label": "value",
+      "unit": "F",
+      "inline": "value"
+    },
+    {
+      "key": "initial",
+      "editor": "number",
+      "label": "initial",
+      "unit": "V"
+    }
+  ],
+  "palette": {
+    "id": 1,
+    "label": "capacitor",
+    "category": "passive",
+    "short": "C",
+    "fixed": false,
+    "hidden": false
+  }
+}

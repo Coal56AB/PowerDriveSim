@@ -1,0 +1,29 @@
+{
+  "type": "pattern",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "closed",
+      "editor": "bool",
+      "label": "closed"
+    },
+    {
+      "key": "events",
+      "editor": "events",
+      "label": "events"
+    }
+  ],
+  "palette": {
+    "id": 102,
+    "label": "gate_pattern",
+    "category": "signals",
+    "short": "Gate",
+    "fixed": false,
+    "hidden": false
+  }
+}

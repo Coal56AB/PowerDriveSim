@@ -1,0 +1,26 @@
+{
+  "type": "I",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "value",
+      "editor": "number",
+      "label": "value",
+      "unit": "A",
+      "inline": "value"
+    }
+  ],
+  "palette": {
+    "id": 4,
+    "label": "current_source",
+    "category": "sources",
+    "short": "I",
+    "fixed": false,
+    "hidden": false
+  }
+}

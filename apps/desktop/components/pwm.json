@@ -1,0 +1,46 @@
+{
+  "type": "pwm",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "frequency",
+      "editor": "number",
+      "label": "frequency",
+      "unit": "Hz",
+      "min": 0,
+      "exclusiveMin": true,
+      "inline": "value",
+      "inlinePart": 0
+    },
+    {
+      "key": "duty",
+      "editor": "number",
+      "label": "duty",
+      "scale": 100,
+      "min": 0,
+      "max": 100,
+      "inline": "value",
+      "inlinePart": 1
+    },
+    {
+      "key": "delay",
+      "editor": "number",
+      "label": "delay",
+      "unit": "s",
+      "min": 0
+    }
+  ],
+  "palette": {
+    "id": 104,
+    "label": "pwm",
+    "category": "signals",
+    "short": "PWM",
+    "fixed": false,
+    "hidden": false
+  }
+}

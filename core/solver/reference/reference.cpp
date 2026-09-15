@@ -1,10 +1,13 @@
 #include "core/solver/reference/reference.hpp"
+#include "core/solver/reference/equation_cache.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <deque>
 #include <set>
 #include <sstream>
+#include <thread>
+#include <chrono>
 namespace pds {
 void StampSystem::add(int r,int c,double v) { if(r>=0 && c>=0 && v!=0.0) rows.at(r)[c]+=v; }
 void StampSystem::inject(int r,double v) { if(r>=0) rhs.at(r)+=v; }
@@ -64,7 +67,7 @@ Result select_result(const Result& source,const std::vector<std::string>& keys){
     for(const auto& old:source.samples){Sample sample;sample.time=old.time;for(auto i:analog)sample.values.push_back(old.values[i]);for(auto i:gates)sample.gates.push_back(old.gates[i]);result.samples.push_back(std::move(sample));}
     return result;
 }
-Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording) {
+Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream) {
     if(ir.unknowns.empty() || !std::isfinite(ir.profile.step) || ir.profile.step<=0 || !std::isfinite(ir.profile.stop) || ir.profile.stop<=0)
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
@@ -81,7 +84,6 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic
     std::vector<size_t> switch_indices;
     std::vector<bool> signal_values;for(const auto& signal:ir.gate_signals)signal_values.push_back(signal.initial);
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
-    const bool trapezoidal=ir.profile.method==Method::trapezoidal;
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size());
     std::vector<size_t> diode_indices;
     for(size_t i=0;i<ir.stamps.size();++i)
@@ -101,101 +103,69 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic
         }
         return changed;
     };
-    auto solve=[&](double t,double h,bool initialize) {
-        auto build_system=[&](const std::vector<bool>& active) {
-            StampSystem system(ir.unknowns.size());
-            for(size_t i=0;i<ir.stamps.size();++i) {
-                const auto& s=ir.stamps[i]; const auto& c=s.component;
-                int p=s.positive,n=s.negative,b=s.branch;
-                if(b>=0) system.incidence(p,n,b);
-                switch(c.kind) {
-                case Kind::resistor: system.conductance(p,n,1/c.value); break;
-                case Kind::current: system.inject(p,-c.value); system.inject(n,c.value); break;
-                case Kind::voltage: system.add(b,p,1); system.add(b,n,-1); system.inject(b,c.value); break;
-                case Kind::capacitor:
-                    system.add(b,p,1); system.add(b,n,-1);
-                    if(!initialize) system.add(b,b,-h/(c.value*(trapezoidal?2:1)));
-                    system.inject(b,states[i]+(!initialize && trapezoidal?h/(2*c.value)*history[i]:0)); break;
-                case Kind::inductor:
-                    if(initialize) { system.add(b,b,1); system.inject(b,states[i]); }
-                    else {
-                        const double factor=c.value/h*(trapezoidal?2:1);
-                        system.add(b,p,1); system.add(b,n,-1); system.add(b,b,-factor);
-                        system.inject(b,-factor*states[i]-(trapezoidal?history[i]:0));
-                    }
-                    break;
-                case Kind::voltage_probe: break; // Compiled as a non-loading observation.
-            case Kind::current_probe: system.add(b,p,1); system.add(b,n,-1); break;
-            case Kind::diode:
-                    if(active[i]) { system.add(b,p,1); system.add(b,n,-1); }
-                    else system.add(b,b,1);
-                    break;
-                case Kind::ideal_switch:
-                    if(gates[i]) { system.add(b,p,1); system.add(b,n,-1); }
-                    else system.add(b,b,1);
-                    break;
-                }
-            }
-            return system;
-            };
-        std::deque<std::vector<bool>> pending;
-        if(!diode_indices.empty()) pending.push_back(diode_states);
-        std::set<std::vector<bool>> visited;
-        StampSystem system(ir.unknowns.size());
-        std::vector<double> values;
-        bool converged=false;
+    EquationCache equations(ir);
+    std::vector<size_t> violations;
+    violations.reserve(diode_indices.size());
+    auto solve=[&](double t,double h,bool initialize) -> const std::vector<double>& {
+        const std::vector<double>* solution=nullptr;
+        bool converged=false, singular=false;
         unsigned iterations=0;
-        std::string offending=ir.project_id, last_linear;
+        std::string offending, last_linear;
         double residual_v=0, residual_i=0;
-        if(diode_indices.empty()) {
-            system=build_system(diode_states);
-            ++result.linear_solves;
-            values=system.solve(ir,t);
-            converged=true; iterations=1;
-        }
-        while(!pending.empty() && iterations<ir.profile.max_iterations) {
-            auto active=std::move(pending.front()); pending.pop_front();
-            if(!visited.insert(active).second) continue;
+        auto attempt=[&](const std::vector<bool>& active) {
             ++iterations;
-            system=build_system(active);
+            ++result.linear_solves;
+            singular=false;
+            violations.clear();
             try {
-                ++result.linear_solves;
-                values=system.solve(ir,t);
+                solution=&equations.solve(t,h,initialize,gates,active,states,history);
             } catch(const Diagnostic& d) {
-                if(d.code!="singular_matrix" || diode_indices.empty()) throw;
-                offending=d.object; last_linear=d.what();
-                // An invalid trial state can float a node even when another
-                // diode state is solvable. Explore neighboring active sets.
-                for(size_t index:diode_indices) {
-                    auto neighbor=active; neighbor[index]=!neighbor[index];
-                    if(!visited.count(neighbor) && pending.size()<ir.profile.max_iterations)
-                        pending.push_back(std::move(neighbor));
-                }
-                continue;
+                if(d.code!="singular_matrix" || diode_indices.empty())throw;
+                offending=d.object;last_linear=d.what();singular=true;
+                return false;
             }
-            std::vector<size_t> violations;
-            residual_v=0; residual_i=0;
+            const auto &values=*solution;
+            residual_v=0;residual_i=0;
             for(size_t index:diode_indices) {
                 const auto& stamp=ir.stamps[index];
                 const double up=stamp.positive<0?0:values[stamp.positive];
                 const double un=stamp.negative<0?0:values[stamp.negative];
-                const double v=up-un, current=values[stamp.branch];
+                const double v=up-un,current=values[stamp.branch];
                 const double vt=ir.profile.voltage_tolerance+ir.profile.relative_tolerance*std::max(std::abs(up),std::abs(un));
                 const double it=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);
                 residual_v=std::max(residual_v,std::max(0.0,v));
                 residual_i=std::max(residual_i,std::max(0.0,-current));
-                if((active[index] && current < -it) || (!active[index] && v > vt)) {
-                    violations.push_back(index); offending=stamp.component.id;
+                if((active[index]&&current < -it)||(!active[index]&&v>vt)) {
+                    violations.push_back(index);offending=stamp.component.id;
                 }
             }
-            if(violations.empty()) { diode_states=std::move(active); converged=true; break; }
-            auto simultaneous=active;
-            for(size_t index:violations) simultaneous[index]=!simultaneous[index];
-            if(!visited.count(simultaneous)) pending.push_front(std::move(simultaneous));
-            for(size_t index:violations) {
-                auto neighbor=active; neighbor[index]=!neighbor[index];
-                if(!visited.count(neighbor) && pending.size()<ir.profile.max_iterations)
-                    pending.push_back(std::move(neighbor));
+            return violations.empty();
+        };
+        // Most steps retain a valid active set. Allocate search containers only
+        // when this trial actually fails; keep the same bounded search order.
+        if(diode_indices.empty()||ir.profile.max_iterations>0)converged=attempt(diode_states);
+        if(!converged) {
+            std::deque<std::vector<bool>> pending;
+            std::set<std::vector<bool>> visited;
+            visited.insert(diode_states);
+            auto enqueue=[&](const std::vector<bool>& active) {
+                if(!singular) {
+                    auto simultaneous=active;
+                    for(size_t index:violations)simultaneous[index]=!simultaneous[index];
+                    if(!visited.count(simultaneous))pending.push_front(std::move(simultaneous));
+                }
+                const auto &indices=singular?diode_indices:violations;
+                for(size_t index:indices) {
+                    auto neighbor=active;neighbor[index]=!neighbor[index];
+                    if(!visited.count(neighbor)&&pending.size()<ir.profile.max_iterations)pending.push_back(std::move(neighbor));
+                }
+            };
+            enqueue(diode_states);
+            while(!pending.empty()&&iterations<ir.profile.max_iterations) {
+                auto active=std::move(pending.front());pending.pop_front();
+                if(!visited.insert(active).second)continue;
+                if(attempt(active)){diode_states=std::move(active);converged=true;break;}
+                enqueue(active);
             }
         }
         result.max_step_iterations=std::max(result.max_step_iterations,static_cast<size_t>(iterations));
@@ -204,8 +174,10 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic
             message << "Diode active-set solve failed after " << iterations
                 << " iterations; voltage residual=" << residual_v << " V; current residual=" << residual_i
                 << " A. Check ideal loops, initial states, tolerances and iteration budget. " << last_linear;
-            throw Diagnostic("nonlinear_convergence",offending,message.str(),t);
+            throw Diagnostic("nonlinear_convergence",offending.empty()?ir.project_id:offending,message.str(),t);
         }
+        const auto &system=equations.system();
+        const auto &values=*solution;
         for(size_t r=0;r<system.rows.size();++r) {
             double residual=-system.rhs[r],scale=std::abs(system.rhs[r]);
             for(const auto& [column,coefficient]:system.rows[r]) { residual+=coefficient*values[column]; scale+=std::abs(coefficient*values[column]); }
@@ -236,22 +208,29 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic
     };
     apply_events(0);
     record(0,solve(0,0,true));
+    auto publish=[&]{if(stream&&!result.samples.empty()){auto samples=std::move(result.samples);Result batch=result;batch.samples=std::move(samples);stream(std::move(batch));}};
+    auto next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);
+    publish();
     double time=0;
     size_t grid=1;
     while(time<ir.profile.stop) {
+        if(paused && paused->load(std::memory_order_relaxed))publish();
+        while(paused && paused->load(std::memory_order_relaxed) && !(cancel && cancel->load()))
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
         if(cancel && cancel->load()) { result.cancelled=true; break; }
         const double grid_time=static_cast<double>(grid)*ir.profile.step;
         double end=std::min(grid_time,ir.profile.stop);
         if(next_event<ir.events.size()) end=std::min(end,ir.events[next_event].time);
         if(end<=time) throw Diagnostic("time_resolution",ir.project_id,"Time step cannot advance floating-point time",time);
-        auto values=solve(end,end-time,false);
+        const auto* values=&solve(end,end-time,false);
         ++result.accepted_steps;
         time=end;
         if(time==grid_time) ++grid;
         // Integrate to the edge with the old topology. Apply all simultaneous
         // gates before solving algebraic variables with continuous C/L states.
-        if(apply_events(time)) values=solve(time,0,true);
-        record(time,std::move(values));
+        if(apply_events(time)) values=&solve(time,0,true);
+        record(time,*values);
+        if(stream && result.accepted_steps%1024==0 && std::chrono::steady_clock::now()>=next_publish){publish();next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);}
     }
     return result;
 }

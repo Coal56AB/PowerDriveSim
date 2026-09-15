@@ -1,4 +1,5 @@
 #pragma once
+#include <utility>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -6,8 +7,8 @@ namespace pds {
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe };
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
-struct Orientation { unsigned quarter_turns=0; bool mirrored=false; };
-struct Node { std::string id, name; bool ground = false; double x=0, y=0; Orientation orientation; };
+struct Orientation { unsigned quarter_turns=0; bool mirrored=false; bool operator==(const Orientation&) const = default; };
+struct Node { std::string id, name; bool ground = false; double x=0, y=0; Orientation orientation; bool operator==(const Node&) const = default; };
 struct Component {
     std::string id, name;
     Kind kind = Kind::resistor;
@@ -15,8 +16,9 @@ struct Component {
     double value = 1.0, initial = 0.0, x = 0.0, y = 0.0;
     bool closed = false;
     Orientation orientation;
+    bool operator==(const Component&) const = default;
 };
-struct GateEvent { double time; std::string target; bool closed; };
+struct GateEvent { double time; std::string target; bool closed; bool operator==(const GateEvent&) const = default; };
 enum class Method { backward_euler, trapezoidal };
 std::string method_name(Method method);
 Method parse_method(const std::string& name);
@@ -25,14 +27,15 @@ struct Profile {
     Method method = Method::backward_euler;
     unsigned max_iterations = 64;
     double voltage_tolerance = 1e-9, current_tolerance = 1e-12, relative_tolerance = 1e-9;
+    bool operator==(const Profile&) const = default;
 };
-struct Point { double x=0,y=0; };
+struct Point { double x=0,y=0; bool operator==(const Point&) const = default; };
 struct Endpoint {
     std::string object, port;
     bool operator==(const Endpoint&) const = default;
 };
-struct Wire { std::string id; Endpoint from,to; std::vector<Point> bends; };
-struct GatePattern { std::string id,name; double x=0,y=0; bool initial=false; Orientation orientation; bool pwm=false; double frequency=1000,duty=.5,delay=0; };
+struct Wire { std::string id; Endpoint from,to; std::vector<Point> bends; bool operator==(const Wire&) const = default; };
+struct GatePattern { std::string id,name; double x=0,y=0; bool initial=false; Orientation orientation; bool pwm=false; double frequency=1000,duty=.5,delay=0; bool operator==(const GatePattern&) const = default; };
 enum class Domain { electrical, gate, signal };
 enum class Direction { conserving, input, output };
 struct PortType { Domain domain; Direction direction; };
@@ -40,6 +43,40 @@ struct PlotBlock {
     std::string id,name; double x=0,y=0; unsigned inputs=2;
     double begin=0,end=-1,cursor_a=-1,cursor_b=-1;
     Orientation orientation;
+    bool operator==(const PlotBlock&) const = default;
+};
+struct LabelLayout {
+    std::string object,role;
+    double x=0,y=0;
+    Orientation orientation;
+    bool operator==(const LabelLayout&) const = default;
+};
+enum class CurveLine { solid, dash, dot, dash_dot, none };
+enum class CurveMarker { none, circle, square, triangle, diamond, cross, plus, triangle_down };
+struct CurveStyle {
+    std::string channel;
+    CurveLine line=CurveLine::solid;
+    double width=1.8;
+    CurveMarker marker=CurveMarker::none;
+    double marker_size=6;
+    bool operator==(const CurveStyle&) const = default;
+};
+struct LegendPosition {
+    unsigned display=0;
+    double x=0,y=0;
+    bool operator==(const LegendPosition&) const = default;
+};
+struct ViewOptions {
+    unsigned display_columns=1;
+    std::vector<std::pair<std::string,unsigned>> signal_displays;
+    std::vector<std::string> hidden_channels;
+    std::vector<CurveStyle> curve_styles;
+    std::vector<std::pair<std::string, std::string>> curve_names;
+    std::vector<LegendPosition> legend_positions;
+    std::string plot, cursor_channel_a, cursor_channel_b;
+    double y_low=-1,y_high=1,cursor_y_a=0,cursor_y_b=0,time_span=0,line_width=1.8;
+    bool manual_y=false,free_cursors=false,separate_axes=false,grid=true,legend=false;
+    bool operator==(const ViewOptions&) const = default;
 };
 struct Project {
     unsigned schema = 6;
@@ -53,9 +90,12 @@ struct Project {
     std::vector<Wire> wires;
     std::vector<GatePattern> patterns;
     std::vector<PlotBlock> plots;
+    std::vector<LabelLayout> labels;
+    std::vector<ViewOptions> view_options;
     bool scope_enabled=false;
     std::vector<std::string> scope_channels;
     double scope_begin=0,scope_end=-1,cursor_a=-1,cursor_b=-1;
+    bool operator==(const Project&) const = default;
 
 };
 struct Diagnostic : std::runtime_error {

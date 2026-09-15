@@ -1,0 +1,32 @@
+{
+  "type": "L",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "value",
+      "editor": "number",
+      "label": "value",
+      "unit": "H",
+      "inline": "value"
+    },
+    {
+      "key": "initial",
+      "editor": "number",
+      "label": "initial",
+      "unit": "A"
+    }
+  ],
+  "palette": {
+    "id": 2,
+    "label": "inductor",
+    "category": "passive",
+    "short": "L",
+    "fixed": false,
+    "hidden": false
+  }
+}

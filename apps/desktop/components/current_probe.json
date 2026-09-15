@@ -1,0 +1,19 @@
+{
+  "type": "IP",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    }
+  ],
+  "palette": {
+    "id": 8,
+    "label": "current_probe",
+    "category": null,
+    "short": "IP",
+    "fixed": true,
+    "hidden": false
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "type": "S",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "closed",
+      "editor": "bool",
+      "label": "closed",
+      "condition": "internal_gate"
+    },
+    {
+      "key": "events",
+      "editor": "events",
+      "label": "events",
+      "condition": "internal_gate"
+    }
+  ],
+  "palette": {
+    "id": 5,
+    "label": "switch",
+    "category": "switching",
+    "short": "S",
+    "fixed": false,
+    "hidden": false
+  }
+}

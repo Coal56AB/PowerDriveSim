@@ -1,0 +1,108 @@
+#include "core/solver/reference/equation_cache.hpp"
+namespace pds {
+const std::vector<double> &EquationCache::solve(double time, double h, bool initialize,
+                                                const std::vector<bool> &gates,
+                                                const std::vector<bool> &diodes,
+                                                const std::vector<double> &states,
+                                                const std::vector<double> &history) {
+    const bool trapezoidal = ir_.profile.method == Method::trapezoidal;
+    auto matches = [&](size_t i) {
+        const auto &e = *entries_[i];
+        return e.h == h && e.initialize == initialize && e.gates == gates && e.diodes == diodes;
+    };
+    size_t found = entries_.size();
+    if (recent_ < entries_.size() && matches(recent_))
+        found = recent_;
+    else
+        for (size_t i = 0; i < entries_.size(); ++i)
+            if (matches(i)) {
+                found = i;
+                break;
+            }
+    if (found == entries_.size()) {
+        auto entry = std::make_unique<Entry>(ir_.unknowns.size());
+        entry->h = h;
+        entry->initialize = initialize;
+        entry->gates = gates;
+        entry->diodes = diodes;
+        auto &system = entry->system;
+        for (size_t i = 0; i < ir_.stamps.size(); ++i) {
+            const auto &s = ir_.stamps[i];
+            const auto &c = s.component;
+            const int p = s.positive, n = s.negative, b = s.branch;
+            if (b >= 0)
+                system.incidence(p, n, b);
+            switch (c.kind) {
+            case Kind::resistor:
+                system.conductance(p, n, 1 / c.value);
+                break;
+            case Kind::current:
+                system.inject(p, -c.value);
+                system.inject(n, c.value);
+                break;
+            case Kind::voltage:
+                system.add(b, p, 1);
+                system.add(b, n, -1);
+                system.inject(b, c.value);
+                break;
+            case Kind::capacitor:
+                system.add(b, p, 1);
+                system.add(b, n, -1);
+                if (!initialize)
+                    system.add(b, b, -h / (c.value * (trapezoidal ? 2 : 1)));
+                entry->dynamic.push_back({i, b, c.kind, !initialize && trapezoidal ? h / (2 * c.value) : 0});
+                break;
+            case Kind::inductor: {
+                const double factor = initialize ? 1 : c.value / h * (trapezoidal ? 2 : 1);
+                if (initialize)
+                    system.add(b, b, 1);
+                else {
+                    system.add(b, p, 1);
+                    system.add(b, n, -1);
+                    system.add(b, b, -factor);
+                }
+                entry->dynamic.push_back({i, b, c.kind, factor});
+                break;
+            }
+            case Kind::voltage_probe:
+                break;
+            case Kind::current_probe:
+                system.add(b, p, 1);
+                system.add(b, n, -1);
+                break;
+            case Kind::diode:
+            case Kind::ideal_switch:
+                if (c.kind == Kind::diode ? diodes[i] : gates[i]) {
+                    system.add(b, p, 1);
+                    system.add(b, n, -1);
+                } else
+                    system.add(b, b, 1);
+                break;
+            }
+        }
+        entry->constant = system.rhs;
+        // Bound storage for large sparse circuits as well as small dense ones.
+        const size_t limit = ir_.unknowns.size() <= 64 ? 32 : 2;
+        if (entries_.size() < limit)
+            entries_.push_back(std::move(entry));
+        else {
+            found = replace_;
+            replace_ = (replace_ + 1) % limit;
+            entries_[found] = std::move(entry);
+        }
+    }
+    recent_ = found;
+    auto &entry = *entries_[found];
+    entry.system.rhs = entry.constant;
+    for (const auto &term : entry.dynamic) {
+        double value;
+        if (term.kind == Kind::capacitor)
+            value = states[term.state] + (!initialize && trapezoidal ? term.factor * history[term.state] : 0);
+        else
+            value = initialize ? states[term.state]
+                               : -term.factor * states[term.state] - (trapezoidal ? history[term.state] : 0);
+        entry.system.inject(term.row, value);
+    }
+    return entry.factorization.solve_fixed(entry.system, ir_, time);
+}
+} // namespace pds

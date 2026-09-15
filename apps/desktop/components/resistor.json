@@ -1,0 +1,26 @@
+{
+  "type": "R",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "value",
+      "editor": "number",
+      "label": "value",
+      "unit": "Ohm",
+      "inline": "value"
+    }
+  ],
+  "palette": {
+    "id": 0,
+    "label": "resistor",
+    "category": "passive",
+    "short": "R",
+    "fixed": false,
+    "hidden": false
+  }
+}

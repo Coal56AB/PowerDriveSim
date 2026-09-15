@@ -1,0 +1,19 @@
+{
+  "type": "VP",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    }
+  ],
+  "palette": {
+    "id": 7,
+    "label": "voltage_probe",
+    "category": null,
+    "short": "VP",
+    "fixed": true,
+    "hidden": false
+  }
+}

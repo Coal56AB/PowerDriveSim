@@ -1,5 +1,6 @@
 #include "formats/project/project.hpp"
 #include "results/csv.hpp"
+#include "core/solver/reference/factorization.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -323,6 +324,29 @@ static void topology() {
     error("singular_matrix",[&]{execute(compile(p));});
 }
 static void regression() {
+    // Compare cache hits, eviction, pivoting and sparse fallback to the original solver.
+    for (size_t n : {size_t(3), size_t(8), size_t(65)}) {
+        FactorizationCache cache;
+        SimulationIR matrix_ir;
+        matrix_ir.unknowns.resize(n);
+        for (size_t variant=0; variant<22; ++variant) {
+            StampSystem system(n);
+            for (size_t r=0; r<n; ++r) {
+                system.add(static_cast<int>(r),static_cast<int>((r+1)%n),10+static_cast<double>(variant));
+                system.add(static_cast<int>(r),static_cast<int>(r),.5);
+                if(n>3)system.add(static_cast<int>(r),static_cast<int>((r+3)%n),-.25);
+            }
+            for(int repeat=0;repeat<3;++repeat) {
+                for(size_t r=0;r<n;++r)system.rhs[r]=std::sin(double(r+repeat));
+                auto expected=system.solve(matrix_ir,0), actual=cache.solve(system,matrix_ir,0);
+                for(size_t r=0;r<n;++r)near(actual[r],expected[r],1e-14,"Cached factorization matches sparse solve");
+            }
+        }
+        StampSystem singular(n);
+        error("singular_matrix",[&]{cache.solve(singular,matrix_ir,0);});
+        singular.add(0,0,std::numeric_limits<double>::infinity());
+        error("nonfinite_stamp",[&]{cache.solve(singular,matrix_ir,0);});
+    }
     auto p=switching(); auto ir=compile(p); auto a=execute(ir),b=execute(ir);
     require(a.samples.size()==b.samples.size(),"Repeat sample count");
     bool edge1=false,edge2=false;

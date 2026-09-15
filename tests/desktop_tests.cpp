@@ -3,16 +3,19 @@
 #include <QCheckBox>
 #include <QDialog>
 #include <QGraphicsItem>
-#include <QGraphicsScene>
 #include <QGraphicsPathItem>
-#include <QPainterPath>
+#include <QGraphicsScene>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolBar>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QWheelEvent>
 #include <QtTest/QtTest>
@@ -30,7 +33,7 @@ class DesktopTests : public QObject {
         QTest::qWait(50);
         auto *library = window.findChild<QTreeWidget *>("library");
         QVERIFY(library);
-        QCOMPARE(library->topLevelItemCount(), 5);
+        QCOMPARE(library->topLevelItemCount(), 4);
         QVERIFY(window.scope() == nullptr);
         QVERIFY(!window.project().scope_enabled);
         auto place = [&](int kind, QPointF point) {
@@ -41,12 +44,19 @@ class DesktopTests : public QObject {
                     if (item->data(0, Qt::UserRole).toInt() == kind)
                         chosen = item;
                 }
-            if (!chosen)
-                return;
-            library->scrollToItem(chosen);
-            QTest::mouseClick(library->viewport(),Qt::LeftButton,Qt::NoModifier,library->visualItemRect(chosen).center());
-            QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
-                              library->visualItemRect(chosen).center());
+            if (!chosen) {
+                auto *bar = window.findChild<QToolBar *>("component_bar");
+                auto *action = window.findChild<QAction *>("insert_component_" + QString::number(kind));
+                QVERIFY(action && bar->actions().contains(action));
+                QTest::mouseClick(bar->widgetForAction(action), Qt::LeftButton);
+            } else {
+                chosen->parent()->setExpanded(true);
+                library->scrollToItem(chosen);
+                QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                                  library->visualItemRect(chosen).center());
+                QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                                   library->visualItemRect(chosen).center());
+            }
             QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
                               window.canvas()->mapFromScene(point));
         };
@@ -56,14 +66,16 @@ class DesktopTests : public QObject {
         place(100, {-40, 280});
         QCOMPARE(window.project().components.size(), size_t(3));
         QCOMPARE(window.project().nodes.size(), size_t(1));
+        window.findChild<QAction *>("action_fit")->trigger();
         auto v = window.project().components[0].id, r = window.project().components[1].id,
              c = window.project().components[2].id, g = window.project().nodes[0].id;
         auto wire = [&](Endpoint a, Endpoint b) {
             QTest::mousePress(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
                               window.canvas()->mapFromScene(window.port_position(a)));
-            QTest::mouseMove(window.canvas()->viewport(),window.canvas()->mapFromScene(window.port_position(b)));
+            QTest::mouseMove(window.canvas()->viewport(),
+                             window.canvas()->mapFromScene(window.port_position(b)));
             QTest::mouseRelease(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
-                              window.canvas()->mapFromScene(window.port_position(b)));
+                                window.canvas()->mapFromScene(window.port_position(b)));
         };
         wire({v, "p"}, {r, "p"});
         wire({r, "n"}, {c, "p"});
@@ -91,7 +103,8 @@ class DesktopTests : public QObject {
         window.findChild<QLineEdit *>("sim_stop")->setText("5ms");
         window.findChild<QLineEdit *>("sim_step")->setText("1us");
         window.findChild<QAction *>("action_run")->trigger();
-        QTRY_VERIFY_WITH_TIMEOUT(window.has_result(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 10000);
+        QVERIFY(window.has_result());
         QVERIFY(!window.result().cancelled);
         QCOMPARE(window.result().accepted_steps, size_t(5000));
         auto graph = resolve_connections(window.project());
@@ -102,6 +115,7 @@ class DesktopTests : public QObject {
             ++channel;
         QVERIFY(channel < window.result().channels.size());
         QVERIFY(std::abs(window.result().samples.back().values[channel] - (1 - std::exp(-5.0))) < 2e-5);
+        window.scope()->set_cursor_mode(true);
         QTest::mouseClick(window.scope(), Qt::LeftButton, Qt::NoModifier, {200, 60});
         QTest::mouseClick(window.scope(), Qt::RightButton, Qt::NoModifier, {400, 60});
         QVERIFY(window.project().cursor_a >= 0);
@@ -110,6 +124,7 @@ class DesktopTests : public QObject {
         if (!screenshot.isEmpty()) {
             window.select_object(c);
             QTest::qWait(50);
+            window.findChild<QAction *>("action_fit")->trigger();
             QVERIFY(window.grab().save(screenshot));
         }
         auto expected = window.project();
@@ -140,7 +155,8 @@ class DesktopTests : public QObject {
         });
         timer.start(10);
         window.start_simulation();
-        QTRY_VERIFY_WITH_TIMEOUT(window.has_result(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 5000);
+        QVERIFY(window.has_result());
         QVERIFY(ticks >= 3);
         QVERIFY(window.result().cancelled);
         QVERIFY(window.result().accepted_steps < 100000000);
@@ -186,7 +202,12 @@ class DesktopTests : public QObject {
         QVERIFY(window.connect_ports({pattern, "out"}, {sw, "gate"}));
         window.select_object(pattern);
         window.findChild<QCheckBox *>("property_closed")->setChecked(true);
-        window.findChild<QPlainTextEdit *>("property_events")->setPlainText("1ms 0\n2ms 1");
+        auto *events = window.findChild<QTableWidget *>("property_events");
+        events->setRowCount(3);
+        events->setItem(0, 0, new QTableWidgetItem("1e-3"));
+        events->setItem(0, 1, new QTableWidgetItem("0"));
+        events->setItem(1, 0, new QTableWidgetItem("2e-3"));
+        events->setItem(1, 1, new QTableWidgetItem("1"));
         QTest::mouseClick(window.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
         QCOMPARE(window.project().events.size(), size_t(2));
         window.set_scope_enabled(true);
@@ -197,7 +218,8 @@ class DesktopTests : public QObject {
             item->setCheckState(key == vp || key == ip || key == "gate/" + sw ? Qt::Checked : Qt::Unchecked);
         }
         window.start_simulation();
-        QTRY_VERIFY_WITH_TIMEOUT(window.has_result(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 10000);
+        QVERIFY(window.has_result());
         QCOMPARE(window.result().gate_objects.size(), size_t(1));
         bool off = false, on_again = false;
         for (const auto &sample : window.result().samples) {
@@ -260,7 +282,8 @@ class DesktopTests : public QObject {
         window.findChild<QAction *>("action_fit")->trigger();
         QVERIFY(window.scope() == nullptr);
         window.start_simulation();
-        QTRY_VERIFY_WITH_TIMEOUT(window.has_result(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 10000);
+        QVERIFY(window.has_result());
         QCOMPARE(window.result().channels.size(), size_t(1));
         QCOMPARE(window.result().channels[0].object, probe);
         QVERIFY(window.result().gate_objects.empty());
@@ -273,9 +296,32 @@ class DesktopTests : public QObject {
         auto *av = a->findChild<Scope *>("scope");
         auto *bv = b->findChild<Scope *>("scope");
         QVERIFY(av && bv && av != bv);
+        av->set_cursor_mode(true);
         QTest::mouseClick(av, Qt::LeftButton, Qt::NoModifier, {260, 100});
         QVERIFY(window.project().plots[0].cursor_a >= 0);
         QCOMPARE(window.project().plots[1].cursor_a, -1.0);
+        auto *legend = a->findChild<QToolBar *>("plot_legend");
+        QVERIFY(legend && legend->actions().size() == 1);
+        const auto samples = window.result().samples.size();
+        QTest::mouseClick(
+            legend->widgetForAction(legend->actions().front())->findChild<QToolButton *>("curve_visibility"),
+            Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+        QVERIFY(!av->channel_visible(probe));
+        QVERIFY(bv->channel_visible(probe));
+        QCOMPARE(window.result().samples.size(), samples);
+        auto options =
+            std::find_if(window.project().view_options.begin(), window.project().view_options.end(),
+                         [&](const ViewOptions &v) { return v.plot == first; });
+        QVERIFY(options != window.project().view_options.end());
+        QCOMPARE(options->hidden_channels, std::vector<std::string>{probe});
+        a->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        window.open_plot(first);
+        a = window.findChild<QDialog *>("plot_" + QString::fromStdString(first));
+        QVERIFY(a);
+        av = a->findChild<Scope *>("scope");
+        QVERIFY(!av->channel_visible(probe));
+        av->set_channel_visible(probe, true);
         const auto screenshot = qEnvironmentVariable("PDS_PLOT_SCREENSHOT_PATH");
         if (!screenshot.isEmpty()) {
             QTest::qWait(40);
@@ -285,7 +331,8 @@ class DesktopTests : public QObject {
         b->close();
         window.observe_object(window.project().wires.front().id);
         window.start_simulation();
-        QTRY_VERIFY_WITH_TIMEOUT(window.has_result(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 10000);
+        QVERIFY(window.has_result());
         QVERIFY(window.result().channels.size() > 1);
         window.set_scope_enabled(false);
         QVERIFY(window.scope() == nullptr);
@@ -295,7 +342,8 @@ class DesktopTests : public QObject {
         window.select_object(second);
         window.findChild<QAction *>("action_delete")->trigger();
         window.start_simulation();
-        QTRY_VERIFY_WITH_TIMEOUT(window.has_result(), 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 10000);
+        QVERIFY(window.has_result());
         QVERIFY(window.result().samples.empty());
         QVERIFY(window.result().channels.empty());
     }
@@ -315,29 +363,61 @@ class DesktopTests : public QObject {
                           window.canvas()->mapFromScene(QPointF(0, 100)));
         QCOMPARE(window.project().nodes.size(), size_t(1));
         auto resistor = window.add_component(Kind::resistor, {200, 100});
+        window.canvas()->centerOn(100, 160);
         QTest::mousePress(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
                           window.canvas()->mapFromScene(window.port_position({resistor, "p"})));
-        QTest::mouseMove(window.canvas()->viewport(),window.canvas()->mapFromScene(QPointF(100,220)));
+        QTest::mouseMove(window.canvas()->viewport(), window.canvas()->mapFromScene(QPointF(100, 220)));
         QTest::mouseRelease(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
-                          window.canvas()->mapFromScene(QPointF(100, 220)));
+                            window.canvas()->mapFromScene(QPointF(100, 220)));
         QCOMPARE(window.project().nodes.size(), size_t(2));
         QCOMPARE(window.project().wires.size(), size_t(1));
         window.stop_simulation();
     }
-    void gestures_taps_and_transforms(){
-        QTemporaryDir temp;EditorWindow window("ru",temp.path());window.show();QTest::qWait(30);
-        auto r=window.add_component(Kind::resistor,{100,80});auto c=window.add_component(Kind::capacitor,{380,80});auto plot=window.add_plot({320,240});
-        QVERIFY(window.connect_ports({r,"n"},{c,"p"}));
-        auto wire=window.project().wires.front().id;QPointF middle;
-        for(auto* item:window.canvas()->scene()->items())if(item->data(0).toString().toStdString()==wire){auto* path=dynamic_cast<QGraphicsPathItem*>(item);if(path)middle=path->path().pointAtPercent(.5);}
-        auto* viewport=window.canvas()->viewport();auto from=window.canvas()->mapFromScene(window.port_position({plot,"in1"}));auto end=window.canvas()->mapFromScene(middle);
-        QTest::mousePress(viewport,Qt::LeftButton,Qt::NoModifier,from);QTest::mouseMove(viewport,end);QTest::mouseRelease(viewport,Qt::LeftButton,Qt::NoModifier,end);
-        QCOMPARE(window.project().wires.size(),size_t(3));QCOMPARE(window.project().nodes.size(),size_t(1));QCOMPARE(plot_channels(window.project(),plot).size(),size_t(1));
-        window.undo();QCOMPARE(window.project().wires.size(),size_t(1));window.redo();
-        window.select_object(r);auto before=window.port_position({r,"p"});window.findChild<QAction*>("action_rotate")->trigger();auto after=window.port_position({r,"p"});QVERIFY(before!=after);QCOMPARE(after,QPointF(100,20));
-        window.findChild<QAction*>("action_mirror")->trigger();QVERIFY(window.project().components.front().orientation.mirrored);
-        window.findChild<QAction*>("action_copy")->trigger();window.findChild<QAction*>("action_paste")->trigger();QCOMPARE(window.project().components.size(),size_t(3));
-        QVERIFY(window.save_project(temp.filePath("edited.pds")));QVERIFY(window.open_project(temp.filePath("edited.pds")));QVERIFY(window.project().components.front().orientation.mirrored);
+    void gestures_taps_and_transforms() {
+        QTemporaryDir temp;
+        EditorWindow window("ru", temp.path());
+        window.show();
+        QTest::qWait(30);
+        auto r = window.add_component(Kind::resistor, {100, 80});
+        auto c = window.add_component(Kind::capacitor, {380, 80});
+        auto plot = window.add_plot({320, 240});
+        QVERIFY(window.connect_ports({r, "n"}, {c, "p"}));
+        auto wire = window.project().wires.front().id;
+        QPointF middle;
+        for (auto *item : window.canvas()->scene()->items())
+            if (item->data(0).toString().toStdString() == wire) {
+                auto *path = dynamic_cast<QGraphicsPathItem *>(item);
+                if (path)
+                    middle = path->path().pointAtPercent(.5);
+            }
+        auto *viewport = window.canvas()->viewport();
+        auto from = window.canvas()->mapFromScene(window.port_position({plot, "in1"}));
+        auto end = window.canvas()->mapFromScene(middle);
+        QTest::mousePress(viewport, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(viewport, end);
+        QTest::mouseRelease(viewport, Qt::LeftButton, Qt::NoModifier, end);
+        QCOMPARE(window.project().wires.size(), size_t(3));
+        QCOMPARE(window.project().nodes.size(), size_t(1));
+        QCOMPARE(plot_channels(window.project(), plot).size(), size_t(1));
+        window.undo();
+        QCOMPARE(window.project().wires.size(), size_t(1));
+        window.redo();
+        window.select_object(r);
+        auto before = window.port_position({r, "p"});
+        window.findChild<QAction *>("action_rotate")->trigger();
+        auto after = window.port_position({r, "p"});
+        QVERIFY(before != after);
+        QCOMPARE(after, QPointF(100, 20));
+        window.findChild<QAction *>("action_mirror")->trigger();
+        QVERIFY(window.project().components.front().orientation.mirrored);
+        window.findChild<QAction *>("action_copy")->trigger();
+        window.findChild<QAction *>("action_paste")->trigger();
+        QTest::mouseClick(viewport, Qt::LeftButton, Qt::NoModifier,
+                          window.canvas()->mapFromScene(QPointF(400, 300)));
+        QCOMPARE(window.project().components.size(), size_t(3));
+        QVERIFY(window.save_project(temp.filePath("edited.pds")));
+        QVERIFY(window.open_project(temp.filePath("edited.pds")));
+        QVERIFY(window.project().components.front().orientation.mirrored);
     }
     void delete_disconnect_undo() {
         QTemporaryDir temp;

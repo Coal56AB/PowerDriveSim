@@ -1,0 +1,19 @@
+{
+  "type": "D",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    }
+  ],
+  "palette": {
+    "id": 6,
+    "label": "diode",
+    "category": "switching",
+    "short": "D",
+    "fixed": false,
+    "hidden": false
+  }
+}
