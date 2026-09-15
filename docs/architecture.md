@@ -117,3 +117,14 @@ Active-set solve начинает с предыдущего принятого �
 Gate edges по-прежнему обрабатываются точно, с согласованием iL/uC.
 Проверки включают оба integration methods, RC charge/hold, bridge обеих
 полярностей, current-driven diode и RL freewheel с неизменным iL на фронте.
+
+## Документ и проводники Milestone 1
+Document хранит исходный wired graph, snapshots транзакций и 100 undo-операций.
+resolve_connections объединяет только явно связанные conserving endpoints.
+Directed gate wires разворачивают recorded patterns в атомарные switch events.
+Недопустимые соединения не меняют документ. Удаление провода разделяет сеть.
+GUI получает готовую net map для подсветки и не формирует электрические уравнения.
+Преобразование legacy nets создаёт явные провода с воспроизводимыми UUID;
+обратная компиляция сохраняет численный результат исходной RC.
+Выбран Qt 6.5.3 для совместимости с имеющимся MSVC 2019:
+https://doc.qt.io/qt-6.5/supported-platforms.html

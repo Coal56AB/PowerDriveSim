@@ -51,6 +51,7 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
     Result result; result.project_id=ir.project_id; result.profile=ir.profile; result.channels=ir.unknowns;
+    for(const auto& observation:ir.observations) result.channels.push_back(observation.channel);
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     const bool trapezoidal=ir.profile.method==Method::trapezoidal;
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size());
@@ -95,7 +96,9 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
                         system.inject(b,-factor*states[i]-(trapezoidal?history[i]:0));
                     }
                     break;
-                case Kind::diode:
+                case Kind::voltage_probe: break; // Compiled as a non-loading observation.
+            case Kind::current_probe: system.add(b,p,1); system.add(b,n,-1); break;
+            case Kind::diode:
                     if(active[i]) { system.add(b,p,1); system.add(b,n,-1); }
                     else system.add(b,b,1);
                     break;
@@ -191,6 +194,8 @@ Result execute(const SimulationIR& ir,const std::atomic_bool* cancel) {
         return values;
     };
     auto record=[&](double t,std::vector<double> values) {
+        for(const auto& o:ir.observations)
+            values.push_back((o.positive<0?0:values[o.positive])-(o.negative<0?0:values[o.negative]));
         Sample sample{t,std::move(values),{}};
         for(size_t i=0;i<ir.stamps.size();++i) if(ir.stamps[i].component.kind==Kind::ideal_switch) sample.gates.push_back(gates[i]);
         result.samples.push_back(std::move(sample));

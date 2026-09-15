@@ -26,10 +26,10 @@ Equation Generation → Simulation IR → Optimization → Backend Execution →
 
 Milestone 0 выполнен по всем четырём критериям. Активен Milestone 1, он не завершён.
 Реализован первый блок M1: Trapezoidal, ideal diode и bounded active-set solve.
-Точка остановки: core/solver/reference/reference.cpp проверен для RLC/V/I/S/D.
-core/model/model.hpp пока описывает плоский electrical graph со ссылками на node UUID.
+Текущая работа: модель соединений/документа завершена, создание Qt 6 desktop.
+core/model/connectivity.cpp разрешает явные провода в электрические сети; core/editor/document.cpp хранит транзакции и undo/redo.
 Первый невыполненный критерий M1 — создание, соединение и запуск схемы в GUI.
-Desktop target, typed signal/gate ports, hierarchy, Inspector и Scope ещё отсутствуют.
+Типизированные electrical/gate/signal порты и probes добавлены. Desktop, hierarchy, Inspector и Scope UI ещё отсутствуют.
 
 ## Выполнено и проверено
 
@@ -37,10 +37,10 @@ Desktop target, typed signal/gate ports, hierarchy, Inspector и Scope ещё о
 - Backward Euler и Trapezoidal; два порядка сходимости проверены по аналитике
 - Точные recorded gate edges, одновременные события, повторяемость и порядок UUID
 - Ideal diode: forward/reverse, current-driven, RC charge/hold, bridge обеих полярностей, RL freewheel
-- Формат v3; последовательные миграции v1→v2→v3; UUID, геометрия, extensions, solver profile
+- Формат v4 с явными проводами, gate patterns и Scope settings; последовательные миграции v1→v2→v3; UUID, геометрия, extensions, solver profile
 - CSV с units, UUID, method/backend/precision и nonlinear settings; CLI и benchmark
 - Последняя Release-сборка MSVC 19.29 успешна без предупреждений
-- Последний CTest: 7/7 групп, 1.28 s (unit/numerical/serialization/topology/regression/examples/diode)
+- Проверка после модели редактора: 8/8 групп, 1.56 s (unit/numerical/serialization/topology/regression/examples/diode)
 - RC BE error 0.000183863 V; RLC BE 0.00038693 V
 - RC Trap error 3.0657e-6 V; RLC Trap 3.89624e-6 V; LC energy и gate history проверены
 - Пять bundled examples проходят assertions; freewheel CLI: 1500 steps, residual 1.7764e-16
@@ -49,8 +49,8 @@ Desktop target, typed signal/gate ports, hierarchy, Inspector и Scope ещё о
 
 ## Следующие действия
 
-1. Добавить типизированные electrical/gate/signal ports, connections и probes в document model; обеспечить совместимость v3 и тесты connectivity
-2. Подготовить Qt 6 toolchain и desktop target, который использует то же ядро; создать add/connect/edit/run без правок C++
+1. Создать Qt 6 desktop: холст/порты/провода, Inspector, фоновый Run/Stop и Scope поверх общего ядра
+2. Проверить создание новой схемы мышью, правку, сохранение и запуск без C++
 3. Реализовать command history и save/load/autosave для editor document
 4. Добавить hierarchy/public ports/open internals/edit definition/detach/flatten с тестами UUID и независимого экземпляра
 5. Создать атомарные 2L VSI и 3L NPC с отдельными diodes/snubber/DC-link/gates; проверить изменённые топологии
@@ -106,7 +106,7 @@ Format v1/v2 fixtures сохранять для регрессионной пр�
 
 ## Известные проблемы и ограничения
 
-- Нет GUI, hierarchy, typed ports, probes UI, Scope, 2L/NPC, машин и ускоренных backend
+- Нет GUI, hierarchy, probes UI, Scope, 2L/NPC, машин и ускоренных backend
 - Идеальные DAE loops с неуникальными токами/импульсами диагностируются; index reduction отсутствует
 - Поиск diode states ограничен iteration budget; общая сходимость сложных идеальных сетей не гарантирована
 - Естественные diode zero crossings разрешаются на концах шагов; scheduled gate edges — точно
@@ -137,3 +137,8 @@ python docs/render_examples.py (только для иллюстрации ну�
 CI: https://github.com/Coal56AB/PowerDriveSim/actions/runs/34981148062 — обе платформы success.
 Этот документальный шаг фиксирует приёмку CI и handoff; исходники после e659b31 не менялись.
 Перед завершением следующего сеанса обновить этот файл, собрать, проверить и push.
+
+## Обновление модели редактора
+Проверены разрыв сети при удалении провода, преобразование старой RC без изменения результата,
+независимые типы портов, voltage/current probes, SI input, gate fanout, транзакции и undo/redo.
+Qt 6.5.3 qtbase загружен в игнорируемую .deps/qt для MSVC 2019; не коммитить зависимости.

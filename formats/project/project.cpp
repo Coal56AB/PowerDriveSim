@@ -13,9 +13,9 @@ Project read_project(std::istream& in) {
     std::istringstream header(line);
     if(!(header >> tag >> p.schema)) throw Diagnostic("parse_error","","Malformed header");
     header >> std::ws;
-    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>3))
-        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1, 2 or 3");
-    bool identity=false, profile=false, nonlinear=false;
+    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>4))
+        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..4");
+    bool identity=false, profile=false, nonlinear=false, wiring=false;
     size_t number=1;
     while(std::getline(in,line)) {
         ++number;
@@ -38,9 +38,30 @@ Project read_project(std::istream& in) {
             row >> p.profile.max_iterations >> p.profile.voltage_tolerance
                 >> p.profile.current_tolerance >> p.profile.relative_tolerance;
             nonlinear=true;
+        } else if(tag=="wiring" && p.schema>=4 && !wiring) {
+            std::string mode; row >> mode;
+            if(mode!="nets" && mode!="wires") throw Diagnostic("parse_error","","Expected nets or wires mode");
+            p.wired=mode=="wires"; wiring=true;
+        } else if(tag=="wire" && p.schema>=4) {
+            Wire wire; size_t count=0;
+            row >> std::quoted(wire.id) >> std::quoted(wire.from.object) >> std::quoted(wire.from.port)
+                >> std::quoted(wire.to.object) >> std::quoted(wire.to.port) >> count;
+            if(count>10000) throw Diagnostic("parse_error",wire.id,"Too many wire routing points");
+            for(size_t i=0;i<count;++i) { Point point; row >> point.x >> point.y; wire.bends.push_back(point); }
+            p.wires.push_back(wire);
+        } else if(tag=="pattern" && p.schema>=4) {
+            GatePattern pattern; int initial=-1;
+            row >> std::quoted(pattern.id) >> std::quoted(pattern.name) >> pattern.x >> pattern.y >> initial;
+            if(initial!=0 && initial!=1) row.setstate(std::ios::failbit);
+            pattern.initial=initial==1; p.patterns.push_back(pattern);
+        } else if(tag=="scopeview" && p.schema>=4) {
+            row >> p.scope_begin >> p.scope_end >> p.cursor_a >> p.cursor_b;
+        } else if(tag=="scope" && p.schema>=4) {
+            std::string channel; row >> std::quoted(channel); p.scope_channels.push_back(channel);
         } else if(tag=="node") {
             Node n; int g=-1;
             row >> std::quoted(n.id) >> std::quoted(n.name) >> g;
+            if(p.schema>=4) row >> n.x >> n.y;
             if(g!=0 && g!=1) row.setstate(std::ios::failbit);
             n.ground=g==1; p.nodes.push_back(n);
         } else if(tag=="component") {
@@ -51,6 +72,8 @@ Project read_project(std::istream& in) {
             if(closed!=0 && closed!=1) row.setstate(std::ios::failbit);
             c.closed=closed==1; c.kind=parse_kind(kind);
             if(c.kind==Kind::diode && p.schema<3) throw Diagnostic("schema_version",c.id,"Diodes require schema 3");
+            if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && p.schema<4)
+                throw Diagnostic("schema_version",c.id,"Probes require schema 4");
             p.components.push_back(c);
         } else if(tag=="event") {
             GateEvent e{}; int closed=-1;
@@ -62,13 +85,13 @@ Project read_project(std::istream& in) {
         row >> std::ws;
         if(!row.eof()) throw Diagnostic("parse_error",std::to_string(number),"Trailing fields");
     }
-    if(!identity || !profile || (p.schema==3 && !nonlinear) || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
+    if(!identity || !profile || (p.schema>=3 && !nonlinear) || (p.schema>=4 && !wiring) || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
     // v1 -> v2: default Backward Euler; v2 -> v3: explicit default nonlinear profile.
-    p.schema=3;
+    p.schema=4;
     return p;
 }
 void write_project(const Project& p, std::ostream& out) {
-    if(p.schema!=3) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
+    if(p.schema!=4) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
     const auto check_text=[](const std::string& value,const std::string& object) {
         if(value.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("invalid_text",object,"Project format strings must be single-line");
@@ -80,11 +103,27 @@ void write_project(const Project& p, std::ostream& out) {
         check_text(c.positive,c.id); check_text(c.negative,c.id);
     }
     for(const auto& event:p.events) check_text(event.target,event.target);
-    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 3\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
+    for(const auto& wire:p.wires) {
+        check_text(wire.id,wire.id); check_text(wire.from.object,wire.id); check_text(wire.from.port,wire.id);
+        check_text(wire.to.object,wire.id); check_text(wire.to.port,wire.id);
+    }
+    for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
+    for(const auto& channel:p.scope_channels) check_text(channel,p.id);
+    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 4\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
         << p.profile.current_tolerance << ' ' << p.profile.relative_tolerance << '\n';
-    for(const auto& n:p.nodes) out << "node " << std::quoted(n.id) << ' ' << std::quoted(n.name) << ' ' << n.ground << '\n';
+    out << "wiring " << (p.wired?"wires":"nets") << '\n';
+    for(const auto& wire:p.wires) {
+        out << "wire " << std::quoted(wire.id) << ' ' << std::quoted(wire.from.object) << ' ' << std::quoted(wire.from.port)
+            << ' ' << std::quoted(wire.to.object) << ' ' << std::quoted(wire.to.port) << ' ' << wire.bends.size();
+        for(const auto& point:wire.bends) out << ' ' << point.x << ' ' << point.y;
+        out << '\n';
+    }
+    for(const auto& g:p.patterns) out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
+    out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';
+    for(const auto& channel:p.scope_channels) out << "scope " << std::quoted(channel) << '\n';
+    for(const auto& n:p.nodes) out << "node " << std::quoted(n.id) << ' ' << std::quoted(n.name) << ' ' << n.ground << ' ' << n.x << ' ' << n.y << '\n';
     for(const auto& c:p.components) out << "component " << std::quoted(c.id) << ' ' << std::quoted(c.name) << ' '
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';

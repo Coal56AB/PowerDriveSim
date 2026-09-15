@@ -42,3 +42,25 @@ relative tolerance — конечное неотрицательное. Эти �
 проверкой complementarity, не добавляют электрическую проводимость.
 Имена и UUID в record format должны быть однострочными.
 Writer явно задаёт формат double и boolean независимо от stream flags.
+
+## Schema 4 — документ редактора
+
+Текущий writer выдаёт PowerDriveSim 4; loader читает v1..v4.
+Старые схемы остаются в режиме nets до преобразования для редактора.
+Новые записи:
+- wiring nets|wires
+- node "id" "name" ground x y (v4 добавляет координаты)
+- wire "id" "from_object" "from_port" "to_object" "to_port" bend_count x1 y1 ...
+- pattern "id" "name" x y initial
+- scope "channel_key"
+- scopeview time_begin time_end cursor_a cursor_b (-1 означает auto/unset)
+
+В wires-режиме authoritative connectivity задаётся только wire endpoints.
+Поля positive/negative у компонентов пустые и формируются компилятором.
+У electrical component есть p/n; switch имеет gate input; pattern — out.
+VP/IP имеют scalar out, который нельзя подключать к electrical/gate.
+Ground/junction — node endpoint. Пересечения геометрии ничего не соединяют.
+Gate events могут адресовать pattern; компилятор раздаёт их подключённым switches.
+Два драйвера одного gate отклоняются. Node UUID сохраняется для именованной сети;
+для соединённых только выводов используется детерминированный application-defined UUIDv8.
+Probe VP не нагружает сеть; IP вставляет идеальную ветвь с нулевым напряжением.

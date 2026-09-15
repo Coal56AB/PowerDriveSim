@@ -5,12 +5,14 @@ namespace pds {
 // Backend-independent branch stamps. Node -1 denotes electrical reference.
 struct Stamp { Component component; int positive=-1, negative=-1, branch=-1; };
 struct Channel { std::string object, name, unit; };
+struct Observation { Channel channel; int positive=-1,negative=-1; };
 struct SimulationIR {
     std::string project_id;
     Profile profile;
     std::vector<Stamp> stamps;
     std::vector<GateEvent> events;
     std::vector<Channel> unknowns;
+    std::vector<Observation> observations;
     std::vector<std::pair<int,int>> sparsity;
     int node_count=0;
 };

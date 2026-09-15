@@ -16,7 +16,7 @@ public:
 };
 struct Sample { double time; std::vector<double> values; std::vector<bool> gates; };
 struct Result {
-    std::string project_id, backend="Reference CPU", precision="float64", engine="0.2.0";
+    std::string project_id, backend="Reference CPU", precision="float64", engine="0.3.0";
     Profile profile;
     std::vector<Channel> channels;
     std::vector<std::string> gate_objects;

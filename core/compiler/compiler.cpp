@@ -1,11 +1,12 @@
 #include "core/ir/ir.hpp"
+#include "core/model/connectivity.hpp"
 #include <algorithm>
 #include <cmath>
 #include <map>
 #include <set>
 namespace pds {
-SimulationIR compile(const Project& p) {
-    if(p.schema!=3) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+static SimulationIR compile_flat(const Project& p) {
+    if(p.schema!=4) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -37,7 +38,7 @@ SimulationIR compile(const Project& p) {
         (void)kind_name(c.kind);
         if(!indices.count(c.positive) || !indices.count(c.negative))
             throw Diagnostic("missing_terminal",c.id,"Connect both terminals to existing electrical nodes");
-        if(c.positive==c.negative) throw Diagnostic("shorted_component",c.id,"Both terminals reference the same node");
+        if(c.positive==c.negative && c.kind!=Kind::voltage_probe) throw Diagnostic("shorted_component",c.id,"Both terminals reference the same node");
         if(!std::isfinite(c.value) || !std::isfinite(c.initial) || !std::isfinite(c.x) || !std::isfinite(c.y))
             throw Diagnostic("invalid_parameter",c.id,"Parameters must be finite");
         if((c.kind==Kind::resistor || c.kind==Kind::capacitor || c.kind==Kind::inductor) && c.value<=0)
@@ -45,16 +46,18 @@ SimulationIR compile(const Project& p) {
         if(c.kind==Kind::diode && (c.value!=0 || c.initial!=0 || c.closed))
             throw Diagnostic("invalid_parameter",c.id,"Ideal diode uses value=0, initial=0 and closed=0; its state is solved automatically");
         Stamp s{c,indices.at(c.positive),indices.at(c.negative),-1};
-        if(c.kind!=Kind::resistor && c.kind!=Kind::current) {
+        if(c.kind!=Kind::resistor && c.kind!=Kind::current && c.kind!=Kind::voltage_probe) {
             s.branch=static_cast<int>(ir.unknowns.size());
             ir.unknowns.push_back({c.id,"i:"+c.name,"A"});
         }
-        ir.stamps.push_back(s);
+        if(c.kind==Kind::voltage_probe)
+            ir.observations.push_back({{c.id,"u:"+c.name,"V"},s.positive,s.negative});
+        else ir.stamps.push_back(s);
     }
     // Current sources do not establish a voltage-reference path.
     // State-dependent ideal loops/islands are also checked by factorization.
     for(size_t pass=0;pass<nodes.size();++pass)
-        for(const auto& c:components) if(c.kind!=Kind::current) {
+        for(const auto& c:components) if(c.kind!=Kind::current && c.kind!=Kind::voltage_probe) {
             if(reached.count(c.positive)) reached.insert(c.negative);
             if(reached.count(c.negative)) reached.insert(c.positive);
         }
@@ -85,4 +88,8 @@ SimulationIR compile(const Project& p) {
     ir.sparsity.assign(pattern.begin(),pattern.end());
     return ir;
 }
+SimulationIR compile(const Project& project) {
+    return compile_flat(resolve_connections(project).project);
+}
+
 }
