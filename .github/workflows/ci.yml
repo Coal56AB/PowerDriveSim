@@ -1,0 +1,16 @@
+name: Core verification
+on: [push, pull_request]
+jobs:
+  headless:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release --parallel 2
+      - name: Unit, numerical, serialization, topology, regression, examples
+        run: ctest --test-dir build -C Release --output-on-failure

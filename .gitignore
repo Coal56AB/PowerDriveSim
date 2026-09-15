@@ -1,0 +1,10 @@
+/build*/
+/.deps/
+/.vs/
+/.idea/
+*.user
+*.log
+*.dmp
+*.csv
+*.autosave
+__pycache__/

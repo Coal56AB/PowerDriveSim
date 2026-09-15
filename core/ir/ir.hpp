@@ -1,0 +1,18 @@
+#pragma once
+#include "core/model/model.hpp"
+#include <utility>
+namespace pds {
+// Backend-independent branch stamps. Node -1 denotes electrical reference.
+struct Stamp { Component component; int positive=-1, negative=-1, branch=-1; };
+struct Channel { std::string object, name, unit; };
+struct SimulationIR {
+    std::string project_id;
+    Profile profile;
+    std::vector<Stamp> stamps;
+    std::vector<GateEvent> events;
+    std::vector<Channel> unknowns;
+    std::vector<std::pair<int,int>> sparsity;
+    int node_count=0;
+};
+SimulationIR compile(const Project& project);
+}

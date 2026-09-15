@@ -1,0 +1,34 @@
+#pragma once
+#include <stdexcept>
+#include <string>
+#include <vector>
+namespace pds {
+enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch };
+std::string kind_name(Kind kind);
+Kind parse_kind(const std::string& name);
+struct Node { std::string id, name; bool ground = false; };
+struct Component {
+    std::string id, name;
+    Kind kind = Kind::resistor;
+    std::string positive, negative;
+    double value = 1.0, initial = 0.0, x = 0.0, y = 0.0;
+    bool closed = false;
+};
+struct GateEvent { double time; std::string target; bool closed; };
+struct Profile { double stop = 0.01, step = 0.00001; };
+struct Project {
+    unsigned schema = 1;
+    std::string id, name;
+    std::vector<Node> nodes;
+    std::vector<Component> components;
+    std::vector<GateEvent> events;
+    Profile profile;
+    std::vector<std::string> extensions;
+};
+struct Diagnostic : std::runtime_error {
+    std::string code, object;
+    double time;
+    Diagnostic(std::string code, std::string object, std::string message, double time = 0.0);
+};
+bool valid_uuid(const std::string& value);
+}
