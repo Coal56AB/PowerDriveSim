@@ -1,0 +1,13 @@
+{
+  "type": "library:igbt",
+  "fields": [],
+  "template": "semiconductors/igbt.pds",
+  "palette": {
+    "id": 201,
+    "label": "igbt_module",
+    "category": "switching",
+    "short": "IGBT",
+    "fixed": false,
+    "hidden": false
+  }
+}

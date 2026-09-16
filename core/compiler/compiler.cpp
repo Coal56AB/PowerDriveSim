@@ -51,8 +51,8 @@ static SimulationIR compile_flat(const Project& p) {
             throw Diagnostic("invalid_parameter",c.id,"R, L and C must be strictly positive");
         if(c.kind==Kind::diode && (c.value!=0 || c.initial!=0 || c.closed))
             throw Diagnostic("invalid_parameter",c.id,"Ideal diode uses value=0, initial=0 and closed=0; its state is solved automatically");
-        if(c.kind==Kind::thyristor && (c.value!=0 || c.initial!=0))
-            throw Diagnostic("invalid_parameter",c.id,"Thyristor uses value=0 and initial=0; use explicit latch parameters");
+        if((c.kind==Kind::thyristor || c.kind==Kind::igbt) && (c.value!=0 || c.initial!=0))
+            throw Diagnostic("invalid_parameter",c.id,"Controlled rectifier uses value=0 and initial=0; thyristor latch parameters are explicit");
         Stamp s{c,indices.at(c.positive),indices.at(c.negative),-1};
         if(c.kind!=Kind::resistor && c.kind!=Kind::current && c.kind!=Kind::voltage_probe) {
             s.branch=static_cast<int>(ir.unknowns.size());
@@ -89,7 +89,7 @@ static SimulationIR compile_flat(const Project& p) {
             throw Diagnostic("invalid_event",e.target,"Event time must lie in the simulation interval");
         auto it=std::find_if(components.begin(),components.end(),[&](const Component& c){return c.id==e.target;});
         if(it==components.end() || !gate_controlled(it->kind))
-            throw Diagnostic("invalid_gate_target",e.target,"Gate events require a switch or thyristor");
+            throw Diagnostic("invalid_gate_target",e.target,"Gate events require a gate-controlled device");
         if(i && ir.events[i-1].time==e.time && ir.events[i-1].target==e.target)
             throw Diagnostic("conflicting_gate_events",e.target,"Only one gate assignment per switch and timestamp is allowed");
     }

@@ -195,6 +195,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if(c.kind==Kind::diode && p.schema<3) throw Diagnostic("schema_version",c.id,"Diodes require schema 3");
             if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && p.schema<4)
                 throw Diagnostic("schema_version",c.id,"Probes require schema 4");
+            if(c.kind==Kind::igbt && p.schema<12)throw Diagnostic("schema_version",c.id,"IGBT requires schema 12");
             if(c.kind==Kind::thyristor && p.schema<11)throw Diagnostic("schema_version",c.id,"Thyristors require schema 11");
             p.components.push_back(c);
         } else if(tag=="thyristor" && p.schema>=11) {

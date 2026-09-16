@@ -155,12 +155,12 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
                 const double excess_v=v-diode_threshold(stamp.component);
                 const double excess_i=current-diode_threshold_current(stamp.component);
                 const bool thyristor=stamp.component.kind==Kind::thyristor;
-                const bool can_fire=!thyristor||gates[index];
+                const bool igbt=stamp.component.kind==Kind::igbt;
+                const bool can_fire=(!thyristor&&!igbt)||gates[index];
                 if(thyristor&&!gates[index]&&active[index]&&
                    (current<stamp.component.semiconductor.holding_current-it||excess_i<=it))
                     released[index]=true;
-                const bool must_block=thyristor&&!gates[index]&&
-                    (!latched[index]||released[index]);
+                const bool must_block=!gates[index]&&(igbt||(thyristor&&(!latched[index]||released[index])));
                 const bool must_hold=thyristor&&!gates[index]&&latched[index]&&!released[index];
                 const bool dynamic=dynamic_diode(stamp.component);
                 if(dynamic)residual_v=std::max(residual_v,std::max(0.0,active[index]?-excess_v:excess_v));

@@ -1,7 +1,10 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/theme.hpp"
+#include "formats/project/project.hpp"
 #include <QAction>
+#include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -10,6 +13,7 @@
 #include <QToolBar>
 #include <QTreeWidget>
 #include <algorithm>
+#include <sstream>
 
 namespace pds::desktop {
 namespace {
@@ -60,6 +64,31 @@ QIcon component_icon(int id) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
+    } else if (id == 10 || id == 200 || id == 201) {
+        p.drawLine(1, 22, 8, 22);
+        p.drawLine(8, 22, 8, 14);
+        p.drawLine(24, 14, 24, 22);
+        p.drawLine(24, 22, 31, 22);
+        if (id == 200) {
+            p.drawLine(5, 14, 10, 14);
+            p.drawLine(14, 14, 18, 14);
+            p.drawLine(22, 14, 27, 14);
+        } else
+            p.drawLine(5, 14, 27, 14);
+        p.drawLine(5, 8, 27, 8);
+        p.drawLine(16, 1, 16, 8);
+        if (id != 200) {
+            p.drawLine(18, 18, 24, 22);
+            p.drawLine(24, 22, 18, 22);
+        }
+        if (id >= 200) {
+            p.drawLine(4, 28, 28, 28);
+            p.drawLine(4, 28, 4, 22);
+            p.drawLine(28, 28, 28, 22);
+            p.drawLine(18, 25, 12, 28);
+            p.drawLine(12, 28, 18, 31);
+            p.drawLine(12, 25, 12, 31);
+        }
     } else if (id == 5) {
         p.drawLine(1, 22, 8, 22);
         p.drawLine(8, 22, 24, 12);
@@ -99,6 +128,23 @@ void EditorWindow::begin_placement(int id) {
     if (running())
         return;
     canvas_->cancel_gesture();
+    const auto action = component_actions_.find(id);
+    if (action != component_actions_.end()) {
+        const auto path = action->second->property("template").toString();
+        if (!path.isEmpty()) {
+            try {
+                const auto local = QCoreApplication::applicationDirPath() + "/library/" + path;
+                QFile file(QFile::exists(local) ? local : ":/library/" + path);
+                if (!file.open(QIODevice::ReadOnly))
+                    throw std::runtime_error(file.errorString().toStdString());
+                std::istringstream input(file.readAll().toStdString());
+                paste_fragment_ = read_project(input);
+            } catch (const std::exception &e) {
+                show_error(e);
+                return;
+            }
+        }
+    }
     placing_ = id;
     set_placement_preview();
     banner_->setText(text("place_hint"));
@@ -126,6 +172,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         action->setObjectName("insert_component_" + QString::number(id));
         action->setData(id);
         action->setProperty("fixed", entry.value("fixed").toBool());
+        action->setProperty("template", spec.value("template").toString());
         action->setIconText(short_name);
         action->setIcon(component_icon(id));
         action->setToolTip(text(label.constData()));

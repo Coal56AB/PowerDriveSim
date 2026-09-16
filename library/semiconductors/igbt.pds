@@ -1,0 +1,35 @@
+PowerDriveSim 12
+project "d43099ae-f743-5612-b890-72673908186f" "IGBT"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "2909dff3-71a8-5bce-9102-9cbc8ab560ba" "IGBT" "bbd65e1f-7d60-5a53-a01d-fe7d6a8d8cd3" 0 0 0
+definition "bbd65e1f-7d60-5a53-a01d-fe7d6a8d8cd3" "IGBT"
+public_port "1faf876f-e51b-5691-8969-e3ce0f6803e5" "C" "cb844965-859d-51f2-80fc-795a1782acfe" "p" 0 0
+public_port "9c20d001-11ee-5bf5-b513-d9e8ca8b41b8" "E" "cb844965-859d-51f2-80fc-795a1782acfe" "n" 0 0
+public_port "6a7d6eba-8629-5a37-b23a-7f15d03862c6" "G" "cb844965-859d-51f2-80fc-795a1782acfe" "gate" 1 1
+public_parameter "f53b523e-11c8-5e4d-9528-6edfa2f2e274" "Ron" "Ohm" "cb844965-859d-51f2-80fc-795a1782acfe" "ron" 0.01
+public_parameter "5a7aa85f-636e-530b-ab78-8bbbf402d187" "Roff" "Ohm" "cb844965-859d-51f2-80fc-795a1782acfe" "roff" 1000000.0
+public_parameter "6331be65-d29c-5078-ade4-3288d3e23d51" "Vf" "V" "cb844965-859d-51f2-80fc-795a1782acfe" "forward_voltage" 0.7
+public_parameter "f74e17e3-8e00-509e-8969-e1097df7eb8c" "Diode Ron" "Ohm" "32e02861-3358-5dd2-b0fb-3f39990b3147" "ron" 0.01
+public_parameter "8009ec58-caf9-581b-bd72-3e6591807e50" "Diode Roff" "Ohm" "32e02861-3358-5dd2-b0fb-3f39990b3147" "roff" 1000000.0
+public_parameter "2b9f20f5-1b17-59cb-95d1-9ffea8355a4b" "Diode Vf" "V" "32e02861-3358-5dd2-b0fb-3f39990b3147" "forward_voltage" 0.7
+body
+PowerDriveSim 12
+project "bbd65e1f-7d60-5a53-a01d-fe7d6a8d8cd3" "IGBT"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+component "cb844965-859d-51f2-80fc-795a1782acfe" "Channel" IGBT "" "" 0 0 0 0 0
+component "32e02861-3358-5dd2-b0fb-3f39990b3147" "Antiparallel diode" D "" "" 0 0 0 180 0
+orientation "32e02861-3358-5dd2-b0fb-3f39990b3147" 2 0
+wire "268fcdc2-7fe2-5ef2-8218-cd84f84689a3" "cb844965-859d-51f2-80fc-795a1782acfe" "p" "32e02861-3358-5dd2-b0fb-3f39990b3147" "n" 2 -140 0 -140 180
+wire "52024140-10a6-5e7b-ac38-475873d5c589" "cb844965-859d-51f2-80fc-795a1782acfe" "n" "32e02861-3358-5dd2-b0fb-3f39990b3147" "p" 2 140 0 140 180
+semiconductor "cb844965-859d-51f2-80fc-795a1782acfe" 1 0.01 1000000 0.7
+semiconductor "32e02861-3358-5dd2-b0fb-3f39990b3147" 1 0.01 1000000 0.7
+x-label "cb844965-859d-51f2-80fc-795a1782acfe" "value" 45 0 0 0
+end_definition

@@ -358,6 +358,16 @@ class Atom final : public QGraphicsItem {
             } else if (symbol == "L") {
                 for (int i = 0; i < 4; ++i)
                     p->drawArc(QRectF(-28 + i * 14, -14, 14, 28), 0, 180 * 16);
+            } else if (symbol == "IGBT") {
+                p->drawLine(-27, 0, -16, 0);
+                p->drawLine(-16, 0, -16, -12);
+                p->drawLine(16, -12, 16, 0);
+                p->drawLine(16, 0, 27, 0);
+                p->drawLine(-22, -12, 22, -12);
+                p->drawLine(-22, -20, 22, -20);
+                p->drawLine(0, -40, 0, -20);
+                p->drawLine(8, -7, 16, 0);
+                p->drawLine(16, 0, 8, 0);
             } else if (symbol == "S") {
                 p->drawLine(-27, 0, 20, -18);
                 p->drawLine(0, -40, 0, -26);

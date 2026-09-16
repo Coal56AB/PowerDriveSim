@@ -302,5 +302,8 @@
   "thyristor": "T · Thyristor",
   "holding_current": "Holding current",
   "initial_latched": "Initially latched",
-  "initial_gate": "Initial gate"
+  "initial_gate": "Initial gate",
+  "igbt_channel": "IGBT · Channel",
+  "mosfet_module": "MOSFET with body diode",
+  "igbt_module": "IGBT with antiparallel diode"
 }

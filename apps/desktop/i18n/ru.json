@@ -302,5 +302,8 @@
   "thyristor": "T · Тиристор",
   "holding_current": "Ток удержания",
   "initial_latched": "Удержание t=0",
-  "initial_gate": "Начальный gate"
+  "initial_gate": "Начальный gate",
+  "igbt_channel": "IGBT · Канал",
+  "mosfet_module": "MOSFET с body-диодом",
+  "igbt_module": "IGBT с обратным диодом"
 }

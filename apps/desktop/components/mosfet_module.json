@@ -1,0 +1,13 @@
+{
+  "type": "library:mosfet",
+  "fields": [],
+  "template": "semiconductors/mosfet.pds",
+  "palette": {
+    "id": 200,
+    "label": "mosfet_module",
+    "category": "switching",
+    "short": "MOSFET",
+    "fixed": false,
+    "hidden": false
+  }
+}

@@ -40,7 +40,8 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
    PWL S/D с Ron/Roff/Vf и динамика обратного восстановления диода также готовы.
    Добавлен [тиристор T](thyristor.md): идеальная/PWL ветви, gate и удержание по Ih,
    schema 11 и пример управляемого полупериодного выпрямителя.
-   Следующая часть моделей — отдельные семантики MOSFET/IGBT.
+   Добавлены [MOSFET/IGBT](transistors.md) как редактируемые библиотечные подсхемы
+   с отдельным body/antiparallel диодом и атомом канала IGBT (schema 12).
    См. [источники](sources.md), [полупроводники](semiconductors.md).
 2. Редактируемые библиотечные AC/DC, DC/DC и DC/AC из приоритетного набора §12;
    precharge/DC-link/braking/discharge и готовые примеры с проверенными метриками.

@@ -1,0 +1,34 @@
+PowerDriveSim 12
+project "8c893c2c-4502-598f-85e5-b1f339cb411b" "MOSFET"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "65230397-5e03-5cbc-87fa-57a2a38a3ba8" "MOSFET" "9486546e-827a-5d63-ab98-96ab3983d523" 0 0 0
+definition "9486546e-827a-5d63-ab98-96ab3983d523" "MOSFET"
+public_port "dc53f553-f681-5070-b016-57432199cebd" "D" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "p" 0 0
+public_port "0fc8110c-485e-52af-8580-b13101ee0718" "S" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "n" 0 0
+public_port "f1a95758-f8f7-585c-bc7e-10fc4898f44c" "G" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "gate" 1 1
+public_parameter "85d5179e-32ed-5763-a61b-36a32b39438c" "Ron" "Ohm" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "ron" 0.01
+public_parameter "e37ebf30-94e3-593a-a119-2a70c7795994" "Roff" "Ohm" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "roff" 1000000.0
+public_parameter "5a287e18-2c61-5b19-acfd-dfb1694f32a4" "Diode Ron" "Ohm" "81ba5cde-7834-5ec6-97e5-e997effd222a" "ron" 0.01
+public_parameter "b74e1c85-36c5-5e6f-b96c-897c1dac8693" "Diode Roff" "Ohm" "81ba5cde-7834-5ec6-97e5-e997effd222a" "roff" 1000000.0
+public_parameter "53970abf-ca41-556e-9c00-70d4275936d2" "Diode Vf" "V" "81ba5cde-7834-5ec6-97e5-e997effd222a" "forward_voltage" 0.7
+body
+PowerDriveSim 12
+project "9486546e-827a-5d63-ab98-96ab3983d523" "MOSFET"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+component "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "Channel" S "" "" 0 0 0 0 0
+component "81ba5cde-7834-5ec6-97e5-e997effd222a" "Body diode" D "" "" 0 0 0 180 0
+orientation "81ba5cde-7834-5ec6-97e5-e997effd222a" 2 0
+wire "caa0023f-6e51-5ed4-8350-908a52326cbe" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "p" "81ba5cde-7834-5ec6-97e5-e997effd222a" "n" 2 -140 0 -140 180
+wire "1e59db5b-896d-55a7-8f8c-2ff2b3b3d02a" "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "n" "81ba5cde-7834-5ec6-97e5-e997effd222a" "p" 2 140 0 140 180
+semiconductor "8f10044a-de79-5de9-ac5f-f45a10ff73ff" 1 0.01 1000000 0.7
+semiconductor "81ba5cde-7834-5ec6-97e5-e997effd222a" 1 0.01 1000000 0.7
+x-label "8f10044a-de79-5de9-ac5f-f45a10ff73ff" "value" 45 0 0 0
+end_definition

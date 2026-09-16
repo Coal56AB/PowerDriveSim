@@ -58,6 +58,9 @@ void EditorWindow::update_instance_specs() {
             field.remove("inline");
             field.remove("inlinePart");
             field.remove("condition");
+            // Public parameters are explicit fields of the instance. Conditions
+            // of the internal atom reference properties that it alone owns.
+            field.remove("when");
             field["key"] = QString::fromStdString("parameter/" + p.id);
             field["editor"] = "number";
             field["displayLabel"] = QString::fromStdString(p.name);

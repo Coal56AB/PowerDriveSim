@@ -219,7 +219,7 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
         }
         for(auto& i:fragment.instances)i.definition=definitions.at(i.definition);
         std::map<std::string,std::string> ids;std::set<std::string> names;
-        auto remember=[&](const auto& objects){for(const auto& o:objects)names.insert(o.name);};remember(p.components);remember(p.nodes);remember(p.patterns);remember(p.plots);
+        auto remember=[&](const auto& objects){for(const auto& o:objects)names.insert(o.name);};remember(p.components);remember(p.nodes);remember(p.patterns);remember(p.plots);remember(p.instances);
         auto copy=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;auto base=object.name;unsigned suffix=2;while(names.count(object.name))object.name=base+" ("+std::to_string(suffix++)+")";names.insert(object.name);to.push_back(std::move(object));}};
         copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}

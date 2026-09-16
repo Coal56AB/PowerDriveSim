@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 11;
-enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor };
-inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor; }
-inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor; }
+inline constexpr unsigned project_schema = 12;
+enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
+inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
+inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
 struct Orientation { unsigned quarter_turns=0; bool mirrored=false; bool operator==(const Orientation&) const = default; };

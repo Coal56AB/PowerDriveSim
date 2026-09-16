@@ -80,6 +80,7 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 system.add(b, p, 1);
                 system.add(b, n, -1);
                 break;
+            case Kind::igbt:
             case Kind::thyristor:
             case Kind::diode:
             case Kind::ideal_switch:

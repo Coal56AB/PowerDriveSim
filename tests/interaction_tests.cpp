@@ -75,6 +75,73 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void transistor_library_and_run() {
+        try {
+            for (const int type : {200, 201}) {
+                QTemporaryDir dir;
+                EditorWindow w("ru", dir.path());
+                Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
+                ready(w);
+                auto *insert = w.findChild<QAction *>("insert_component_" + QString::number(type));
+                QVERIFY(insert && !insert->icon().isNull());
+                insert->trigger();
+                QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                                  w.canvas()->mapFromScene(QPointF(0, 0)));
+                QCOMPARE(w.project().instances.size(), size_t(1));
+                QCOMPARE(w.project().definitions.size(), size_t(1));
+                const auto module = w.project().instances.front();
+                const auto ports = definition(w.project(), module.definition).ports;
+                const auto parameter = definition(w.project(), module.definition).parameters.front().id;
+                auto *ron = w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(parameter));
+                QVERIFY(ron && ron->isVisible());
+                w.undo(); QVERIFY(w.project().instances.empty() && w.project().definitions.empty());
+                w.redo(); QCOMPARE(w.project().instances.front().id, module.id);
+                w.open_subcircuit(module.id);
+                QCOMPARE(w.project().components.size(), size_t(2));
+                w.findChild<QAction *>("edit_definition")->trigger();
+                const auto diode = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                                [](const auto &c) { return c.kind == Kind::diode; })->id;
+                w.select_object(diode);
+                auto *vf = w.findChild<QLineEdit *>("property_forward_voltage");
+                QVERIFY(vf && vf->isVisible() && !vf->isReadOnly());
+                vf->setText("800 mV"); QTest::keyClick(vf, Qt::Key_Return);
+                QCOMPARE(definition(w.root_project(), module.definition).components.back().semiconductor.forward_voltage, .8);
+                w.navigate_hierarchy({});
+                const auto source = w.add_component(Kind::voltage, {-300, 160});
+                const auto resistor = w.add_component(Kind::resistor, {300, 160});
+                const auto ground = w.add_node(true, {0, 300});
+                const auto gate = w.add_pattern({-240, -160});
+                w.select_object(gate);
+                auto *initial = w.findChild<QCheckBox *>("property_closed");
+                QVERIFY(initial && initial->isVisible());
+                QTest::mouseClick(initial, Qt::LeftButton, Qt::NoModifier, QPoint(8, initial->height() / 2));
+                QVERIFY(w.project().patterns.front().initial);
+                QVERIFY(w.connect_ports({source, "p"}, {module.id, ports[0].id}));
+                QVERIFY(w.connect_ports({module.id, ports[1].id}, {resistor, "p"}));
+                QVERIFY(w.connect_ports({resistor, "n"}, {ground, "node"}));
+                QVERIFY(w.connect_ports({source, "n"}, {ground, "node"}));
+                QVERIFY(w.connect_ports({gate, "out"}, {module.id, ports[2].id}));
+                const auto graph_id = w.add_plot({500, -160});
+                QVERIFY(w.connect_ports({module.id, ports[1].id}, {graph_id, "in1"}));
+                QVERIFY(w.connect_ports({gate, "out"}, {graph_id, "in2"}));
+                w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+                QVERIFY(w.has_result() && !w.result().samples.empty());
+                const auto path = dir.filePath("transistor.pds");
+                QVERIFY(w.save_project(path)); const auto expected = encoded(w.root_project());
+                QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+                w.select_object(module.id);
+                w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+                if (auto screenshot = qEnvironmentVariable("PDS_TRANSISTOR_SCREENSHOT"); !screenshot.isEmpty()) {
+                    QTest::qWait(30); QVERIFY(w.grab().save(screenshot + QString::number(type) + ".png"));
+                    w.open_subcircuit(module.id);
+                    w.select_object(diode);
+                    QTest::qWait(30); QVERIFY(w.grab().save(screenshot + QString::number(type) + "-inside.png"));
+                }
+            }
+        } catch (const std::exception &e) {
+            QFAIL(e.what());
+        }
+    }
     void thyristor_properties_and_run() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());
