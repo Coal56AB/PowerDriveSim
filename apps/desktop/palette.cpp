@@ -72,7 +72,7 @@ QIcon component_icon(int id) {
             p.drawLine(x, 16, id == 230 ? 29 : 16, 16);
         }
         if (id == 231) { p.drawLine(8, 2, 24, 2); p.drawLine(8, 30, 24, 30); }
-    } else if (id >= 220 && id <= 222) {
+    } else if (id >= 220 && id <= 223) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16);
         const int from = id == 220 ? 10 : 22, to = id == 220 ? 22 : 10;
@@ -80,6 +80,7 @@ QIcon component_icon(int id) {
         p.drawLine(16, to, 23, to);
         p.drawLine(20, to - 3, 23, to); p.drawLine(23, to, 20, to + 3);
         if (id == 222) p.drawLine(7, 8, 12, 8);
+        if (id == 223) { p.drawLine(9, from, 12, from - 3); p.drawLine(9, from, 12, from + 3); }
     } else if (id >= 210 && id <= 213) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(5, 28, 27, 4);

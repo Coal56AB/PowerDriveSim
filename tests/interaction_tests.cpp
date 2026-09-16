@@ -108,7 +108,7 @@ class InteractionTests : public QObject {
         }
     }
     void dcdc_library_parameters_and_run() {
-        for (const int type : {220, 221, 222}) {
+        for (const int type : {220, 221, 222, 223}) {
             QTemporaryDir dir;
             EditorWindow w("ru", dir.path());
             Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
@@ -125,12 +125,14 @@ class InteractionTests : public QObject {
             value->setText("4 mH"); QTest::keyClick(value, Qt::Key_Return);
             QCOMPARE(w.project().instances[0].parameters.front().second, .004);
             w.undo(); QVERIFY(w.project().instances[0].parameters.empty());
-            w.open_subcircuit(module.id); QCOMPARE(w.project().components.size(), size_t(5));
+            w.open_subcircuit(module.id); QCOMPARE(w.project().components.size(), size_t(type == 223 ? 1 : 5));
+            if (type == 223) QCOMPARE(w.project().instances.size(), size_t(1));
             w.navigate_hierarchy({});
             const auto path = dir.filePath("dcdc.pds"); QVERIFY(w.save_project(path));
             const auto expected = encoded(w.root_project());
             QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
-            const QString kind = type == 220 ? "buck" : type == 221 ? "boost" : "buck-boost";
+            const QString kind = type == 220 ? "buck" : type == 221 ? "boost" :
+                                 type == 222 ? "buck-boost" : "bidirectional-charge";
             QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/") + kind + ".pds"));
             w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
             w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
