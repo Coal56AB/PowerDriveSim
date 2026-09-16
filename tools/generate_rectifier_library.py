@@ -6,7 +6,8 @@ import math
 
 def bridge(three_phase, controlled=False):
     key = ("thyristor" if controlled else "diode") + ("-bridge-3p" if three_phase else "-bridge-1p")
-    body = Diagram("library/" + key, "Thyristor bridge" if controlled else
+    body = Diagram("library/" + key, "Three-phase thyristor bridge" if controlled and three_phase else
+                   "Thyristor bridge" if controlled else
                    "Three-phase diode bridge" if three_phase else "Diode bridge")
     body.schema = 12
     phases = "ABC" if three_phase else "AB"
@@ -66,7 +67,33 @@ def example(three_phase, controlled=False):
         p.wire(source["n"], ground, [(x, 400)])
     if not three_phase:
         p.wire(ground, block["B"], [(20, 400)])
-    if controlled:
+    gate_definitions = []
+    if controlled and three_phase:
+        # Recorded 120-degree pulses, alpha=30 degrees; initial values include
+        # pulses which began in the preceding period. No controller runtime.
+        bank = Diagram(key + "/gates", "Recorded firing sequence")
+        bank.schema = 12
+        firing = [("gA+", 60), ("gA-", 240), ("gB+", 180),
+                  ("gB-", 0), ("gC+", 300), ("gC-", 120)]
+        for index, (name, degrees) in enumerate(firing):
+            ident = bank.uuid(name)
+            initial = int((-degrees) % 360 < 120)
+            bank.lines.append('pattern {} {} 0 {} {}'.format(quoted(ident), quoted(name), index * 110, initial))
+            events = []
+            for cycle in range(-1, 3):
+                start = (degrees / 360 + cycle) / 50
+                for time, value in [(start, 1), (start + 1 / 150, 0)]:
+                    if 0 < time <= .04:
+                        events.append((time, value))
+            for time, value in sorted(events):
+                bank.lines.append('event {} {} {}'.format(time, quoted(ident), value))
+            bank.port(name, (ident, "out"), gate=True, output=True)
+        pulses = p.instance(bank.name, bank, -200, -400)
+        for index, (name, _) in enumerate(firing):
+            x = -80 + index * 20
+            p.wire(pulses[name], block[name], [(x, -465 + index * 26), (x, -26 + index * 26)])
+        gate_definitions = bank.definition()
+    elif controlled:
         for label, delay, y, names in [("Positive firing", .0025, -300, ["gA+", "gB-"]),
                                        ("Negative firing", .0125, -200, ["gB+", "gA-"])]:
             gate = p.uuid(label)
@@ -90,13 +117,13 @@ def example(three_phase, controlled=False):
     p.plot("DC voltage and current", [voltage["out"], current["out"]], 960, 80,
            routes=[[(520, 120), (520, 220), (780, 220), (780, 69)],
                    [(820, -100), (820, 91)]])
-    return "\n".join(p.body() + body.definition()) + "\n"
+    return "\n".join(p.body() + body.definition() + gate_definitions) + "\n"
 
 
 if __name__ == "__main__":
     folder = Path(__file__).resolve().parents[1] / "library" / "converters"
     folder.mkdir(parents=True, exist_ok=True)
-    for three_phase, controlled in [(False, False), (True, False), (False, True)]:
+    for three_phase, controlled in [(False, False), (True, False), (False, True), (True, True)]:
         key, _ = bridge(three_phase, controlled)
         (folder / (key + ".pds")).write_text(fragment(three_phase, controlled), encoding="utf-8")
         (folder.parents[1] / "examples" / (key + ".pds")).write_text(example(three_phase, controlled), encoding="utf-8")

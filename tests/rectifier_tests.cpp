@@ -26,6 +26,29 @@ static size_t channel(const Result &r, const std::string &name) {
             return i;
     throw std::runtime_error("Missing " + name);
 }
+static void verify_power(const Project &p, const Result &r) {
+    const auto circuit = resolve_connections(p).project;
+    std::map<std::string, size_t> channels;
+    for (size_t k = 0; k < r.channels.size(); ++k)
+        channels[r.channels[k].object] = k;
+    for (const auto &s : r.samples) {
+        double power = 0;
+        for (const auto &c : circuit.components) {
+            if (c.kind == Kind::voltage_probe)
+                continue;
+            const double voltage = s.values[channels.at(c.positive)] - s.values[channels.at(c.negative)];
+            const double current = s.values[channels.at(c.id)];
+            power += voltage * current;
+            if (c.kind == Kind::thyristor) {
+                check(voltage * current >= -1e-7, "Thyristor bridge passivity");
+                if (c.semiconductor.model == SemiconductorModel::ideal)
+                    check(current >= -1e-8 && std::abs(voltage * current) < 1e-6,
+                          "Ideal thyristor current and power");
+            }
+        }
+        near(power, 0, 1e-5, "Bridge instantaneous power balance");
+    }
+}
 static void verify(const Project &p, bool three, bool pwl) {
     const auto r = execute(compile(p));
     const auto u = channel(r, "u:Udc"), i = channel(r, "i:Idc");
@@ -80,6 +103,7 @@ static void verify(const Project &p, bool three, bool pwl) {
 }
 static void controlled_bridge(Project p) {
     const auto r = execute(compile(p));
+    verify_power(p, r);
     const auto u = channel(r, "u:Udc"), i = channel(r, "i:Idc");
     const double delay = p.patterns.front().delay;
     const double pulse = p.patterns.front().duty / p.patterns.front().frequency;
@@ -111,6 +135,29 @@ static void controlled_bridge(Project p) {
     const auto blocked = execute(compile(p));
     for (const auto &s : blocked.samples)
         near(s.values[u], 0, 1e-8, "Bridge cannot fire without gates");
+}
+static void three_phase_controlled(const Project &p, bool ideal) {
+    const auto r = execute(compile(p));
+    verify_power(p, r);
+    const auto u = channel(r, "u:Udc"), i = channel(r, "i:Idc");
+    const int high[] = {2, 0, 0, 1, 1, 2}, low[] = {1, 1, 2, 2, 0, 0};
+    const double phases[] = {0, -2 * std::numbers::pi / 3, 2 * std::numbers::pi / 3};
+    double integral = 0, previous = 0, previous_time = 0;
+    for (const auto &s : r.samples) {
+        const double angle = s.time * 100 * std::numbers::pi;
+        const int sector = int(std::floor(angle / (std::numbers::pi / 3) + 1e-10)) % 6;
+        const double line =
+            100 * (std::sin(angle + phases[high[sector]]) - std::sin(angle + phases[low[sector]]));
+        const double expected = ideal ? line : (line - 1.4) * (100 - 1e-6) / (100 + 2e-6 + .2);
+        near(s.values[u], expected, 1e-7, "Six-pulse controlled waveform");
+        near(s.values[i], expected / 10, 1e-8, "Six-pulse controlled current");
+        integral += (s.time - previous_time) * (previous + s.values[u]) / 2;
+        previous = s.values[u];
+        previous_time = s.time;
+    }
+    const double mean = 300 * std::sqrt(3.) / std::numbers::pi * std::cos(std::numbers::pi / 6);
+    near(integral / p.profile.stop, ideal ? mean : (mean - 1.4) * (100 - 1e-6) / (100 + 2e-6 + .2), .1,
+         "Six-pulse controlled mean");
 }
 int main(int argc, char **argv) try {
     check(argc == 2, "Pass repository root");
@@ -161,6 +208,35 @@ int main(int argc, char **argv) try {
             controlled_bridge(document.root_project());
         }
     }
+    std::ifstream three_input(std::string(argv[1]) + "/examples/thyristor-bridge-3p.pds");
+    auto three = read_project(three_input);
+    check(three.definitions[0].components.size() == 6 && three.definitions[0].ports.size() == 11,
+          "Six atomic thyristors with independent gates");
+    for (bool ideal : {false, true})
+        for (auto method : {Method::backward_euler, Method::trapezoidal}) {
+            three.profile.method = method;
+            for (auto &device : three.definitions[0].components)
+                device.semiconductor.model =
+                    ideal ? SemiconductorModel::ideal : SemiconductorModel::piecewise_linear;
+            three_phase_controlled(three, ideal);
+            std::ostringstream out;
+            write_project(three, out);
+            std::istringstream in(out.str());
+            check(read_project(in) == three, "Controlled bridge with recorded gates roundtrip");
+            auto reordered = three;
+            for (auto &d : reordered.definitions) {
+                std::reverse(d.components.begin(), d.components.end());
+                std::reverse(d.events.begin(), d.events.end());
+            }
+            const auto original = execute(compile(three)), permuted = execute(compile(reordered));
+            check(original.samples.size() == permuted.samples.size(), "Controlled deterministic times");
+            for (size_t k = 0; k < original.samples.size(); ++k)
+                check(original.samples[k].values == permuted.samples[k].values,
+                      "Controlled deterministic commutation");
+            Document document(three);
+            document.expand_instance(three.instances[0].id);
+            three_phase_controlled(document.root_project(), ideal);
+        }
     std::cout << "PASS single/three-phase ideal/PWL bridges, waveform, mean, KCL, power, persistence and "
                  "expansion\n";
     return 0;

@@ -76,7 +76,7 @@ class InteractionTests : public QObject {
     }
   private slots:
     void rectifier_library_and_run() {
-        for (const int type : {210, 211, 212}) {
+        for (const int type : {210, 211, 212, 213}) {
             QTemporaryDir dir;
             EditorWindow w("ru", dir.path());
             Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
@@ -89,15 +89,15 @@ class InteractionTests : public QObject {
             QCOMPARE(w.project().instances.size(), size_t(1));
             const auto module = w.project().instances.front();
             w.open_subcircuit(module.id);
-            QCOMPARE(w.project().components.size(), size_t(type == 211 ? 6 : 4));
+            QCOMPARE(w.project().components.size(), size_t(type % 2 ? 6 : 4));
             w.navigate_hierarchy({});
             w.undo(); QVERIFY(w.project().instances.empty());
             w.redo(); QCOMPARE(w.project().instances.front().id, module.id);
             const auto path = dir.filePath("bridge.pds");
             QVERIFY(w.save_project(path)); const auto expected = encoded(w.root_project());
             QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
-            const auto example = type == 212 ? QString("thyristor-bridge-1p") :
-                                               QString("diode-bridge-%1p").arg(type == 210 ? 1 : 3);
+            const auto example = QString("%1-bridge-%2p").arg(type >= 212 ? "thyristor" : "diode")
+                                                       .arg(type % 2 ? 3 : 1);
             QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/") + example + ".pds"));
             w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
             w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);

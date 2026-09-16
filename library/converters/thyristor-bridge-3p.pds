@@ -1,0 +1,70 @@
+PowerDriveSim 12
+project "ee83641d-38bc-51ed-9e97-e6857b93be22" "Three-phase thyristor bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "1159c91a-1896-5e2f-963b-506666144111" "Three-phase thyristor bridge" "d09cd28f-4854-5a68-b5ca-3993a82c31c9" 0 0 0
+definition "d09cd28f-4854-5a68-b5ca-3993a82c31c9" "Three-phase thyristor bridge"
+public_port "8784dc5d-c5bf-5138-bc30-811ca18b1db1" "A" "a6ef1b6f-051a-56b8-9592-9f463e7460da" "node" 0 0
+public_port "fc5eb926-e414-50aa-b6f1-fcd05b8189d1" "DC+" "164a33e4-c658-59e5-b0f4-75f14d0a03a2" "node" 0 0
+public_port "a19b798d-94ee-5daa-afe2-f17cea056f04" "B" "55801d0c-9457-5b56-8633-3c09f3b1714b" "node" 0 0
+public_port "81a0304b-5a9d-5d61-ab90-9d4287de326e" "DC-" "3aa983b8-4b52-5726-b8bf-6f45a3095199" "node" 0 0
+public_port "84b4e39a-d0c1-5d8f-8ba3-43659836899d" "C" "569c1a29-28bd-53c0-b03c-9802cae89549" "node" 0 0
+public_port "29426bfd-1c1c-5b7c-942d-c076202ebcbf" "gA+" "e769fb80-0a95-5eff-91fb-89488ec5249d" "gate" 1 1
+public_port "2ba450ef-475a-52ee-9feb-769ec9af1768" "gA-" "a85e0b97-b33e-5a53-9da0-cc8352a502fd" "gate" 1 1
+public_port "2e29e2c6-7003-5c94-8473-02fac6ce0f61" "gB+" "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" "gate" 1 1
+public_port "420d1f78-6149-5e2a-b78e-8d8c991e2543" "gB-" "b45c7c18-cf5e-5157-992f-01c9ee26511a" "gate" 1 1
+public_port "dc2cc67d-50ff-541f-a15b-3c8226af5c9f" "gC+" "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" "gate" 1 1
+public_port "c2b5f0c7-26c4-5aae-8b56-309d8a290b41" "gC-" "304ed439-c5da-5f36-9d6c-d84c032f80c8" "gate" 1 1
+body
+PowerDriveSim 12
+project "d09cd28f-4854-5a68-b5ca-3993a82c31c9" "Three-phase thyristor bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "164a33e4-c658-59e5-b0f4-75f14d0a03a2" "DC+" 0 -360 -240
+node "3aa983b8-4b52-5726-b8bf-6f45a3095199" "DC-" 0 -360 240
+node "a6ef1b6f-051a-56b8-9592-9f463e7460da" "A" 0 -280.0 0
+component "e769fb80-0a95-5eff-91fb-89488ec5249d" "TA+" T "" "" 0 0 -280.0 -120 0
+orientation "e769fb80-0a95-5eff-91fb-89488ec5249d" 3 0
+component "a85e0b97-b33e-5a53-9da0-cc8352a502fd" "TA-" T "" "" 0 0 -280.0 120 0
+orientation "a85e0b97-b33e-5a53-9da0-cc8352a502fd" 3 0
+semiconductor "e769fb80-0a95-5eff-91fb-89488ec5249d" 1 0.01 1000000 0.7
+x-label "e769fb80-0a95-5eff-91fb-89488ec5249d" "value" -45 0 0 0
+semiconductor "a85e0b97-b33e-5a53-9da0-cc8352a502fd" 1 0.01 1000000 0.7
+x-label "a85e0b97-b33e-5a53-9da0-cc8352a502fd" "value" -45 0 0 0
+wire "21f976eb-b79f-5d98-ba18-78bda7752d05" "a6ef1b6f-051a-56b8-9592-9f463e7460da" "node" "e769fb80-0a95-5eff-91fb-89488ec5249d" "p" 0
+wire "66158d61-0c1f-5ef4-b682-bfea0adb7f35" "e769fb80-0a95-5eff-91fb-89488ec5249d" "n" "164a33e4-c658-59e5-b0f4-75f14d0a03a2" "node" 1 -280.0 -240
+wire "811df6c8-708f-59e6-8f18-8dca0b7a626e" "3aa983b8-4b52-5726-b8bf-6f45a3095199" "node" "a85e0b97-b33e-5a53-9da0-cc8352a502fd" "p" 1 -280.0 240
+wire "175ed77f-c0c7-5ace-b87a-6b7478383b41" "a85e0b97-b33e-5a53-9da0-cc8352a502fd" "n" "a6ef1b6f-051a-56b8-9592-9f463e7460da" "node" 0
+node "55801d0c-9457-5b56-8633-3c09f3b1714b" "B" 0 0.0 0
+component "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" "TB+" T "" "" 0 0 0.0 -120 0
+orientation "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" 3 0
+component "b45c7c18-cf5e-5157-992f-01c9ee26511a" "TB-" T "" "" 0 0 0.0 120 0
+orientation "b45c7c18-cf5e-5157-992f-01c9ee26511a" 3 0
+semiconductor "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" 1 0.01 1000000 0.7
+x-label "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" "value" -45 0 0 0
+semiconductor "b45c7c18-cf5e-5157-992f-01c9ee26511a" 1 0.01 1000000 0.7
+x-label "b45c7c18-cf5e-5157-992f-01c9ee26511a" "value" -45 0 0 0
+wire "038dc2e0-db81-5031-8508-ac0b1d1c394b" "55801d0c-9457-5b56-8633-3c09f3b1714b" "node" "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" "p" 0
+wire "bd657cb2-5788-5d5d-b856-0b88a5b2b5de" "15c3274d-e9d4-5800-8c5f-ff4d7b4674d4" "n" "164a33e4-c658-59e5-b0f4-75f14d0a03a2" "node" 1 0.0 -240
+wire "03421359-8cf9-55c8-bef8-70efaaa23469" "3aa983b8-4b52-5726-b8bf-6f45a3095199" "node" "b45c7c18-cf5e-5157-992f-01c9ee26511a" "p" 1 0.0 240
+wire "979ea857-9c05-5c9f-9a84-1dbff23a4871" "b45c7c18-cf5e-5157-992f-01c9ee26511a" "n" "55801d0c-9457-5b56-8633-3c09f3b1714b" "node" 0
+node "569c1a29-28bd-53c0-b03c-9802cae89549" "C" 0 280.0 0
+component "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" "TC+" T "" "" 0 0 280.0 -120 0
+orientation "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" 3 0
+component "304ed439-c5da-5f36-9d6c-d84c032f80c8" "TC-" T "" "" 0 0 280.0 120 0
+orientation "304ed439-c5da-5f36-9d6c-d84c032f80c8" 3 0
+semiconductor "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" 1 0.01 1000000 0.7
+x-label "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" "value" -45 0 0 0
+semiconductor "304ed439-c5da-5f36-9d6c-d84c032f80c8" 1 0.01 1000000 0.7
+x-label "304ed439-c5da-5f36-9d6c-d84c032f80c8" "value" -45 0 0 0
+wire "5746b175-5dfd-50b2-ae64-c800ba6eeae3" "569c1a29-28bd-53c0-b03c-9802cae89549" "node" "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" "p" 0
+wire "b145580b-fe72-59a9-bf3f-037bdf6c460a" "af6e78e5-e472-590e-9f7e-f7de4b7bcb96" "n" "164a33e4-c658-59e5-b0f4-75f14d0a03a2" "node" 1 280.0 -240
+wire "9f1835e1-35c5-5527-aa8d-5fb99091d0ad" "3aa983b8-4b52-5726-b8bf-6f45a3095199" "node" "304ed439-c5da-5f36-9d6c-d84c032f80c8" "p" 1 280.0 240
+wire "dc05553a-9342-5b9f-9799-f49cd786cea8" "304ed439-c5da-5f36-9d6c-d84c032f80c8" "n" "569c1a29-28bd-53c0-b03c-9802cae89549" "node" 0
+end_definition

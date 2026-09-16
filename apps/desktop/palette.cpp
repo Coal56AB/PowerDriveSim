@@ -64,18 +64,18 @@ QIcon component_icon(int id) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
-    } else if (id == 210 || id == 211 || id == 212) {
+    } else if (id >= 210 && id <= 213) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(5, 28, 27, 4);
         p.drawLine(0, 12, 4, 12);
         p.drawLine(0, 22, 4, 22);
-        if (id == 211) p.drawLine(0, 17, 4, 17);
+        if (id == 211 || id == 213) p.drawLine(0, 17, 4, 17);
         p.drawLine(28, 10, 32, 10);
         p.drawLine(28, 24, 32, 24);
         p.drawText(QRectF(5, 4, 13, 13), Qt::AlignCenter, "~");
         p.drawLine(19, 20, 25, 20);
         p.drawLine(19, 23, 25, 23);
-        if (id == 212) {
+        if (id >= 212) {
             p.setPen(QPen(theme_colors().gate, 1.6));
             p.drawLine(12, 32, 12, 25);
         }

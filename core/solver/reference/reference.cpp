@@ -161,7 +161,11 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
                    (current<stamp.component.semiconductor.holding_current-it||excess_i<=it))
                     released[index]=true;
                 const bool must_block=!gates[index]&&(igbt||(thyristor&&(!latched[index]||released[index])));
-                const bool must_hold=thyristor&&!gates[index]&&latched[index]&&!released[index];
+                // A newly fired parallel phase can reverse-bias the old thyristor.
+                // With ideal devices the trial with both phases on is singular,
+                // so an off trial must also be allowed to establish commutation.
+                // Forward blocking alone cannot extinguish a latched device.
+                const bool must_hold=thyristor&&!gates[index]&&latched[index]&&!released[index]&&excess_v>=-vt;
                 const bool dynamic=dynamic_diode(stamp.component);
                 if(dynamic)residual_v=std::max(residual_v,std::max(0.0,active[index]?-excess_v:excess_v));
                 else if(active[index])residual_i=std::max(residual_i,std::max(0.0,-excess_i));
