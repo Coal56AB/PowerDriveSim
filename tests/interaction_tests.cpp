@@ -1693,6 +1693,64 @@ class InteractionTests : public QObject {
             QVERIFY(s.grab().save(screenshot));
         delete nav;
     }
+    void scope_time_statistics_and_energy() {
+        init_language("en");
+        Result r;
+        r.channels = {{"u", "Voltage", "V"}, {"i", "Current", "A"}};
+        for (double t : {0., .1, .9, 1.1, 2.4, 3.})
+            r.samples.push_back({t, {t, 2 * t - 2}, {}});
+        Project p;
+        p.scope_end = 3;
+        Scope s;
+        s.resize(850, 500);
+        s.set_result(&r, {0, 1}, p);
+        s.show();
+        s.show_measurements();
+        auto *d = s.findChild<QDialog *>("scope_measurements");
+        QVERIFY(d);
+        auto *tabs = d->findChild<QTabWidget *>("measurement_tabs");
+        auto *range = d->findChild<QComboBox *>("measurement_range");
+        range->setCurrentIndex(2);
+        auto *stats = d->findChild<QTableWidget *>("measurement_statistics");
+        auto row_value = [](QTableWidget *table, const QString &label) {
+            for (int row = 0; row < table->rowCount(); ++row)
+                if (table->item(row, 0)->text() == label)
+                    return table->item(row, 1)->text();
+            return QString();
+        };
+        QCOMPARE(row_value(stats, "Mean"), QString("1.5 V"));
+        QCOMPARE(row_value(stats, "Integral"), QString::fromUtf8("4.5 V·s"));
+        d->findChild<QComboBox *>("measurement_weighting")->setCurrentIndex(1);
+        QCOMPARE(row_value(stats, "Mean"), QString("1.25 V"));
+        tabs->setCurrentIndex(4);
+        auto *energy = d->findChild<QTableWidget *>("measurement_energy");
+        QCOMPARE(row_value(energy, "Signed energy"), QString("9 J"));
+        QCOMPARE(row_value(energy, "Mean power"), QString("3 W"));
+        d->findChild<QCheckBox *>("measurement_reverse_current")->setChecked(true);
+        QCOMPARE(row_value(energy, "Signed energy"), QString("-9 J"));
+        d->findChild<QCheckBox *>("measurement_reverse_current")->setChecked(false);
+        s.set_cursor(0, .2);
+        s.set_cursor(1, 2.7);
+        range->setCurrentIndex(1);
+        // Signal cursors snap to recorded samples: 0.1 s and 3 s here.
+        QCOMPARE(row_value(energy, "Signed energy"), QString("9.0093333 J"));
+        d->findChild<QComboBox *>("measurement_channel")->setCurrentIndex(1);
+        QCOMPARE(energy->rowCount(), 1);
+        QVERIFY(energy->item(0, 1)->text().contains("Select voltage"));
+        d->findChild<QComboBox *>("measurement_channel")->setCurrentIndex(0);
+        range->setCurrentIndex(2);
+        auto screenshot = qEnvironmentVariable("PDS_ENERGY_SCREENSHOT_PATH");
+        if (!screenshot.isEmpty()) {
+            QTest::qWait(100);
+            QVERIFY(d->grab().save(screenshot));
+        }
+        s.set_result(&r, {0}, p);
+        s.show_measurements();
+        d = s.findChild<QDialog *>("scope_measurements");
+        d->findChild<QTabWidget *>("measurement_tabs")->setCurrentIndex(4);
+        QCOMPARE(d->findChild<QComboBox *>("measurement_current")->count(), 0);
+        QCOMPARE(d->findChild<QTableWidget *>("measurement_energy")->rowCount(), 1);
+    }
     void repeated_and_automatic_scope_trigger() {
         init_language("en");
         Result r;

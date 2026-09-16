@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/ui_icons.hpp"
+#include "results/integrals.hpp"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
@@ -275,7 +276,7 @@ void Scope::show_measurements() {
     layout->addLayout(form);
     auto *signal = new QComboBox;
     signal->setObjectName("measurement_channel");
-    form->addRow(text("signal_cursors"), signal);
+    form->addRow(text("measurement_signal"), signal);
     if (result_)
         for (int ch : channels_) {
             auto c = result_channel(*result_, ch);
@@ -284,7 +285,7 @@ void Scope::show_measurements() {
     auto *range = new QComboBox;
     range->setObjectName("measurement_range");
     range->addItems({text("visible_range"), text("cursor_range"), text("full_range")});
-    form->addRow(text("ranges"), range);
+    form->addRow(text("measurement_range"), range);
     auto *tabs = new QTabWidget;
     tabs->setObjectName("measurement_tabs");
     layout->addWidget(tabs, 1);
@@ -293,6 +294,13 @@ void Scope::show_measurements() {
         auto *box = new QVBoxLayout(page);
         auto *options = new QFormLayout;
         box->addLayout(options);
+        if (QString(name) == "statistics") {
+            auto *weighting = new QComboBox;
+            weighting->setObjectName("measurement_weighting");
+            weighting->addItems({text("weight_time"), text("weight_samples")});
+            options->addRow(text("weighting"), weighting);
+            connect(weighting, &QComboBox::currentIndexChanged, this, [this] { update_measurements(); });
+        }
         if (QString(name) == "peaks") {
             number(options, "peak_threshold", text("peak_threshold"), -1e100);
             number(options, "peak_excursion", text("peak_excursion"), 0);
@@ -374,12 +382,44 @@ void Scope::show_measurements() {
         update_measurements();
         update();
     });
+    auto *energy = new QWidget;
+    auto *energy_box = new QVBoxLayout(energy);
+    auto *energy_form = new QFormLayout;
+    energy_box->addLayout(energy_form);
+    auto *current = new QComboBox;
+    current->setObjectName("measurement_current");
+    if (result_)
+        for (int ch : channels_) {
+            const auto c = result_channel(*result_, ch);
+            if (c.unit == "A")
+                current->addItem(QString::fromStdString(c.name + " [A]"), ch);
+        }
+    energy_form->addRow(text("energy_current"), current);
+    auto *reverse = new QCheckBox(text("energy_reverse"));
+    reverse->setObjectName("measurement_reverse_current");
+    energy_form->addRow(reverse);
+    auto *energy_hint = new QLabel(text("energy_hint"));
+    energy_hint->setWordWrap(true);
+    energy_box->addWidget(energy_hint);
+    auto *energy_table = new QTableWidget(0, 2);
+    energy_table->setObjectName("measurement_energy");
+    energy_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    energy_table->horizontalHeader()->hide();
+    energy_table->verticalHeader()->hide();
+    energy_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    energy_box->addWidget(energy_table, 1);
+    tabs->addTab(energy, text("energy"));
+    connect(current, &QComboBox::currentIndexChanged, this, [this] { update_measurements(); });
+    connect(reverse, &QCheckBox::toggled, this, [this] { update_measurements(); });
     auto *hint = new QLabel(text("measure_hint"));
     hint->setWordWrap(true);
     layout->addWidget(hint);
     auto *refresh = new QPushButton(text("refresh_measurements"));
     layout->addWidget(refresh);
-    connect(refresh, &QPushButton::clicked, this, [this] { update_measurements(); });
+    connect(refresh, &QPushButton::clicked, this, [this, dialog] {
+        dialog->setProperty("measurement_signature", QVariant());
+        update_measurements();
+    });
     connect(tabs, &QTabWidget::currentChanged, this, [this] { update_measurements(); });
     connect(signal, &QComboBox::currentIndexChanged, this, [this] { update_measurements(); });
     connect(range, &QComboBox::currentIndexChanged, this, [this] { update_measurements(); });
@@ -421,28 +461,51 @@ void Scope::update_measurements() {
         a = 0;
         b = result_->samples.back().time;
     }
+    QVariantList signature{tab, ch, a, b, qulonglong(result_->samples.size()), result_->samples.back().time};
+    for (auto *edit : dialog->findChildren<QLineEdit *>())
+        signature.push_back(edit->text());
+    for (auto *combo : dialog->findChildren<QComboBox *>())
+        signature.push_back(combo->currentIndex());
+    for (auto *check : dialog->findChildren<QCheckBox *>())
+        signature.push_back(check->isChecked());
+    if (dialog->property("measurement_signature").toList() == signature)
+        return;
+    dialog->setProperty("measurement_signature", signature);
     auto *table = dialog->findChild<QTableWidget *>(tab == 0   ? "measurement_statistics"
                                                     : tab == 1 ? "measurement_peaks"
-                                                               : "measurement_pulse");
+                                                    : tab == 2 ? "measurement_pulse"
+                                                               : "measurement_energy");
     auto v = [&](double x) { return engineering_value(x, unit); };
     auto t = [](double x) { return engineering_value(x, "s"); };
     try {
         if (tab == 0) {
             auto s = signal_statistics(*result_, ch, a, b);
-            if (!s.count) {
+            const bool by_time = dialog->findChild<QComboBox *>("measurement_weighting")->currentIndex() == 0;
+            const auto weighted = by_time ? time_statistics(*result_, ch, a, b) : TimeStatistics{};
+            if (!s.count && !weighted.intervals) {
                 table_rows(table, {});
                 return;
             }
-            table_rows(table,
-                       {{"N", QString::number(s.count)},
+            std::vector<std::pair<QString, QString>> rows;
+            if (s.count)
+                rows = {{"N", QString::number(s.count)},
                         {text("measurement_minimum"), v(s.minimum) + " @ " + t(s.minimum_time)},
                         {text("measurement_maximum"), v(s.maximum) + " @ " + t(s.maximum_time)},
                         {text("measurement_peak_to_peak"), v(s.maximum - s.minimum)},
-                        {text("measurement_mean"), v(s.mean)},
-                        {text("measurement_median"), v(s.median)},
-                        {"RMS", v(s.rms)},
-                        {text("measurement_mean_square"), engineering_value(s.mean_square, unit + "²")},
-                        {text("measurement_standard_deviation"), v(s.standard_deviation)}});
+                        {text("measurement_sample_median"), v(s.median)}};
+            if (!by_time || weighted.intervals) {
+                const double mean = by_time ? weighted.mean : s.mean;
+                const double rms = by_time ? weighted.rms : s.rms;
+                const double deviation = by_time ? weighted.standard_deviation : s.standard_deviation;
+                rows.insert(rows.end(), {{text("measurement_mean"), v(mean)}, {"RMS", v(rms)},
+                    {text("measurement_mean_square"), engineering_value(rms * rms, unit + "²")},
+                    {text("measurement_standard_deviation"), v(deviation)}});
+                if (by_time) {
+                    rows.emplace_back(text("measurement_duration"), t(weighted.end - weighted.begin));
+                    rows.emplace_back(text("measurement_integral"), engineering_value(weighted.integral, unit + "·s"));
+                }
+            }
+            table_rows(table, rows);
         } else if (tab == 1) {
             const double excursion = value(dialog, "peak_excursion"),
                          distance = value(dialog, "peak_distance", "s");
@@ -454,6 +517,26 @@ void Scope::update_measurements() {
             for (auto peak : peaks)
                 rows.emplace_back(t(peak.time), v(peak.value));
             table_rows(table, rows);
+        } else if (tab == 4) {
+            auto *current = dialog->findChild<QComboBox *>("measurement_current");
+            if (unit != "V" || current->currentIndex() < 0) {
+                table_rows(table, {{text("energy"), text("energy_choose_channels")}});
+                return;
+            }
+            const auto p = power_energy(*result_, ch, current->currentData().toInt(), a, b,
+                dialog->findChild<QCheckBox *>("measurement_reverse_current")->isChecked());
+            if (!p.intervals) {
+                table_rows(table, {});
+                return;
+            }
+            table_rows(table, {{text("energy_net"), engineering_value(p.energy, "J")},
+                {text("energy_absorbed"), engineering_value(p.absorbed, "J")},
+                {text("energy_returned"), engineering_value(p.returned, "J")},
+                {text("energy_mean_power"), engineering_value(p.mean_power, "W")},
+                {text("energy_min_power"), engineering_value(p.minimum_power, "W")},
+                {text("energy_max_power"), engineering_value(p.maximum_power, "W")},
+                {text("measurement_duration"), t(p.end - p.begin)},
+                {text("measurement_intervals"), QString::number(p.intervals)}});
         } else {
             std::optional<std::pair<double, double>> levels;
             if (!dialog->findChild<QCheckBox *>("auto_levels")->isChecked())

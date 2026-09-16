@@ -74,6 +74,8 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
    [Адаптивный шаг](adaptive-stepping.md) добавлен для BE/Trapezoidal:
    контроль ошибки, откат проб, точные события, воспроизводимые снимки и статистика.
 4. Расширенный анализ Scope: FFT/THD и измерения энергии; scenario/parameter sweep.
+   [Интегралы Scope](scope-integrals.md): среднее/RMS по времени на неравномерной
+   сетке, мощность и потреблённая/возвращённая энергия выбранной пары u/i.
 5. Документация компонентов, energy balance/steady-state/fault assertions,
    общая проверка критериев M2. Ускоренные варианты сравнивать с generic там, где реализованы.
 

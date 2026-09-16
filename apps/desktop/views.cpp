@@ -59,6 +59,8 @@ void Scope::set_result(const Result *result, const std::vector<int> &channels, c
     if (new_data)
         cancel_drag();
     channels_ = channels;
+    if (measurements_)
+        measurements_->setProperty("measurement_signature", QVariant());
     if (new_data || !live_) {
         begin = p.scope_begin;
         end = p.scope_end;
