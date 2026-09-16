@@ -71,6 +71,56 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void editable_converter_examples() {
+        QTemporaryDir dir;
+        for (const auto &example : {QString("vsi-2l"), QString("npc-3l")}) {
+            EditorWindow w("en", dir.path());
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/" + example + ".pds"));
+            ready(w);
+            const auto instance = w.project().instances.front().id;
+            w.open_subcircuit(instance);
+            QCOMPARE(w.project().instances.size(), size_t(3));
+            const auto phase = w.project().instances.front().id;
+            w.open_subcircuit(phase);
+            const auto switches = example == "npc-3l" ? 4 : 2;
+            QCOMPARE(std::count_if(w.project().components.begin(), w.project().components.end(),
+                                   [](const auto &c) { return c.kind == Kind::ideal_switch; }),
+                     switches);
+            for (const auto &c : w.project().components) {
+                w.select_object(c.id);
+                QVERIFY(item(w, c.id)->isSelected());
+            }
+            w.findChild<QAction *>("edit_definition")->trigger();
+            auto component =
+                std::find_if(w.project().components.begin(), w.project().components.end(), [](const auto &c) {
+                    return c.name == "Rsn1";
+                })->id;
+            w.select_object(component);
+            auto *value = w.findChild<QLineEdit *>("property_value");
+            QVERIFY(!value->isReadOnly());
+            value->setText("120 Ohm");
+            QTest::keyClick(value, Qt::Key_Return);
+            w.start_simulation();
+            QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
+            QVERIFY(w.has_result() && !w.result().samples.empty());
+            if (auto folder = qEnvironmentVariable("PDS_CONVERTER_SCREENSHOT_DIR"); !folder.isEmpty()) {
+                w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-50, -50, 50, 50),
+                                      Qt::KeepAspectRatio);
+                QVERIFY(w.grab().save(folder + "/" + example + "-leg.png"));
+            }
+            w.navigate_hierarchy({});
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-50, -50, 50, 50),
+                                  Qt::KeepAspectRatio);
+            if (auto folder = qEnvironmentVariable("PDS_CONVERTER_SCREENSHOT_DIR"); !folder.isEmpty())
+                QVERIFY(w.grab().save(folder + "/" + example + "-root.png"));
+            w.open_plot(w.project().plots.front().id);
+            auto *graph =
+                w.findChild<QDialog *>("plot_" + QString::fromStdString(w.project().plots.front().id));
+            QVERIFY(graph && graph->isVisible());
+            QVERIFY(graph->findChild<QPushButton *>("plot_export")->isEnabled());
+            QVERIFY(w.save_project(dir.filePath(example + ".pds")));
+        }
+    }
     void hierarchy_graph_windows_remain_independent() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());

@@ -1035,8 +1035,13 @@ void EditorWindow::build_ui() {
     connect(scope_export_, &QPushButton::clicked, this, [this] { export_csv(project().scope_channels); });
     auto *bottom_dock = dock("results", bottom_, Qt::BottomDockWidgetArea);
     bottom_dock->setTitleBarWidget(new QWidget);
-    bottom_dock->setMinimumHeight(320);
-    resizeDocks({bottom_dock}, {360}, Qt::Vertical);
+    bottom_dock->setMinimumHeight(140);
+    resizeDocks({bottom_dock}, {180}, Qt::Vertical);
+    connect(bottom_, &QTabWidget::currentChanged, this, [this, bottom_dock](int tab) {
+        bottom_dock->setMinimumHeight(tab == 1 ? 320 : 140);
+        if (!bottom_dock->isFloating())
+            resizeDocks({bottom_dock}, {tab == 1 ? 360 : 180}, Qt::Vertical);
+    });
     auto *expand_scope = new QToolButton;
     expand_scope->setIcon(ui_icon(UiIcon::undock));
     expand_scope->setIconSize({22, 22});
