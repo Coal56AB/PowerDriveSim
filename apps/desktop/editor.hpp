@@ -111,7 +111,8 @@ class Canvas : public QGraphicsView {
 class Scope : public QWidget {
   public:
     enum class Axes { x, y, xy };
-    explicit Scope(QWidget *parent = nullptr);
+    enum class Domain { time, frequency };
+    explicit Scope(QWidget *parent = nullptr, Domain domain = Domain::time);
     void set_result(const Result *result, const std::vector<int> &channels, const Project &project);
     void fit(Axes axes = Axes::xy);
     QWidget *navigation();
@@ -134,6 +135,7 @@ class Scope : public QWidget {
     void set_live(bool live);
     void set_time_span(double seconds);
     void show_measurements();
+    void show_spectrum();
     void show_display_settings();
     ViewOptions view_options() const;
     void refresh_theme();
@@ -154,6 +156,7 @@ class Scope : public QWidget {
     bool event(QEvent *) override;
 
   private:
+    Domain domain_ = Domain::time;
     const Result *result_ = nullptr;
     std::vector<int> channels_;
     std::set<std::string> hidden_channels_;
@@ -202,6 +205,7 @@ class Scope : public QWidget {
     int display_count() const;
     int channel_display(int channel) const;
     QPointer<QDialog> measurements_;
+    QPointer<QDialog> spectrum_;
     QPointer<QAction> follow_action_;
     QPointer<QLineEdit> time_span_edit_;
     std::string trigger_channel_;

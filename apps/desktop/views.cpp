@@ -47,7 +47,7 @@ QString engineering_value(double value, const std::string &unit) {
                    QString::fromStdString(unit);
     return QString::number(value, 'g', 8) + " " + QString::fromStdString(unit);
 }
-Scope::Scope(QWidget *parent) : QWidget(parent) {
+Scope::Scope(QWidget *parent, Domain domain) : QWidget(parent), domain_(domain) {
     setMouseTracking(true);
     setMinimumHeight(240);
     setFocusPolicy(Qt::StrongFocus);
@@ -186,7 +186,7 @@ void Scope::paintEvent(QPaintEvent *) {
         }
         if (lane + std::min(display_columns_, display_count()) >= lanes)
             painter.drawText(QRectF(plot.left(), height() - 22, plot.width(), 18), Qt::AlignCenter,
-                             text("time_s"));
+                             text(domain_ == Domain::time ? "time_s" : "frequency_hz"));
         const auto &colors = theme_colors().curves;
         painter.save();
         painter.setClipRect(plot);

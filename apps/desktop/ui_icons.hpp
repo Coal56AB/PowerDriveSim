@@ -17,6 +17,7 @@ enum class UiIcon {
     follow,
     time_window,
     measurements,
+    spectrum,
     settings,
     gear,
     export_data,
@@ -64,6 +65,13 @@ class UiIconEngine final : public QIconEngine {
             line(12, 19, 15, 16);
         };
         switch (kind_) {
+        case UiIcon::spectrum:
+            line(3, 20, 21, 20);
+            line(6, 20, 6, 13);
+            line(11, 20, 11, 4);
+            line(16, 20, 16, 10);
+            line(20, 20, 20, 16);
+            break;
         case UiIcon::zoom_x:
         case UiIcon::zoom_y:
         case UiIcon::zoom_xy: {

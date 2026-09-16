@@ -205,11 +205,13 @@ QWidget *Scope::navigation() {
             set_navigation_tool(enabled ? NavigationTool::zoom : NavigationTool::pan);
         });
     }
-    cursor_action_ = bar->addAction(ui_icon(UiIcon::cursors), text("cursors"));
-    cursor_action_->setObjectName("cursor_mode");
-    cursor_action_->setCheckable(true);
-    group->addAction(cursor_action_);
-    connect(cursor_action_, &QAction::triggered, this, &Scope::set_cursor_mode);
+    if (domain_ == Domain::time) {
+        cursor_action_ = bar->addAction(ui_icon(UiIcon::cursors), text("cursors"));
+        cursor_action_->setObjectName("cursor_mode");
+        cursor_action_->setCheckable(true);
+        group->addAction(cursor_action_);
+        connect(cursor_action_, &QAction::triggered, this, &Scope::set_cursor_mode);
+    }
     bar->addSeparator();
     for (auto axes : {Axes::x, Axes::y, Axes::xy}) {
         const QString suffix = axes == Axes::x ? "X" : axes == Axes::y ? "Y" : "XY";
@@ -224,6 +226,8 @@ QWidget *Scope::navigation() {
         });
     }
     bar->addSeparator();
+    if (domain_ == Domain::frequency)
+        return container;
     follow_action_ = bar->addAction(ui_icon(UiIcon::follow), text("follow_live"));
     follow_action_->setCheckable(true);
     follow_action_->setChecked(follow_live_);
@@ -285,6 +289,9 @@ QWidget *Scope::navigation() {
     auto *measure = bar->addAction(ui_icon(UiIcon::measurements), text("measurements"));
     measure->setObjectName("measurements");
     connect(measure, &QAction::triggered, this, &Scope::show_measurements);
+    auto *spectrum = bar->addAction(ui_icon(UiIcon::spectrum), text("spectrum"));
+    spectrum->setObjectName("spectrum");
+    connect(spectrum, &QAction::triggered, this, &Scope::show_spectrum);
     auto *settings = menu->addAction(text("ranges"));
     settings->setObjectName("scope_settings");
     connect(settings, &QAction::triggered, this, &Scope::show_display_settings);

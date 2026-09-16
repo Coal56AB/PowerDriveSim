@@ -1693,6 +1693,68 @@ class InteractionTests : public QObject {
             QVERIFY(s.grab().save(screenshot));
         delete nav;
     }
+    void scope_spectrum_and_harmonics() {
+        init_language("en");
+        Result r;
+        r.channels = {{"u", "Voltage", "V"}};
+        const double pi = std::acos(-1.);
+        for (int k = 0; k <= 4096; ++k) {
+            const double t = k / 4096.;
+            r.samples.push_back({t, {2 * std::cos(2 * pi * 8 * t) + .2 * std::cos(2 * pi * 24 * t)}, {}});
+        }
+        Project p;
+        p.scope_end = 1;
+        Scope s;
+        s.resize(850, 500);
+        s.set_result(&r, {0}, p);
+        s.show();
+        auto *nav = s.navigation();
+        nav->findChild<QAction *>("spectrum")->trigger();
+        auto *d = s.findChild<QDialog *>("scope_spectrum");
+        QVERIFY(d);
+        auto *frequency = d->findChild<QLineEdit *>("spectrum_fundamental");
+        auto *calculate = d->findChild<QToolButton *>("spectrum_calculate");
+        frequency->setText("8 Hz");
+        calculate->click();
+        auto *table = d->findChild<QTableWidget *>("spectrum_harmonic_table");
+        QCOMPARE(table->rowCount(), 40);
+        QCOMPARE(table->item(0, 1)->text(), QString("8"));
+        QCOMPARE(table->item(2, 3)->text(), QString("10"));
+        QVERIFY(d->findChild<QLabel *>("spectrum_status")->text().contains("THD: 10 %"));
+        auto *plot = d->findChild<Scope *>("spectrum_plot");
+        QVERIFY(plot);
+        QCOMPARE(plot->end, 2048.);
+        // The shared navigation uses Hz, with no time-window/trigger controls.
+        QVERIFY(!d->findChild<QLineEdit *>("scope_time_span"));
+        QVERIFY(!d->findChild<QAction *>("cursor_mode"));
+        d->findChild<QAction *>("zoom_xy")->trigger();
+        QTest::qWait(30);
+        QTest::mousePress(plot, Qt::LeftButton, Qt::NoModifier, {120, 50});
+        QTest::mouseRelease(plot, Qt::LeftButton, Qt::NoModifier, {450, 220});
+        QVERIFY(plot->end - plot->begin < 2048);
+        d->findChild<QAction *>("fit_xy")->trigger();
+        QCOMPARE(plot->end, 2048.);
+        d->findChild<QLineEdit *>("spectrum_end")->setText("0.93");
+        d->findChild<QCheckBox *>("spectrum_whole_periods")->setChecked(false);
+        calculate->click();
+        QCOMPARE(table->rowCount(), 0);
+        QVERIFY(d->findChild<QLabel *>("spectrum_status")->text().contains("unavailable"));
+        d->findChild<QLineEdit *>("spectrum_end")->setText("0");
+        calculate->click();
+        QVERIFY(d->findChild<QLabel *>("spectrum_status")->text().contains("Check the interval"));
+        d->findChild<QLineEdit *>("spectrum_end")->setText("1");
+        d->findChild<QCheckBox *>("spectrum_whole_periods")->setChecked(true);
+        calculate->click();
+        // Focus the useful harmonic band for the real-window visual check.
+        plot->end = 80;
+        plot->update();
+        auto screenshot = qEnvironmentVariable("PDS_SPECTRUM_SCREENSHOT_PATH");
+        if (!screenshot.isEmpty()) {
+            QTest::qWait(80);
+            QVERIFY(d->grab().save(screenshot));
+        }
+        delete nav;
+    }
     void scope_time_statistics_and_energy() {
         init_language("en");
         Result r;
