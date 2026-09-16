@@ -11,8 +11,11 @@ double channel_value(const Result &r, size_t i, int channel) {
 Channel result_channel(const Result &r, int channel) {
     if (channel < static_cast<int>(r.channels.size()))
         return r.channels.at(channel);
-    auto id = r.gate_objects.at(channel - r.channels.size());
-    return {"gate/" + id, "gate:" + id, "bool"};
+    const auto index = channel - r.channels.size();
+    const auto &id = r.gate_objects.at(index);
+    const auto name = index < r.gate_names.size() && !r.gate_names[index].empty()
+                          ? r.gate_names[index] : "gate:" + id;
+    return {"gate/" + id, name, "bool"};
 }
 std::optional<CursorValue> cursor_value(const Result &r, int channel, double time) {
     if (r.samples.empty() || channel < 0 ||

@@ -1,6 +1,7 @@
 #include "core/editor/document.hpp"
 #include "core/solver/reference/reference.hpp"
 #include "formats/project/project.hpp"
+#include "results/measurements.hpp"
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -51,6 +52,7 @@ int main(int argc, char **argv) {
         doc.connect({signal, "out"}, {a, "in2"});
         doc.connect({probe, "out"}, {b, "in1"});
         doc.apply("Pattern and plot view", [&](Project &p) {
+            p.patterns[0].name = "Firing pulse";
             p.events = {{.001, signal, true}, {.002, signal, false}};
             p.plots[0].begin = .001;
             p.plots[0].cursor_a = .0015;
@@ -63,6 +65,15 @@ int main(int argc, char **argv) {
         auto result = execute(compile(doc.project()), nullptr, nullptr, &selected);
         check(result.channels.size() == 1 && result.gate_objects.size() == 1,
               "Only requested analog and digital channels stored");
+        check(result_channel(result, 1).name == "Firing pulse", "Gate display name survives recording");
+        auto digital = select_result(result, {"gate/" + signal});
+        check(result_channel(digital, 0).name == "Firing pulse", "Gate name survives subset selection");
+        bool streamed = false;
+        execute(compile(doc.project()), nullptr, nullptr, &selected, nullptr, [&](Result &&batch) {
+            check(result_channel(batch, 1).name == "Firing pulse", "Gate name survives live batches");
+            streamed = true;
+        });
+        check(streamed, "Named live batch emitted");
         check(std::abs(result.samples.back().values[0] - (1 - std::exp(-5.0))) < 2e-5,
               "Plot probe is non-loading");
         bool saw_edge = false;

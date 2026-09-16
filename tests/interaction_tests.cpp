@@ -124,6 +124,9 @@ class InteractionTests : public QObject {
         const auto plot = w.project().plots.front().id; w.open_plot(plot);
         auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
         QVERIFY(graph && graph->isVisible());
+        auto *scope = graph->findChild<Scope *>("scope");
+        QVERIFY(scope);
+        QCOMPARE(scope->curve_name("gate/" + w.project().patterns.front().id), QString("Firing pulse"));
         if (auto screenshot = qEnvironmentVariable("PDS_THYRISTOR_SCREENSHOT"); !screenshot.isEmpty()) {
             QTest::qWait(30); QVERIFY(w.grab().save(screenshot));
             QVERIFY(graph->grab().save(screenshot + "-plot.png"));

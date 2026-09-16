@@ -64,7 +64,7 @@ Result select_result(const Result& source,const std::vector<std::string>& keys){
     result.accepted_steps=source.accepted_steps;result.linear_solves=source.linear_solves;result.max_step_iterations=source.max_step_iterations;result.cancelled=source.cancelled;result.max_scaled_residual=source.max_scaled_residual;result.last_time=source.last_time;
     std::vector<size_t> analog,gates;
     for(size_t i=0;i<source.channels.size();++i)if(selected.count(source.channels[i].object)){analog.push_back(i);result.channels.push_back(source.channels[i]);}
-    for(size_t i=0;i<source.gate_objects.size();++i)if(selected.count("gate/"+source.gate_objects[i])){gates.push_back(i);result.gate_objects.push_back(source.gate_objects[i]);}
+    for(size_t i=0;i<source.gate_objects.size();++i)if(selected.count("gate/"+source.gate_objects[i])){gates.push_back(i);result.gate_objects.push_back(source.gate_objects[i]);result.gate_names.push_back(i<source.gate_names.size()?source.gate_names[i]:std::string{});}
     if(analog.empty()&&gates.empty())return result;
     result.samples.reserve(source.samples.size());
     for(const auto& old:source.samples){Sample sample;sample.time=old.time;for(auto i:analog)sample.values.push_back(old.values[i]);for(auto i:gates)sample.gates.push_back(old.gates[i]);result.samples.push_back(std::move(sample));}
@@ -83,7 +83,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(std::none_of(catalog.begin(),catalog.end(),[&](const Channel& c){return c.object==key;}))throw Diagnostic("missing_recording_channel",key,"Recording channel does not exist");
     const size_t analog_count=ir.unknowns.size()+ir.observations.size();
     for(size_t i=0;i<analog_count;++i)if(selected(catalog[i].object)){analog_indices.push_back(i);result.channels.push_back(catalog[i]);}
-    for(size_t i=analog_count;i<catalog.size();++i)if(selected(catalog[i].object)){gate_indices.push_back(i-analog_count);result.gate_objects.push_back(catalog[i].object.substr(5));}
+    for(size_t i=analog_count;i<catalog.size();++i)if(selected(catalog[i].object)){gate_indices.push_back(i-analog_count);result.gate_objects.push_back(catalog[i].object.substr(5));result.gate_names.push_back(catalog[i].name);}
     std::vector<size_t> switch_indices;
     std::vector<size_t> source_indices;
     for(size_t i=0;i<ir.stamps.size();++i)

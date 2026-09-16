@@ -21,6 +21,7 @@ struct Result {
     Profile profile;
     std::vector<Channel> channels;
     std::vector<std::string> gate_objects;
+    std::vector<std::string> gate_names;
     std::vector<Sample> samples;
     size_t accepted_steps=0, linear_solves=0, max_step_iterations=0;
     bool cancelled=false;
