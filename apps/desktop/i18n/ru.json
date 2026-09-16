@@ -310,5 +310,8 @@
   "diode_bridge_1p": "Однофазный диодный мост",
   "diode_bridge_3p": "Трёхфазный диодный мост",
   "thyristor_bridge_1p": "Однофазный тиристорный мост",
-  "thyristor_bridge_3p": "Трёхфазный тиристорный мост"
+  "thyristor_bridge_3p": "Трёхфазный тиристорный мост",
+  "buck_module": "Buck · Понижающий",
+  "boost_module": "Boost · Повышающий",
+  "buck_boost_module": "Buck-boost · Инвертирующий"
 }

@@ -1,0 +1,13 @@
+{
+  "type": "library:boost",
+  "fields": [],
+  "template": "converters/boost.pds",
+  "palette": {
+    "id": 221,
+    "label": "boost_module",
+    "category": "converters",
+    "short": "boost",
+    "fixed": false,
+    "hidden": false
+  }
+}

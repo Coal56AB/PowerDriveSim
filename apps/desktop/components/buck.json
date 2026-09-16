@@ -1,0 +1,13 @@
+{
+  "type": "library:buck",
+  "fields": [],
+  "template": "converters/buck.pds",
+  "palette": {
+    "id": 220,
+    "label": "buck_module",
+    "category": "converters",
+    "short": "buck",
+    "fixed": false,
+    "hidden": false
+  }
+}

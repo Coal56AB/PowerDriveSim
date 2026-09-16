@@ -1,0 +1,67 @@
+PowerDriveSim 12
+project "77eeb054-4f76-5042-8dff-45a6c68a50db" "Buck converter"
+profile 0.05 0.000001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "0012301f-8c79-5b4b-a438-5324b67fbc02" "Buck" "04bd9eb7-2b64-51ac-9b75-64bb1929a2df" 0 0 0
+component "d1ddee39-6f79-58db-9179-89ec66192ae6" "DC supply" V "" "" 24 0 -320 120 0
+orientation "d1ddee39-6f79-58db-9179-89ec66192ae6" 1 0
+node "e8d82982-54d8-5857-a625-d40098863bae" "COM" 1 0 320
+component "e35ebdcd-c406-5d1b-b3b0-ff58f484dc10" "Iout" IP "" "" 0 0 240 0 0
+component "087fe77c-f0a9-538d-8fd6-b7c61df61131" "Load" R "" "" 20 0 400 160 0
+orientation "087fe77c-f0a9-538d-8fd6-b7c61df61131" 1 0
+node "ab67e90c-21e6-59b2-aade-495cb1145831" "Uout" 0 400 0
+pwm "88fa1047-72b6-5223-9c8f-9e4c94a17fd3" "PWM" -300 -160 10000 0.4 0
+wire "673c66a1-ffff-5baf-84c9-865ec3c35898" "d1ddee39-6f79-58db-9179-89ec66192ae6" "p" "0012301f-8c79-5b4b-a438-5324b67fbc02" "b2511ffc-46ea-509e-a293-0bee69830457" 1 -320 -26
+wire "98e03e44-f30c-5427-b6c0-99059b7df1ca" "d1ddee39-6f79-58db-9179-89ec66192ae6" "n" "e8d82982-54d8-5857-a625-d40098863bae" "node" 1 -320 320
+wire "9d83c8db-99ce-50e4-8d49-e34f6453b8a7" "e8d82982-54d8-5857-a625-d40098863bae" "node" "0012301f-8c79-5b4b-a438-5324b67fbc02" "33397a55-4062-5175-ac3c-18403d2347e2" 2 -180 320 -180 0
+wire "cbdccf49-2676-5ed6-8d6c-87ba50cf997a" "88fa1047-72b6-5223-9c8f-9e4c94a17fd3" "out" "0012301f-8c79-5b4b-a438-5324b67fbc02" "e68ee368-cf7f-56ec-9327-b7ac04a4c426" 2 -200 -160 -200 26
+wire "e78540e9-0290-5ccb-b192-569ce7587f77" "0012301f-8c79-5b4b-a438-5324b67fbc02" "11d83e73-4d84-525a-bf7c-a6acfea59d2d" "e35ebdcd-c406-5d1b-b3b0-ff58f484dc10" "p" 0
+wire "68386c0d-b693-5c69-9439-83919f023aeb" "e35ebdcd-c406-5d1b-b3b0-ff58f484dc10" "n" "ab67e90c-21e6-59b2-aade-495cb1145831" "node" 0
+wire "c1bef94f-661f-5f7c-96b6-cbceb33fe7b3" "ab67e90c-21e6-59b2-aade-495cb1145831" "node" "087fe77c-f0a9-538d-8fd6-b7c61df61131" "p" 0
+wire "44e63cb3-1aa7-5bce-b78b-b02f50665c98" "087fe77c-f0a9-538d-8fd6-b7c61df61131" "n" "e8d82982-54d8-5857-a625-d40098863bae" "node" 1 400 320
+plot "fc95e8cd-2552-5f31-8e77-8622bdabfc2d" "Output voltage and current" 740 40 2 0 -1 -1 -1
+wire "12e0581f-681f-5ecf-875b-996b40a65307" "ab67e90c-21e6-59b2-aade-495cb1145831" "node" "fc95e8cd-2552-5f31-8e77-8622bdabfc2d" "in1" 2 560 0 560 29
+wire "bb16c3b4-d173-5dc9-87d9-d94d170e3bc6" "e35ebdcd-c406-5d1b-b3b0-ff58f484dc10" "out" "fc95e8cd-2552-5f31-8e77-8622bdabfc2d" "in2" 3 240 -100 600 -100 600 51
+definition "04bd9eb7-2b64-51ac-9b75-64bb1929a2df" "Buck"
+public_port "b2511ffc-46ea-509e-a293-0bee69830457" "IN" "430a8a31-dce6-58a8-be67-d56a957377da" "node" 0 0
+public_port "11d83e73-4d84-525a-bf7c-a6acfea59d2d" "OUT" "8a31d427-d607-5e86-b83f-a3d26aa0f27d" "node" 0 0
+public_port "33397a55-4062-5175-ac3c-18403d2347e2" "COM" "56ebf1bd-24e9-5c92-a451-cae2a5e96733" "node" 0 0
+public_port "e68ee368-cf7f-56ec-9327-b7ac04a4c426" "g" "f8f41a10-a478-540f-bdd8-9c6911c2c144" "gate" 1 1
+public_parameter "605ea9bd-832c-5a2c-81a1-f2e78a232b41" "L" "H" "84b9789a-dac8-5852-bf4a-8243ecb5fe6a" "value" 0.002
+public_parameter "c18a8943-e8c0-5ec6-bdcc-f425ab79f99a" "iL(0)" "A" "84b9789a-dac8-5852-bf4a-8243ecb5fe6a" "initial" 0
+public_parameter "67de4e50-b52e-53f8-9d49-63bdb698dd6e" "C" "F" "d3aa2515-fac0-5b69-9b69-8c0595f1409b" "value" 0.00022
+public_parameter "1314a400-4381-56e3-a063-587907571245" "uC(0)" "V" "d3aa2515-fac0-5b69-9b69-8c0595f1409b" "initial" 0
+public_parameter "8b4b02f6-c592-590a-a2d9-7cf946bc8000" "ESR" "Ohm" "7b698391-930a-5255-a8c2-ce57dccd6ce4" "value" 0.05
+body
+PowerDriveSim 12
+project "04bd9eb7-2b64-51ac-9b75-64bb1929a2df" "Buck"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "430a8a31-dce6-58a8-be67-d56a957377da" "IN" 0 -360 -100
+node "8a31d427-d607-5e86-b83f-a3d26aa0f27d" "OUT" 0 360 -100
+node "56ebf1bd-24e9-5c92-a451-cae2a5e96733" "COM" 0 0 280
+node "63fdbb6d-f119-573d-bac4-a65d60c56008" "Switch node" 0 0 -100
+component "f8f41a10-a478-540f-bdd8-9c6911c2c144" "Switch" S "" "" 0 0 -180 -100 0
+component "9883ac88-defb-5772-a9f0-eed25eabab19" "Diode" D "" "" 0 0 0 40 0
+orientation "9883ac88-defb-5772-a9f0-eed25eabab19" 3 0
+component "84b9789a-dac8-5852-bf4a-8243ecb5fe6a" "Inductor" L "" "" 0.002 0 180 -100 0
+wire "9acf5f4f-3860-55db-ae8b-a5e5681167a6" "430a8a31-dce6-58a8-be67-d56a957377da" "node" "f8f41a10-a478-540f-bdd8-9c6911c2c144" "p" 0
+wire "f39ce603-0042-54a1-87b0-e225d30cb214" "f8f41a10-a478-540f-bdd8-9c6911c2c144" "n" "63fdbb6d-f119-573d-bac4-a65d60c56008" "node" 0
+wire "c014d9d1-507a-562b-b4d8-d754419bf9c6" "56ebf1bd-24e9-5c92-a451-cae2a5e96733" "node" "9883ac88-defb-5772-a9f0-eed25eabab19" "p" 0
+wire "6ea0beb8-c905-56ed-9809-dd12c51b7d31" "9883ac88-defb-5772-a9f0-eed25eabab19" "n" "63fdbb6d-f119-573d-bac4-a65d60c56008" "node" 0
+wire "21f020da-8858-551c-8c74-73a76ac4ad47" "63fdbb6d-f119-573d-bac4-a65d60c56008" "node" "84b9789a-dac8-5852-bf4a-8243ecb5fe6a" "p" 0
+wire "8997f9b1-249c-5a2d-b647-979cf83f2086" "84b9789a-dac8-5852-bf4a-8243ecb5fe6a" "n" "8a31d427-d607-5e86-b83f-a3d26aa0f27d" "node" 0
+component "7b698391-930a-5255-a8c2-ce57dccd6ce4" "Capacitor ESR" R "" "" 0.05 0 360 20 0
+orientation "7b698391-930a-5255-a8c2-ce57dccd6ce4" 1 0
+component "d3aa2515-fac0-5b69-9b69-8c0595f1409b" "Capacitor" C "" "" 0.00022 0 360 160 0
+orientation "d3aa2515-fac0-5b69-9b69-8c0595f1409b" 1 0
+wire "0bb0319b-b991-5e9a-8e57-ff637a4320eb" "8a31d427-d607-5e86-b83f-a3d26aa0f27d" "node" "7b698391-930a-5255-a8c2-ce57dccd6ce4" "p" 0
+wire "fc4d9f24-a5cb-5c88-b57b-7335943220cf" "7b698391-930a-5255-a8c2-ce57dccd6ce4" "n" "d3aa2515-fac0-5b69-9b69-8c0595f1409b" "p" 0
+wire "3d28d910-44e9-5a4d-9fb6-f5223f176267" "d3aa2515-fac0-5b69-9b69-8c0595f1409b" "n" "56ebf1bd-24e9-5c92-a451-cae2a5e96733" "node" 1 360 280
+end_definition

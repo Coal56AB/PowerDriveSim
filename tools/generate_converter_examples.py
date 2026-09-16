@@ -54,6 +54,11 @@ class Diagram:
             quoted(ident), quoted(name), quoted(definition.id), x, y))
         return {name: (ident, port) for name, port in definition.port_ids.items()}
 
+    def parameter(self, name, terminal, field, unit, value):
+        self.ports.append('public_parameter {} {} {} {} {} {}'.format(
+            quoted(self.uuid("parameter/" + name)), quoted(name), quoted(unit),
+            quoted(terminal[0]), quoted(field), value))
+
     def pattern(self, name, states, x, y):
         ident = self.uuid("pattern/" + name)
         self.lines.append("pattern {} {} {} {} {}".format(

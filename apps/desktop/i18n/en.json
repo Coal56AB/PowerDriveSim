@@ -310,5 +310,8 @@
   "diode_bridge_1p": "Single-phase diode bridge",
   "diode_bridge_3p": "Three-phase diode bridge",
   "thyristor_bridge_1p": "Single-phase thyristor bridge",
-  "thyristor_bridge_3p": "Three-phase thyristor bridge"
+  "thyristor_bridge_3p": "Three-phase thyristor bridge",
+  "buck_module": "Buck converter",
+  "boost_module": "Boost converter",
+  "buck_boost_module": "Inverting buck-boost"
 }

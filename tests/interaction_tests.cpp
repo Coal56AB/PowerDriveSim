@@ -75,6 +75,44 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void dcdc_library_parameters_and_run() {
+        for (const int type : {220, 221, 222}) {
+            QTemporaryDir dir;
+            EditorWindow w("ru", dir.path());
+            Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
+            ready(w);
+            auto *insert = w.findChild<QAction *>("insert_component_" + QString::number(type));
+            QVERIFY(insert && !insert->icon().isNull()); insert->trigger();
+            QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              w.canvas()->mapFromScene(QPointF(0, 0)));
+            QCOMPARE(w.project().instances.size(), size_t(1));
+            const auto module = w.project().instances.front();
+            const auto parameter = definition(w.project(), module.definition).parameters.front().id;
+            auto *value = w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(parameter));
+            QVERIFY(value && value->isVisible());
+            value->setText("4 mH"); QTest::keyClick(value, Qt::Key_Return);
+            QCOMPARE(w.project().instances[0].parameters.front().second, .004);
+            w.undo(); QVERIFY(w.project().instances[0].parameters.empty());
+            w.open_subcircuit(module.id); QCOMPARE(w.project().components.size(), size_t(5));
+            w.navigate_hierarchy({});
+            const auto path = dir.filePath("dcdc.pds"); QVERIFY(w.save_project(path));
+            const auto expected = encoded(w.root_project());
+            QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+            const QString kind = type == 220 ? "buck" : type == 221 ? "boost" : "buck-boost";
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/") + kind + ".pds"));
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+            w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+            QVERIFY(w.has_result() && !w.result().samples.empty());
+            if (auto screenshot = qEnvironmentVariable("PDS_DCDC_SCREENSHOT"); !screenshot.isEmpty()) {
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + kind + ".png"));
+                const auto plot = w.project().plots.front().id; w.open_plot(plot);
+                auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
+                QVERIFY(graph); QTest::qWait(30); QVERIFY(graph->grab().save(screenshot + kind + "-plot.png"));
+                graph->close(); w.open_subcircuit(w.project().instances.front().id);
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + kind + "-inside.png"));
+            }
+        }
+    }
     void rectifier_library_and_run() {
         for (const int type : {210, 211, 212, 213}) {
             QTemporaryDir dir;

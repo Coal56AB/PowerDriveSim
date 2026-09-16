@@ -25,9 +25,7 @@ def transistor(mosfet):
         ("Diode Roff", "roff", "Ohm", 1e6, diode),
         ("Diode Vf", "forward_voltage", "V", .7, diode),
     ]:
-        body.ports.append('public_parameter {} {} {} {} {} {}'.format(
-            quoted(body.uuid("parameter/" + title)), quoted(title), quoted(unit),
-            quoted(obj["p"][0]), quoted(field), value))
+        body.parameter(title, obj["p"], field, unit, value)
     root = Diagram("library/" + name + "/fragment", name)
     root.schema = 12
     root.instance(name, body, 0, 0)

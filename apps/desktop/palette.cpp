@@ -64,6 +64,14 @@ QIcon component_icon(int id) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
+    } else if (id >= 220 && id <= 222) {
+        p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
+        p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16);
+        const int from = id == 220 ? 10 : 22, to = id == 220 ? 22 : 10;
+        p.drawLine(9, from, 16, from); p.drawLine(16, from, 16, to);
+        p.drawLine(16, to, 23, to);
+        p.drawLine(20, to - 3, 23, to); p.drawLine(23, to, 20, to + 3);
+        if (id == 222) p.drawLine(7, 8, 12, 8);
     } else if (id >= 210 && id <= 213) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(5, 28, 27, 4);

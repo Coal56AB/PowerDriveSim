@@ -1,0 +1,13 @@
+{
+  "type": "library:buck-boost",
+  "fields": [],
+  "template": "converters/buck-boost.pds",
+  "palette": {
+    "id": 222,
+    "label": "buck_boost_module",
+    "category": "converters",
+    "short": "buck-boost",
+    "fixed": false,
+    "hidden": false
+  }
+}
