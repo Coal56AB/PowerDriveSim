@@ -298,5 +298,9 @@
   "charge_on": "С динамикой",
   "transit_time": "Время переноса",
   "carrier_lifetime": "Время жизни",
-  "initial_charge": "Начальный заряд"
+  "initial_charge": "Начальный заряд",
+  "thyristor": "T · Тиристор",
+  "holding_current": "Ток удержания",
+  "initial_latched": "Удержание t=0",
+  "initial_gate": "Начальный gate"
 }

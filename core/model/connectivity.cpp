@@ -24,7 +24,7 @@ PortType port_type(const Project& p,const Endpoint& e) {
     for(const auto& n:p.nodes) if(n.id==e.object && e.port=="node") return {Domain::electrical,Direction::conserving};
     for(const auto& c:p.components) if(c.id==e.object) {
         if(e.port=="p" || e.port=="n") return {Domain::electrical,Direction::conserving};
-        if(c.kind==Kind::ideal_switch && e.port=="gate") return {Domain::gate,Direction::input};
+        if(gate_controlled(c.kind) && e.port=="gate") return {Domain::gate,Direction::input};
         if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && e.port=="out") return {Domain::signal,Direction::output};
     }
     for(const auto& g:p.patterns) if(g.id==e.object && e.port=="out") return {Domain::gate,Direction::output};

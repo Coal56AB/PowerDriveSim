@@ -65,13 +65,17 @@ QIcon component_icon(int id) {
         p.drawLine(8, 22, 24, 12);
         p.drawLine(24, 22, 31, 22);
         p.drawLine(16, 4, 16, 11);
-    } else if (id == 6) {
+    } else if (id == 6 || id == 9) {
         p.drawLine(1, 16, 8, 16);
         QPolygonF triangle;
         triangle << QPointF(8, 7) << QPointF(24, 16) << QPointF(8, 25);
         p.drawPolygon(triangle);
         p.drawLine(24, 7, 24, 25);
         p.drawLine(24, 16, 31, 16);
+        if (id == 9) {
+            p.drawLine(16, 1, 16, 4);
+            p.drawLine(16, 4, 24, 11);
+        }
     } else {
         p.setPen(QPen(theme_colors().gate, 1.8));
         QPainterPath line(QPointF(2, 25));

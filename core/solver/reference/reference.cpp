@@ -54,7 +54,7 @@ std::vector<double> StampSystem::solve(const SimulationIR& ir,double time) const
 }
 std::vector<Channel> available_channels(const SimulationIR& ir){
     auto channels=ir.unknowns;for(const auto& o:ir.observations)channels.push_back(o.channel);
-    for(const auto& s:ir.stamps)if(s.component.kind==Kind::ideal_switch)channels.push_back({"gate/"+s.component.id,"gate:"+s.component.name,"bool"});
+    for(const auto& s:ir.stamps)if(gate_controlled(s.component.kind))channels.push_back({"gate/"+s.component.id,"gate:"+s.component.name,"bool"});
     for(const auto& signal:ir.gate_signals)channels.push_back({"gate/"+signal.id,signal.name,"bool"});
     return channels;
 }
@@ -90,15 +90,20 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(ir.stamps[i].component.source.kind!=Waveform::dc)source_indices.push_back(i);
     std::vector<bool> signal_values;for(const auto& signal:ir.gate_signals)signal_values.push_back(signal.initial);
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
-    std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size());
+    std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size()), latched(ir.stamps.size()), released(ir.stamps.size());
+    std::vector<size_t> thyristor_indices;
     std::vector<size_t> diode_indices;
     for(size_t i=0;i<ir.stamps.size();++i)
-        if(ir.stamps[i].component.kind==Kind::diode) diode_indices.push_back(i);
+        if(rectifying(ir.stamps[i].component.kind)) diode_indices.push_back(i);
     for(size_t i=0;i<ir.stamps.size();++i) {
         states[i]=ir.stamps[i].component.initial;
         if(dynamic_diode(ir.stamps[i].component))states[i]=ir.stamps[i].component.semiconductor.initial_charge;
         gates[i]=ir.stamps[i].component.closed;
-        if(ir.stamps[i].component.kind==Kind::ideal_switch) switch_indices.push_back(i);
+        if(ir.stamps[i].component.kind==Kind::thyristor) {
+            thyristor_indices.push_back(i);
+            diode_states[i]=latched[i]=ir.stamps[i].component.semiconductor.initial_latched;
+        }
+        if(gate_controlled(ir.stamps[i].component.kind)) switch_indices.push_back(i);
     }
     size_t next_event=0;
     auto apply_events=[&](double t) {
@@ -114,6 +119,10 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     std::vector<size_t> violations;
     violations.reserve(diode_indices.size());
     auto solve=[&](double t,double h,bool initialize) -> const std::vector<double>& {
+        for(auto i:thyristor_indices) {
+            released[i]=false;
+            if(!gates[i])diode_states[i]=latched[i];
+        }
         const std::vector<double>* solution=nullptr;
         bool converged=false, singular=false;
         unsigned iterations=0;
@@ -145,11 +154,20 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
                 const double it=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);
                 const double excess_v=v-diode_threshold(stamp.component);
                 const double excess_i=current-diode_threshold_current(stamp.component);
+                const bool thyristor=stamp.component.kind==Kind::thyristor;
+                const bool can_fire=!thyristor||gates[index];
+                if(thyristor&&!gates[index]&&active[index]&&
+                   (current<stamp.component.semiconductor.holding_current-it||excess_i<=it))
+                    released[index]=true;
+                const bool must_block=thyristor&&!gates[index]&&
+                    (!latched[index]||released[index]);
+                const bool must_hold=thyristor&&!gates[index]&&latched[index]&&!released[index];
                 const bool dynamic=dynamic_diode(stamp.component);
                 if(dynamic)residual_v=std::max(residual_v,std::max(0.0,active[index]?-excess_v:excess_v));
                 else if(active[index])residual_i=std::max(residual_i,std::max(0.0,-excess_i));
-                else residual_v=std::max(residual_v,std::max(0.0,excess_v));
-                if((active[index]&&(dynamic?excess_v < -vt:excess_i < -it))||(!active[index]&&excess_v>vt)) {
+                else if(can_fire)residual_v=std::max(residual_v,std::max(0.0,excess_v));
+                if((active[index]&&(must_block||(dynamic?excess_v < -vt:excess_i < -it)))||
+                   (!active[index]&&(must_hold||(can_fire&&excess_v>vt)))) {
                     violations.push_back(index);offending=stamp.component.id;
                 }
             }
@@ -185,7 +203,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         result.max_step_iterations=std::max(result.max_step_iterations,static_cast<size_t>(iterations));
         if(!converged) {
             std::ostringstream message;
-            message << "Diode active-set solve failed after " << iterations
+            message << "Semiconductor active-set solve failed after " << iterations
                 << " iterations; voltage residual=" << residual_v << " V; current residual=" << residual_i
                 << " A. Check ideal loops, initial states, tolerances and iteration budget. " << last_linear;
             throw Diagnostic("nonlinear_convergence",offending.empty()?ir.project_id:offending,message.str(),t);
@@ -204,6 +222,12 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             const double voltage=(s.positive<0?0:values[s.positive])-(s.negative<0?0:values[s.negative]);
             if(s.component.kind==Kind::capacitor) { states[i]=voltage; history[i]=values[s.branch]; }
             if(s.component.kind==Kind::inductor) { states[i]=values[s.branch]; history[i]=voltage; }
+            if(s.component.kind==Kind::thyristor) {
+                const double current=values[s.branch];
+                const double tolerance=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);
+                latched[i]=diode_states[i]&&current>=s.component.semiconductor.holding_current&&
+                    current>diode_threshold_current(s.component)+tolerance;
+            }
             if(dynamic_diode(s.component)) {
                 const auto &model=s.component.semiconductor;
                 const auto law=diode_charge_law(model);

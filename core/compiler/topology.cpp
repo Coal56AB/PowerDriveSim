@@ -58,7 +58,7 @@ std::optional<Diagnostic> voltage_loop(const SimulationIR &ir, bool fixed_only, 
         else if (kind == Kind::capacitor && initialize)
             voltage = states[i];
         else if (kind == Kind::ideal_switch && gates[i] && !resistive_semiconductor(s.component)) {
-        } else if (kind == Kind::diode && diodes[i] && !resistive_semiconductor(s.component)) {
+        } else if (rectifying(kind) && diodes[i] && !resistive_semiconductor(s.component)) {
         } else
             continue;
         if (auto mismatch = potentials.join(node(s.positive), node(s.negative), voltage)) {
@@ -103,7 +103,7 @@ std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, boo
         const bool path = k == Kind::resistor || k == Kind::capacitor || k == Kind::voltage ||
                           k == Kind::current_probe || (k == Kind::inductor && !initialize) ||
                           (k == Kind::ideal_switch && (gates[i] || resistive_semiconductor(s.component))) ||
-                          (k == Kind::diode && (diodes[i] || resistive_semiconductor(s.component)));
+                          (rectifying(k) && (diodes[i] || resistive_semiconductor(s.component)));
         if (path)
             islands.join(node(s.positive), node(s.negative), 0);
     }

@@ -66,10 +66,11 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return c.initial;
             if (key == "closed")
                 return c.closed;
-            if(c.kind==Kind::diode||c.kind==Kind::ideal_switch) {
+            if(rectifying(c.kind)||gate_controlled(c.kind)) {
                 if(key=="semiconductor_model")return unsigned(c.semiconductor.model);
                 if(c.kind==Kind::diode&&key=="charge_model")return unsigned(c.semiconductor.charge_dynamics);
-                if(c.kind==Kind::diode||key=="ron"||key=="roff")
+                if(c.kind==Kind::thyristor&&key=="initial_latched")return c.semiconductor.initial_latched;
+                if(semiconductor_property(c.kind,key))
                     if(auto v=semiconductor_parameter(c.semiconductor,key))return *v;
             }
             if(c.kind==Kind::voltage||c.kind==Kind::current) {
@@ -152,6 +153,7 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 c.initial = std::get<double>(value);
             if (key == "closed")
                 c.closed = std::get<bool>(value);
+            if(key=="initial_latched")c.semiconductor.initial_latched=std::get<bool>(value);
             if(key=="semiconductor_model")c.semiconductor.model=SemiconductorModel(std::get<unsigned>(value));
             if(key=="charge_model") {
                 const auto enabled=std::get<unsigned>(value);

@@ -4,8 +4,10 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 10;
-enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe };
+inline constexpr unsigned project_schema = 11;
+enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor };
+inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor; }
+inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor; }
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
 struct Orientation { unsigned quarter_turns=0; bool mirrored=false; bool operator==(const Orientation&) const = default; };
@@ -24,6 +26,8 @@ struct Semiconductor {
     double ron = .01, roff = 1e6, forward_voltage = .7;
     bool charge_dynamics = false;
     double transit_time = 1e-6, carrier_lifetime = 5e-6, initial_charge = 0;
+    double holding_current = 0;
+    bool initial_latched = false;
     bool operator==(const Semiconductor &) const = default;
 };
 struct Component {

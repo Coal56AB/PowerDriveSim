@@ -21,13 +21,14 @@ std::string kind_name(Kind k) {
     case Kind::current: return "I";
     case Kind::ideal_switch: return "S";
     case Kind::diode: return "D";
+    case Kind::thyristor: return "T";
     case Kind::voltage_probe: return "VP";
     case Kind::current_probe: return "IP";
     }
     throw Diagnostic("unknown_component", "", "Unsupported component kind");
 }
 Kind parse_kind(const std::string& s) {
-    for(auto k : {Kind::resistor, Kind::capacitor, Kind::inductor, Kind::voltage, Kind::current, Kind::ideal_switch, Kind::diode, Kind::voltage_probe, Kind::current_probe})
+    for(auto k : {Kind::resistor, Kind::capacitor, Kind::inductor, Kind::voltage, Kind::current, Kind::ideal_switch, Kind::diode, Kind::voltage_probe, Kind::current_probe, Kind::thyristor})
         if(kind_name(k) == s) return k;
     throw Diagnostic("unknown_component", s, "Unsupported component type");
 }

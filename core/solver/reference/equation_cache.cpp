@@ -80,6 +80,7 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 system.add(b, p, 1);
                 system.add(b, n, -1);
                 break;
+            case Kind::thyristor:
             case Kind::diode:
             case Kind::ideal_switch:
                 if (dynamic_diode(c)) {
@@ -98,12 +99,12 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 }
                 if (resistive_semiconductor(c)) {
                     const auto &model = c.semiconductor;
-                    const bool active = c.kind == Kind::diode ? diodes[i] : gates[i];
+                    const bool active = rectifying(c.kind) ? diodes[i] : gates[i];
                     if (active) {
                         system.add(b, p, 1);
                         system.add(b, n, -1);
                         system.add(b, b, -model.ron);
-                        if (c.kind == Kind::diode)
+                        if (rectifying(c.kind))
                             system.inject(b, model.forward_voltage * (1 - model.ron / model.roff));
                     } else {
                         system.add(b, p, -1 / model.roff);
@@ -112,7 +113,7 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                     }
                     break;
                 }
-                if (c.kind == Kind::diode ? diodes[i] : gates[i]) {
+                if (rectifying(c.kind) ? diodes[i] : gates[i]) {
                     system.add(b, p, 1);
                     system.add(b, n, -1);
                 } else

@@ -70,7 +70,7 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
             }
             if((c.kind==Kind::voltage||c.kind==Kind::current))
                 if(auto target=source_parameter(c.source,p.field)){*target=value;return;}
-            if(c.kind==Kind::diode||(c.kind==Kind::ideal_switch&&(p.field=="ron"||p.field=="roff")))
+            if(semiconductor_property(c.kind,p.field))
                 if(auto target=semiconductor_parameter(c.semiconductor,p.field)){*target=value;return;}
         }
     for (auto &g : s.patterns)
@@ -270,7 +270,7 @@ FlattenedProject flatten(const Project &source) {
         for (const auto &c : s.components) {
             add(c.id, "p");
             add(c.id, "n");
-            if (c.kind == Kind::ideal_switch)
+            if (gate_controlled(c.kind))
                 add(c.id, "gate");
             if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
                 add(c.id, "out");

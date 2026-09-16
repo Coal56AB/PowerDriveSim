@@ -361,13 +361,17 @@ class Atom final : public QGraphicsItem {
             } else if (symbol == "S") {
                 p->drawLine(-27, 0, 20, -18);
                 p->drawLine(0, -40, 0, -26);
-            } else if (symbol == "D") {
+            } else if (symbol == "D" || symbol == "T") {
                 QPolygonF triangle;
                 triangle << QPointF(-20, -18) << QPointF(-20, 18) << QPointF(20, 0);
                 p->drawPolygon(triangle);
                 p->drawLine(20, -18, 20, 18);
                 p->drawLine(-27, 0, -20, 0);
                 p->drawLine(20, 0, 27, 0);
+                if (symbol == "T") {
+                    p->drawLine(0, -40, 0, -30);
+                    p->drawLine(0, -30, 20, -12);
+                }
             } else {
                 p->drawEllipse(QRectF(-27, -27, 54, 54));
                 label(p, QRectF(-27, -27, 54, 54), Qt::AlignCenter, symbol);
@@ -545,7 +549,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         auto *a = add(c, 0, q(kind_name(c.kind)), component_label(c));
         a->port("p", {-60, 0}, QColor("#146cca"));
         a->port("n", {60, 0}, QColor("#146cca"));
-        if (c.kind == Kind::ideal_switch)
+        if (gate_controlled(c.kind))
             a->port("gate", {0, -40}, QColor("#17866d"));
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
             a->port("out", {0, -40}, QColor("#8c67c8"));
@@ -1393,7 +1397,7 @@ void EditorWindow::rebuild_scene() {
         auto *a = atom(c.id, c.name, q(kind_name(c.kind)), 0);
         a->value = component_label(c);
         std::vector<std::pair<QString, QPointF>> list{{"p", {-60, 0}}, {"n", {60, 0}}};
-        if (c.kind == Kind::ideal_switch)
+        if (gate_controlled(c.kind))
             list.push_back({"gate", {0, -40}});
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
             list.push_back({"out", {0, -40}});

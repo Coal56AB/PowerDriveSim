@@ -15,9 +15,21 @@ double Semiconductor::*parameter(const std::string &key) {
         return &Semiconductor::carrier_lifetime;
     if (key == "initial_charge")
         return &Semiconductor::initial_charge;
+    if (key == "holding_current")
+        return &Semiconductor::holding_current;
     return nullptr;
 }
 } // namespace
+bool semiconductor_property(Kind kind, const std::string &key) {
+    if (key == "ron" || key == "roff")
+        return gate_controlled(kind) || kind == Kind::diode;
+    if (key == "forward_voltage")
+        return rectifying(kind);
+    if (key == "holding_current")
+        return kind == Kind::thyristor;
+    return kind == Kind::diode &&
+           (key == "transit_time" || key == "carrier_lifetime" || key == "initial_charge");
+}
 double *semiconductor_parameter(Semiconductor &s, const std::string &key) {
     const auto member = parameter(key);
     return member ? &(s.*member) : nullptr;
@@ -31,10 +43,15 @@ void validate_semiconductor(const Component &c) {
     if (unsigned(s.model) > unsigned(SemiconductorModel::piecewise_linear) || !std::isfinite(s.ron) ||
         !std::isfinite(s.roff) || !std::isfinite(s.forward_voltage) || s.ron <= 0 || s.roff <= s.ron ||
         s.forward_voltage < 0 ||
-        ((c.kind != Kind::diode && c.kind != Kind::ideal_switch) && s != Semiconductor{}))
+        ((!rectifying(c.kind) && c.kind != Kind::ideal_switch) && s != Semiconductor{}))
         throw Diagnostic("invalid_semiconductor", c.id,
                          "Semiconductor parameters require finite 0 < Ron < Roff and Vf >= 0; "
-                         "the model applies only to switches and diodes");
+                         "the model applies only to switches, diodes and thyristors");
+    if (!std::isfinite(s.holding_current) || s.holding_current < 0 ||
+        (c.kind != Kind::thyristor && (s.holding_current != 0 || s.initial_latched)))
+        throw Diagnostic(
+            "invalid_thyristor", c.id,
+            "Holding current must be finite and nonnegative; latch parameters require a thyristor");
     const auto law = diode_charge_law(s);
     if (!std::isfinite(s.transit_time) || s.transit_time <= 0 || !std::isfinite(s.carrier_lifetime) ||
         s.carrier_lifetime <= 0 || !std::isfinite(s.initial_charge) || s.initial_charge < 0 ||

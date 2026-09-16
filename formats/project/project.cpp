@@ -27,6 +27,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::map<std::string,Semiconductor> semiconductors;
     struct ChargeData { bool enabled; double transit, lifetime, initial; };
     std::map<std::string,ChargeData> charges;
+    std::map<std::string,std::pair<double,bool>> thyristors;
     size_t number=1;
     while(std::getline(in,line)) {
         ++number;
@@ -194,7 +195,13 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if(c.kind==Kind::diode && p.schema<3) throw Diagnostic("schema_version",c.id,"Diodes require schema 3");
             if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && p.schema<4)
                 throw Diagnostic("schema_version",c.id,"Probes require schema 4");
+            if(c.kind==Kind::thyristor && p.schema<11)throw Diagnostic("schema_version",c.id,"Thyristors require schema 11");
             p.components.push_back(c);
+        } else if(tag=="thyristor" && p.schema>=11) {
+            std::string id;double holding=0;int latched=-1;
+            row>>std::quoted(id)>>holding>>latched;
+            if((latched!=0&&latched!=1)||thyristors.count(id))throw Diagnostic("parse_error",id,"Invalid or duplicate thyristor parameters");
+            thyristors.emplace(id,std::make_pair(holding,latched==1));
         } else if(tag=="diode_charge" && p.schema>=10) {
             std::string id;ChargeData data{};unsigned enabled=0;
             row>>std::quoted(id)>>enabled>>data.transit>>data.lifetime>>data.initial;
@@ -243,6 +250,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         if(c==p.components.end()||c->kind!=Kind::diode)throw Diagnostic("invalid_diode_charge",id,"Charge model target must be a diode");
         c->semiconductor.charge_dynamics=data.enabled;c->semiconductor.transit_time=data.transit;
         c->semiconductor.carrier_lifetime=data.lifetime;c->semiconductor.initial_charge=data.initial;
+        validate_semiconductor(*c);
+    }
+    for(const auto& [id,data]:thyristors) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
+        if(c==p.components.end()||c->kind!=Kind::thyristor)throw Diagnostic("invalid_thyristor",id,"Latch parameters require a thyristor");
+        c->semiconductor.holding_current=data.first;c->semiconductor.initial_latched=data.second;
         validate_semiconductor(*c);
     }
     p.schema=project_schema;
@@ -311,6 +324,8 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& c:p.components)if(c.semiconductor!=Semiconductor{}) {
         validate_semiconductor(c);const auto& s=c.semiconductor;
         out<<"semiconductor "<<std::quoted(c.id)<<' '<<unsigned(s.model)<<' '<<s.ron<<' '<<s.roff<<' '<<s.forward_voltage<<'\n';
+        if(c.kind==Kind::thyristor)
+            out<<"thyristor "<<std::quoted(c.id)<<' '<<s.holding_current<<' '<<s.initial_latched<<'\n';
         const Semiconductor defaults;
         if(s.charge_dynamics||s.transit_time!=defaults.transit_time||s.carrier_lifetime!=defaults.carrier_lifetime||s.initial_charge!=0)
             out<<"diode_charge "<<std::quoted(c.id)<<' '<<s.charge_dynamics<<' '<<s.transit_time<<' '<<s.carrier_lifetime<<' '<<s.initial_charge<<'\n';

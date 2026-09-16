@@ -75,6 +75,60 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void thyristor_properties_and_run() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/thyristor-halfwave.pds")));
+        ready(w);
+        auto *insert = w.findChild<QAction *>("insert_component_9");
+        QVERIFY(insert && !insert->icon().isNull());
+        const auto count = w.project().components.size();
+        insert->trigger();
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          w.canvas()->mapFromScene(QPointF(300, 300)));
+        QCOMPARE(w.project().components.size(), count + 1);
+        QCOMPARE(w.project().components.back().kind, Kind::thyristor);
+        w.undo(); QCOMPARE(w.project().components.size(), count);
+        const auto id = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                     [](const auto &c) { return c.kind == Kind::thyristor; })->id;
+        w.select_object(id);
+        auto *holding = w.findChild<QLineEdit *>("property_holding_current");
+        auto *latched = w.findChild<QCheckBox *>("property_initial_latched");
+        auto *gate = w.findChild<QCheckBox *>("property_closed");
+        QVERIFY(holding && holding->isVisible() && latched && latched->isVisible());
+        QVERIFY(!gate->isVisible()); // The connected PWM owns the gate.
+        const auto before = encoded(w.root_project());
+        holding->setText("-1"); QTest::keyClick(holding, Qt::Key_Return);
+        QCOMPARE(encoded(w.root_project()), before);
+        holding->setText("30 mA"); QTest::keyClick(holding, Qt::Key_Return);
+        auto device = [&]() -> const Component & {
+            return *std::find_if(w.project().components.begin(), w.project().components.end(),
+                                 [&](const auto &c) { return c.id == id; });
+        };
+        QCOMPARE(device().semiconductor.holding_current, .03);
+        QTest::mouseClick(latched, Qt::LeftButton, Qt::NoModifier, QPoint(8, latched->height() / 2));
+        QVERIFY(device().semiconductor.initial_latched);
+        w.undo(); QVERIFY(!device().semiconductor.initial_latched);
+        auto *mode = w.findChild<QComboBox *>("property_semiconductor_model");
+        mode->setCurrentIndex(1); QMetaObject::invokeMethod(mode, "activated", Q_ARG(int, 1));
+        QVERIFY(w.findChild<QLineEdit *>("property_forward_voltage")->isVisible());
+        auto *charge = w.findChild<QComboBox *>("property_charge_model");
+        QVERIFY(!charge || !charge->isVisible());
+        const auto path = dir.filePath("thyristor.pds");
+        QVERIFY(w.save_project(path)); const auto expected = encoded(w.root_project());
+        QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+        w.select_object(id);
+        w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(w.has_result() && !w.result().samples.empty());
+        const auto plot = w.project().plots.front().id; w.open_plot(plot);
+        auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
+        QVERIFY(graph && graph->isVisible());
+        if (auto screenshot = qEnvironmentVariable("PDS_THYRISTOR_SCREENSHOT"); !screenshot.isEmpty()) {
+            QTest::qWait(30); QVERIFY(w.grab().save(screenshot));
+            QVERIFY(graph->grab().save(screenshot + "-plot.png"));
+        }
+    }
     void pwl_device_properties_and_run() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

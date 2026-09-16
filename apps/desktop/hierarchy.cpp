@@ -345,7 +345,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     for (const auto &c : body.components) {
         terminal(c.id, c.name, "p");
         terminal(c.id, c.name, "n");
-        if (c.kind == Kind::ideal_switch)
+        if (gate_controlled(c.kind))
             terminal(c.id, c.name, "gate");
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
             terminal(c.id, c.name, "out");

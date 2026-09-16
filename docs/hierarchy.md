@@ -8,7 +8,7 @@ Object UUIDs are local to a schematic. Expanded UUIDs derive from the complete s
 
 A public port aliases an existing internal terminal, including another instance's public port. Its declared domain and direction must match. Electrical ports remain conserving; directed gate and measurement ports preserve their direction. Flattening rewrites endpoints and recorded gate targets before the existing connectivity and generic compilation stages. It adds no electrical elements or stabilization.
 
-Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff (and diode Vf), constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Symbolic parameter expressions are not implemented by this step.
+Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Symbolic parameter expressions are not implemented by this step.
 
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 

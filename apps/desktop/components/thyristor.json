@@ -1,0 +1,96 @@
+{
+  "type": "T",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "semiconductor_model",
+      "editor": "enum",
+      "label": "device_model",
+      "options": [
+        {
+          "value": 0,
+          "label": "device_ideal"
+        },
+        {
+          "value": 1,
+          "label": "device_pwl"
+        }
+      ]
+    },
+    {
+      "key": "ron",
+      "editor": "number",
+      "label": "on_resistance",
+      "unit": "Ohm",
+      "min": 0,
+      "exclusiveMin": true,
+      "when": {
+        "semiconductor_model": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "roff",
+      "editor": "number",
+      "label": "off_resistance",
+      "unit": "Ohm",
+      "min": 0,
+      "exclusiveMin": true,
+      "when": {
+        "semiconductor_model": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "forward_voltage",
+      "editor": "number",
+      "label": "forward_voltage",
+      "unit": "V",
+      "min": 0,
+      "when": {
+        "semiconductor_model": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "holding_current",
+      "editor": "number",
+      "label": "holding_current",
+      "unit": "A",
+      "min": 0
+    },
+    {
+      "key": "initial_latched",
+      "editor": "bool",
+      "label": "initial_latched"
+    },
+    {
+      "key": "closed",
+      "editor": "bool",
+      "label": "initial_gate",
+      "condition": "internal_gate"
+    },
+    {
+      "key": "events",
+      "editor": "events",
+      "label": "events",
+      "condition": "internal_gate"
+    }
+  ],
+  "palette": {
+    "id": 9,
+    "label": "thyristor",
+    "category": "switching",
+    "short": "T",
+    "fixed": false,
+    "hidden": false
+  }
+}

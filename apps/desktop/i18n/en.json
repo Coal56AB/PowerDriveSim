@@ -298,5 +298,9 @@
   "charge_on": "With dynamics",
   "transit_time": "Transit time",
   "carrier_lifetime": "Carrier lifetime",
-  "initial_charge": "Initial charge"
+  "initial_charge": "Initial charge",
+  "thyristor": "T · Thyristor",
+  "holding_current": "Holding current",
+  "initial_latched": "Initially latched",
+  "initial_gate": "Initial gate"
 }

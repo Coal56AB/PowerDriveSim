@@ -1,0 +1,25 @@
+PowerDriveSim 11
+project "fa0a10c0-e940-50b7-bede-8db271dca0fe" "Thyristor half-wave rectifier"
+profile 0.04 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+component "9c3905cf-de4b-59da-b19c-12956b98da4c" "AC source" V "" "" 10 0 -240 120 0
+orientation "9c3905cf-de4b-59da-b19c-12956b98da4c" 1 0
+component "b884bea2-16c6-5302-bb45-6f1375b92719" "Thyristor" T "" "" 0 0 0 0 0
+component "34488b83-d2af-5dda-8ec4-2f67193422fb" "Load" R "" "" 10 0 240 120 0
+orientation "34488b83-d2af-5dda-8ec4-2f67193422fb" 1 0
+node "f90cbe0e-2d0a-50b7-ad53-0c6e068d720d" "load_voltage" 0 240 0
+node "a0aa1dd4-be0b-5e5d-8102-34c034214da6" "ground" 1 0 240
+source "9c3905cf-de4b-59da-b19c-12956b98da4c" 1 0 50 0 0 0.5 0
+pwm "fb1ab01c-388a-5a43-8243-38e67f8a3a20" "Firing pulse" -180 -140 50 0.025 0.0025
+wire "64286aee-b5d9-53a5-9e3c-dedc9fc57a0a" "9c3905cf-de4b-59da-b19c-12956b98da4c" "p" "b884bea2-16c6-5302-bb45-6f1375b92719" "p" 1 -240 0
+wire "5800a86d-75b1-5492-b4f3-f3871f2f4353" "b884bea2-16c6-5302-bb45-6f1375b92719" "n" "f90cbe0e-2d0a-50b7-ad53-0c6e068d720d" "node" 0
+wire "30e7e0e6-b48d-515e-b1a4-c129c87ae3d3" "f90cbe0e-2d0a-50b7-ad53-0c6e068d720d" "node" "34488b83-d2af-5dda-8ec4-2f67193422fb" "p" 0
+wire "63d4616a-b5b7-5069-b4f5-550ee228bcaf" "34488b83-d2af-5dda-8ec4-2f67193422fb" "n" "a0aa1dd4-be0b-5e5d-8102-34c034214da6" "node" 1 240 240
+wire "7d7f09b5-954a-57bb-a309-f58089264797" "a0aa1dd4-be0b-5e5d-8102-34c034214da6" "node" "9c3905cf-de4b-59da-b19c-12956b98da4c" "n" 1 -240 240
+wire "22645190-37ec-5be0-b274-8afc58d15b16" "fb1ab01c-388a-5a43-8243-38e67f8a3a20" "out" "b884bea2-16c6-5302-bb45-6f1375b92719" "gate" 1 0 -140
+plot "346de423-a5b2-5f94-a427-6737f00ed12c" "Load voltage and gate" 560 -40 2 0 -1 -1 -1
+wire "a7ed90be-749b-5292-9c9f-ad9924d0da4c" "f90cbe0e-2d0a-50b7-ad53-0c6e068d720d" "node" "346de423-a5b2-5f94-a427-6737f00ed12c" "in1" 2 240 -52 460 -52
+wire "12f1ead6-32d6-5a44-a4d8-16b8ca896e47" "fb1ab01c-388a-5a43-8243-38e67f8a3a20" "out" "346de423-a5b2-5f94-a427-6737f00ed12c" "in2" 3 -120 -200 480 -200 480 -28
