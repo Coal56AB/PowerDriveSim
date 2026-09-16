@@ -82,7 +82,45 @@ static Project nested() {
         i.definition = wrapper.id;
     return p;
 }
+static void net_display_names() {
+    auto p = nested();
+    const std::string root_label = "ffffffff-ffff-5fff-bfff-ffffffffffff";
+    const std::string unnamed = "00000000-0000-5000-8000-000000000001";
+    p.nodes.push_back({root_label, "DC/link/Udc", false});
+    p.nodes.push_back({unnamed, "", false});
+    wire(p, {root_label, "node"}, {id(20), id(16)});
+    wire(p, {unnamed, "node"}, {root_label, "node"});
+    auto &wrapper = p.definitions.back();
+    wrapper.nodes.push_back({id(90), "Wrapper output", false});
+    wire(wrapper, {id(90), "node"}, {id(31), id(16)});
+    const auto resolved = resolve_connections(p);
+    const auto net = resolved.nets.at(endpoint_key({root_label, "node"}));
+    require(net == unnamed, "Display label does not replace the stable net UUID");
+    auto channel_name = [&](const Project &project) {
+        const auto channels = available_channels(compile(project));
+        const auto channel = std::find_if(channels.begin(), channels.end(),
+                                          [&](const auto &c) { return c.object == net; });
+        require(channel != channels.end(), "Named network remains observable");
+        return channel->name;
+    };
+    require(channel_name(p) == "u:DC/link/Udc", "Explicit root label wins, even with slashes");
+    const auto node = std::find_if(resolved.project.nodes.begin(), resolved.project.nodes.end(),
+                                   [&](const auto &n) { return n.id == net; });
+    require(node != resolved.project.nodes.end() && node->name == "DC/link/Udc",
+            "Resolver and result catalog use the same preferred name");
+    const auto before = execute(compile(p));
+    p.nodes[p.nodes.size() - 2].name.clear();
+    require(channel_name(p) == "u:First/Wrapper output", "Shallowest nonempty internal label wins");
+    wrapper.nodes.front().name.clear();
+    require(channel_name(p) == "u:First/Inner/Out", "Unnamed junctions do not hide a deeper label");
+    std::reverse(p.nodes.begin(), p.nodes.end());
+    std::reverse(p.wires.begin(), p.wires.end());
+    require(channel_name(p) == "u:First/Inner/Out", "Preferred name is independent of record order");
+    require(execute(compile(p)).samples.back().values == before.samples.back().values,
+            "Net labels do not alter numerical ordering or results");
+}
 int main() try {
+    net_display_names();
     auto p = fixture();
     auto flat = flatten(p);
     require(flat.project.components.size() == 5 && flat.project.instances.empty() &&

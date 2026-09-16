@@ -249,7 +249,8 @@ FlattenedProject flatten(const Project &source) {
             for (auto o : from) {
                 remember(o.id);
                 o.id = id(o.id);
-                o.name = name + o.name;
+                if (!o.name.empty())
+                    o.name = name + o.name;
                 auto pt = transform({o.x, o.y}, offset, rotation);
                 o.x = pt.x;
                 o.y = pt.y;

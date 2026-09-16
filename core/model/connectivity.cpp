@@ -41,10 +41,10 @@ void validate_wire(const Project& p,const Wire& w) {
     for(const auto& point:w.bends)
         if(!std::isfinite(point.x)||!std::isfinite(point.y)) throw Diagnostic("invalid_geometry",w.id,"Wire points must be finite");
 }
-ResolvedGraph resolve_connections(const Project& source) {
+ResolvedGraph resolve_connections(const Project& source, const std::map<std::string,ObjectPath>& origins) {
     if(!source.instances.empty()) {
         auto expanded=flatten(source);
-        auto resolved=resolve_connections(expanded.project);
+        auto resolved=resolve_connections(expanded.project,expanded.origins);
         for(const auto& [key,terminal]:expanded.terminals) {
             auto net=resolved.nets.find(endpoint_key(terminal));
             if(net!=resolved.nets.end())resolved.nets[key]=net->second;
@@ -124,6 +124,16 @@ ResolvedGraph resolve_connections(const Project& source) {
         auto r=root(endpoint_key({n.id,"node"}));
         if(!nets.count(r)) nets[r]=n;
         else nets[r].ground=nets[r].ground||n.ground;
+    }
+    std::map<std::string,std::pair<size_t,std::string>> names;
+    for(const auto& n:nodes) if(!n.name.empty()) {
+        const auto r=root(endpoint_key({n.id,"node"}));
+        const auto origin=origins.find(n.id);
+        const auto rank=std::make_pair(origin==origins.end()?size_t(0):origin->second.instances.size(),n.id);
+        if(!names.count(r)||rank<names.at(r)) {
+            names[r]=rank;
+            nets.at(r).name=n.name;
+        }
     }
     for(const auto& [key,parent]:parents) {
         (void)parent; auto r=root(key);

@@ -100,7 +100,7 @@ static SimulationIR compile_flat(const Project& p) {
     ir.sparsity.assign(pattern.begin(),pattern.end());
     return ir;
 }
-static SimulationIR compile_wired(const Project& source) {
+static SimulationIR compile_wired(const Project& source, const std::map<std::string,ObjectPath>& origins) {
     Project project=source;
     (void)resolve_connections(project); // Validate parameters before generating scheduled edges.
     if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
@@ -116,7 +116,7 @@ static SimulationIR compile_wired(const Project& source) {
         for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=g.delay+static_cast<double>(k)/g.frequency;double fall=g.delay+(static_cast<double>(k)+g.duty)/g.frequency;edge(rise,true);edge(fall,false);}
     }
 
-    auto ir=compile_flat(resolve_connections(project).project);
+    auto ir=compile_flat(resolve_connections(project,origins).project);
     auto patterns=project.patterns;std::sort(patterns.begin(),patterns.end(),[](const GatePattern& a,const GatePattern& b){return a.id<b.id;});
     for(const auto& pattern:patterns)ir.gate_signals.push_back({pattern.id,pattern.name,pattern.initial});
     for(const auto& event:project.events)
@@ -134,7 +134,7 @@ SimulationIR compile(const Project& source) {
                 if(origin!=expanded.origins.end())expanded.origins.try_emplace(net,origin->second);
             }
         }
-        auto ir=compile_wired(expanded.project);
+        auto ir=compile_wired(expanded.project,expanded.origins);
         ir.origins=std::move(expanded.origins);
         return ir;
     } catch(Diagnostic& error) {

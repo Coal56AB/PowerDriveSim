@@ -100,6 +100,8 @@ class InteractionTests : public QObject {
             w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
             QVERIFY(w.has_result() && !w.result().samples.empty());
             const auto path = dir.filePath(kind + ".pds"); QVERIFY(w.save_project(path));
+            QVERIFY(std::any_of(w.result().channels.begin(), w.result().channels.end(),
+                                 [](const auto &channel) { return channel.name == "u:Udc"; }));
             const auto expected = encoded(w.root_project());
             if (auto screenshot = qEnvironmentVariable("PDS_DC_LINK_SCREENSHOT"); !screenshot.isEmpty()) {
                 QTest::qWait(30); QVERIFY(w.grab().save(screenshot + kind + ".png"));

@@ -6,6 +6,13 @@ The project catalog stores `Definition` objects with a shared `Schematic` body, 
 
 Object UUIDs are local to a schematic. Expanded UUIDs derive from the complete sequence of instance UUIDs and the local object UUID. Names, positions and definition UUIDs are not part of that key. Renaming, moving or detaching an instance therefore preserves its result identities. The compiler retains an origin map; compilation and solver diagnostics carry the original object and instance path.
 
+When wires merge named nodes, the net UUID remains the stable UUID representative.
+The displayed voltage name independently prefers a nonempty explicit node label at
+the shallowest hierarchy level, then the lowest UUID for ties. A root bus label thus
+takes precedence over an internal port label. Hierarchy depth comes from the origin
+map, so slashes inside user names have no special meaning. Unnamed junctions remain
+unnamed during flattening and do not suppress another node's label.
+
 A public port aliases an existing internal terminal, including another instance's public port. Its declared domain and direction must match. Electrical ports remain conserving; directed gate and measurement ports preserve their direction. Flattening rewrites endpoints and recorded gate targets before the existing connectivity and generic compilation stages. It adds no electrical elements or stabilization.
 
 Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Symbolic parameter expressions are not implemented by this step.
