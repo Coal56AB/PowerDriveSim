@@ -23,8 +23,8 @@
   "inductor": "L · Inductor",
   "voltage_source": "V · Voltage source",
   "current_source": "I · Current source",
-  "switch": "S · Ideal switch",
-  "diode": "D · Ideal diode",
+  "switch": "S · Switch",
+  "diode": "D · Diode",
   "voltage_probe": "VP · Voltage probe",
   "current_probe": "IP · Current probe",
   "ground": "Ground",
@@ -286,5 +286,11 @@
   "import_samples": "Import table…",
   "import_samples_hint": "Load two columns: time and value. Review the table and click Apply.",
   "sample_file_filter": "Tables (*.csv *.tsv *.txt);;All files (*)",
-  "sample_import_error": "Could not import table: %1"
+  "sample_import_error": "Could not import table: %1",
+  "device_model": "Model",
+  "device_ideal": "Ideal",
+  "device_pwl": "Piecewise linear",
+  "on_resistance": "Ron",
+  "off_resistance": "Roff",
+  "forward_voltage": "Threshold Vf"
 }

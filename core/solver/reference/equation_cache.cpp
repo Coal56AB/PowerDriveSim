@@ -1,4 +1,5 @@
 #include "core/solver/reference/equation_cache.hpp"
+#include "core/model/semiconductor.hpp"
 #include "core/model/waveform.hpp"
 namespace pds {
 const std::vector<double> &EquationCache::solve(double time, double h, bool initialize,
@@ -81,6 +82,22 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 break;
             case Kind::diode:
             case Kind::ideal_switch:
+                if (resistive_semiconductor(c)) {
+                    const auto &model = c.semiconductor;
+                    const bool active = c.kind == Kind::diode ? diodes[i] : gates[i];
+                    if (active) {
+                        system.add(b, p, 1);
+                        system.add(b, n, -1);
+                        system.add(b, b, -model.ron);
+                        if (c.kind == Kind::diode)
+                            system.inject(b, model.forward_voltage * (1 - model.ron / model.roff));
+                    } else {
+                        system.add(b, p, -1 / model.roff);
+                        system.add(b, n, 1 / model.roff);
+                        system.add(b, b, 1);
+                    }
+                    break;
+                }
                 if (c.kind == Kind::diode ? diodes[i] : gates[i]) {
                     system.add(b, p, 1);
                     system.add(b, n, -1);

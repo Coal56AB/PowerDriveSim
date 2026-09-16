@@ -75,6 +75,55 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void pwl_device_properties_and_run() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/diode-freewheel.pds")));
+        ready(w);
+        for (const auto kind : {Kind::diode, Kind::ideal_switch}) {
+            const auto id = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                         [&](const auto &c) { return c.kind == kind; })->id;
+            w.select_object(id);
+            auto *mode = w.findChild<QComboBox *>("property_semiconductor_model");
+            auto *ron = w.findChild<QLineEdit *>("property_ron");
+            auto *roff = w.findChild<QLineEdit *>("property_roff");
+            auto *vf = w.findChild<QLineEdit *>("property_forward_voltage");
+            QVERIFY(mode && mode->isVisible());
+            QVERIFY(!ron->isVisible());
+            auto select_mode = [&](int index) {
+                mode->setCurrentIndex(index);
+                QMetaObject::invokeMethod(mode, "activated", Q_ARG(int, index));
+            };
+            select_mode(1);
+            QVERIFY(ron->isVisible() && roff->isVisible());
+            QCOMPARE(vf->isVisible(), kind == Kind::diode);
+            const auto before = encoded(w.root_project());
+            ron->setText("0"); QTest::keyClick(ron, Qt::Key_Return);
+            QCOMPARE(encoded(w.root_project()), before);
+            QVERIFY(!w.findChild<QLabel *>("property_error")->text().isEmpty());
+            ron->setText("200 mOhm"); QTest::keyClick(ron, Qt::Key_Return);
+            roff->setText("100 kOhm"); QTest::keyClick(roff, Qt::Key_Return);
+            if (kind == Kind::diode) { vf->setText("800 mV"); QTest::keyClick(vf, Qt::Key_Return); }
+            auto device = [&]() -> const Component & {
+                return *std::find_if(w.project().components.begin(), w.project().components.end(),
+                                     [&](const auto &c) { return c.id == id; });
+            };
+            QCOMPARE(device().semiconductor.ron, .2);
+            QCOMPARE(device().semiconductor.roff, 1e5);
+            if (kind == Kind::diode) QCOMPARE(device().semiconductor.forward_voltage, .8);
+            select_mode(0); QVERIFY(!ron->isVisible());
+            w.undo(); QCOMPARE(device().semiconductor.model, SemiconductorModel::piecewise_linear);
+            QVERIFY(ron->isVisible());
+            if (auto path = qEnvironmentVariable("PDS_PWL_SCREENSHOT"); !path.isEmpty() && kind == Kind::diode) {
+                QTest::qWait(30); QVERIFY(w.grab().save(path));
+            }
+        }
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(w.has_result());
+        const auto path = dir.filePath("pwl.pds");
+        QVERIFY(w.save_project(path)); const auto expected = encoded(w.root_project());
+        QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+    }
     void import_source_table() {
         struct RestoreNativeDialogs {
             bool previous = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);

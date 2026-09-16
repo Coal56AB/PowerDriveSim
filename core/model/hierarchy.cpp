@@ -1,5 +1,6 @@
 #include "core/model/hierarchy.hpp"
 #include "core/model/waveform.hpp"
+#include "core/model/semiconductor.hpp"
 #include "core/model/connectivity.hpp"
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,8 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
             }
             if((c.kind==Kind::voltage||c.kind==Kind::current))
                 if(auto target=source_parameter(c.source,p.field)){*target=value;return;}
+            if(c.kind==Kind::diode||(c.kind==Kind::ideal_switch&&p.field!="forward_voltage"))
+                if(auto target=semiconductor_parameter(c.semiconductor,p.field)){*target=value;return;}
         }
     for (auto &g : s.patterns)
         if (g.id == p.object && g.pwm) {
@@ -118,6 +121,7 @@ void validate_schematic(const Project &p) {
     };
     objects(p.components);
     for(const auto& c:p.components)validate_waveform(c);
+    for(const auto& c:p.components)validate_semiconductor(c);
     objects(p.nodes);
     objects(p.patterns);
     objects(p.plots);

@@ -1,6 +1,7 @@
 #include "core/ir/ir.hpp"
 #include "core/compiler/topology.hpp"
 #include "core/model/waveform.hpp"
+#include "core/model/semiconductor.hpp"
 #include "core/model/connectivity.hpp"
 #include "core/model/hierarchy.hpp"
 #include <algorithm>
@@ -9,7 +10,7 @@
 #include <set>
 namespace pds {
 static SimulationIR compile_flat(const Project& p) {
-    if(p.schema!=8) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+    if(p.schema!=project_schema) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -40,6 +41,7 @@ static SimulationIR compile_flat(const Project& p) {
         check_id(c.id);
         (void)kind_name(c.kind);
         validate_waveform(c);
+        validate_semiconductor(c);
         if(!indices.count(c.positive) || !indices.count(c.negative))
             throw Diagnostic("missing_terminal",c.id,"Connect both terminals to existing electrical nodes");
         if(c.positive==c.negative && c.kind!=Kind::voltage_probe) throw Diagnostic("shorted_component",c.id,"Both terminals reference the same node");

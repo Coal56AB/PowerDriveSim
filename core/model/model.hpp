@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 namespace pds {
+inline constexpr unsigned project_schema = 9;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe };
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
@@ -17,6 +18,12 @@ struct SourceWaveform {
     std::vector<Point> points;
     bool operator==(const SourceWaveform&) const = default;
 };
+enum class SemiconductorModel { ideal, piecewise_linear };
+struct Semiconductor {
+    SemiconductorModel model = SemiconductorModel::ideal;
+    double ron = .01, roff = 1e6, forward_voltage = .7;
+    bool operator==(const Semiconductor &) const = default;
+};
 struct Component {
     std::string id, name;
     Kind kind = Kind::resistor;
@@ -25,6 +32,7 @@ struct Component {
     bool closed = false;
     Orientation orientation;
     SourceWaveform source;
+    Semiconductor semiconductor;
     bool operator==(const Component&) const = default;
 };
 struct GateEvent { double time; std::string target; bool closed; bool operator==(const GateEvent&) const = default; };
@@ -134,7 +142,7 @@ struct ObjectPath {
     bool operator==(const ObjectPath&) const = default;
 };
 struct Project : Schematic {
-    unsigned schema = 8;
+    unsigned schema = project_schema;
     std::string id, name;
     Profile profile;
     std::vector<Definition> definitions;

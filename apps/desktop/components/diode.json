@@ -6,7 +6,17 @@
       "editor": "text",
       "label": "name",
       "inline": "name"
-    }
+    },
+    {
+      "key": "semiconductor_model", "editor": "enum", "label": "device_model",
+      "options": [{"value": 0, "label": "device_ideal"}, {"value": 1, "label": "device_pwl"}]
+    },
+    {"key": "ron", "editor": "number", "label": "on_resistance", "unit": "Ohm", "min": 0,
+      "exclusiveMin": true, "when": {"semiconductor_model": [1]}},
+    {"key": "roff", "editor": "number", "label": "off_resistance", "unit": "Ohm", "min": 0,
+      "exclusiveMin": true, "when": {"semiconductor_model": [1]}},
+    {"key": "forward_voltage", "editor": "number", "label": "forward_voltage", "unit": "V", "min": 0,
+      "when": {"semiconductor_model": [1]}}
   ],
   "palette": {
     "id": 6,

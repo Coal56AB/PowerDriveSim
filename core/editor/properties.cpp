@@ -1,6 +1,7 @@
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/waveform.hpp"
+#include "core/model/semiconductor.hpp"
 #include <algorithm>
 #include <optional>
 namespace pds {
@@ -65,6 +66,11 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return c.initial;
             if (key == "closed")
                 return c.closed;
+            if(c.kind==Kind::diode||c.kind==Kind::ideal_switch) {
+                if(key=="semiconductor_model")return unsigned(c.semiconductor.model);
+                if(c.kind==Kind::diode||key!="forward_voltage")
+                    if(auto v=semiconductor_parameter(c.semiconductor,key))return *v;
+            }
             if(c.kind==Kind::voltage||c.kind==Kind::current) {
                 if(key=="source_mode")return unsigned(c.source.kind);
                 if(key=="source_points")return c.source.points;
@@ -145,6 +151,8 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 c.initial = std::get<double>(value);
             if (key == "closed")
                 c.closed = std::get<bool>(value);
+            if(key=="semiconductor_model")c.semiconductor.model=SemiconductorModel(std::get<unsigned>(value));
+            if(auto v=semiconductor_parameter(c.semiconductor,key))*v=std::get<double>(value);
             if(key=="source_mode") {
                 c.source.kind=Waveform(std::get<unsigned>(value));
                 if(c.source.kind==Waveform::piecewise_linear&&c.source.points.empty())

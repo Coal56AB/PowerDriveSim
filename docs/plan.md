@@ -37,7 +37,9 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
 1. Источники и модели, необходимые для библиотеки: AC/piecewise/pulse/sine,
    затем явные параметры piecewise-linear полупроводников. Старые ideal-модели сохраняются.
    Sine/pulse/PWL, импорт таблицы и три RC-примера реализованы и проверены;
-   piecewise-linear полупроводники — следующий блок. См. [источники](sources.md).
+   статические PWL S/D с Ron/Roff/Vf также готовы. Следующие части моделей —
+   упрощённое восстановление диода и отдельные семантики MOSFET/IGBT/тиристора.
+   См. [источники](sources.md), [полупроводники](semiconductors.md).
 2. Редактируемые библиотечные AC/DC, DC/DC и DC/AC из приоритетного набора §12;
    precharge/DC-link/braking/discharge и готовые примеры с проверенными метриками.
 3. Initial conditions, snapshot/continue и улучшения шага с учётом событий.

@@ -23,8 +23,8 @@
   "inductor": "L · Индуктивность",
   "voltage_source": "V · Источник напряжения",
   "current_source": "I · Источник тока",
-  "switch": "S · Идеальный ключ",
-  "diode": "D · Идеальный диод",
+  "switch": "S · Ключ",
+  "diode": "D · Диод",
   "voltage_probe": "VP · Датчик напряжения",
   "current_probe": "IP · Датчик тока",
   "ground": "Земля",
@@ -286,5 +286,11 @@
   "import_samples": "Импорт таблицы…",
   "import_samples_hint": "Загрузить два столбца: время и значение. Проверьте таблицу и нажмите «Применить».",
   "sample_file_filter": "Таблицы (*.csv *.tsv *.txt);;Все файлы (*)",
-  "sample_import_error": "Не удалось импортировать таблицу: %1"
+  "sample_import_error": "Не удалось импортировать таблицу: %1",
+  "device_model": "Модель",
+  "device_ideal": "Идеальная",
+  "device_pwl": "Кусочно-линейная",
+  "on_resistance": "Ron",
+  "off_resistance": "Roff",
+  "forward_voltage": "Порог Vf"
 }

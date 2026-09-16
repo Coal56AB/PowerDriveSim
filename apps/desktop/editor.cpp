@@ -60,6 +60,7 @@ static QString q(const std::string &s) {
     return QString::fromStdString(s);
 }
 static QString component_label(const Component &c) {
+    if(c.semiconductor.model==SemiconductorModel::piecewise_linear)return "PWL";
     const auto unit=component_unit(c.kind);
     if(unit.empty())return {};
     const auto value=engineering_value(c.value,unit);

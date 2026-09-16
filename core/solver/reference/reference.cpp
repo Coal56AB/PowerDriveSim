@@ -2,6 +2,7 @@
 #include "core/solver/reference/equation_cache.hpp"
 #include "core/compiler/topology.hpp"
 #include "core/model/waveform.hpp"
+#include "core/model/semiconductor.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -141,9 +142,11 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
                 const double v=up-un,current=values[stamp.branch];
                 const double vt=ir.profile.voltage_tolerance+ir.profile.relative_tolerance*std::max(std::abs(up),std::abs(un));
                 const double it=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);
-                residual_v=std::max(residual_v,std::max(0.0,v));
-                residual_i=std::max(residual_i,std::max(0.0,-current));
-                if((active[index]&&current < -it)||(!active[index]&&v>vt)) {
+                const double excess_v=v-diode_threshold(stamp.component);
+                const double excess_i=current-diode_threshold_current(stamp.component);
+                if(active[index])residual_i=std::max(residual_i,std::max(0.0,-excess_i));
+                else residual_v=std::max(residual_v,std::max(0.0,excess_v));
+                if((active[index]&&excess_i < -it)||(!active[index]&&excess_v>vt)) {
                     violations.push_back(index);offending=stamp.component.id;
                 }
             }

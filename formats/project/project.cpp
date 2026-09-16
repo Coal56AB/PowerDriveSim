@@ -1,6 +1,7 @@
 #include "formats/project/project.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/waveform.hpp"
+#include "core/model/semiconductor.hpp"
 #include <iomanip>
 #include <map>
 #include <istream>
@@ -18,11 +19,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::istringstream header(line);
     if(!(header >> tag >> p.schema)) throw Diagnostic("parse_error","","Malformed header");
     header >> std::ws;
-    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>8))
-        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..8");
+    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>project_schema))
+        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1.."+std::to_string(project_schema));
     bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false;
     std::map<std::string,Orientation> orientations;
     std::map<std::string,SourceWaveform> sources;
+    std::map<std::string,Semiconductor> semiconductors;
     size_t number=1;
     while(std::getline(in,line)) {
         ++number;
@@ -191,6 +193,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && p.schema<4)
                 throw Diagnostic("schema_version",c.id,"Probes require schema 4");
             p.components.push_back(c);
+        } else if(tag=="semiconductor" && p.schema>=9) {
+            std::string id; Semiconductor s; unsigned model=0;
+            row>>std::quoted(id)>>model>>s.ron>>s.roff>>s.forward_voltage;
+            if(model>1||semiconductors.count(id))throw Diagnostic("parse_error",id,"Invalid or duplicate semiconductor model");
+            s.model=SemiconductorModel(model);semiconductors.emplace(id,s);
         } else if(tag=="source" && p.schema>=8) {
             std::string id; SourceWaveform s; unsigned kind=0;size_t count=0;
             row>>std::quoted(id)>>kind>>s.offset>>s.frequency>>s.phase>>s.delay>>s.duty>>count;
@@ -219,7 +226,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         if(c==p.components.end())throw Diagnostic("missing_source_target",id,"Source waveform component does not exist");
         c->source=source;validate_waveform(*c);
     }
-    p.schema=8;
+    for(const auto& [id,model]:semiconductors) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
+        if(c==p.components.end())throw Diagnostic("missing_semiconductor_target",id,"Semiconductor component does not exist");
+        c->semiconductor=model;validate_semiconductor(*c);
+    }
+    p.schema=project_schema;
     for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
@@ -235,7 +247,7 @@ Project read_project(std::istream& in) {
     return p;
 }
 void write_project(const Project& p, std::ostream& out) {
-    if(p.schema!=8) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
+    if(p.schema!=project_schema) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
     const auto check_text=[](const std::string& value,const std::string& object) {
         if(value.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("invalid_text",object,"Project format strings must be single-line");
@@ -257,7 +269,7 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
-    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 8\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
+    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim " << project_schema << "\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
         << p.profile.current_tolerance << ' ' << p.profile.relative_tolerance << '\n';
@@ -282,6 +294,10 @@ void write_project(const Project& p, std::ostream& out) {
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';
+    for(const auto& c:p.components)if(c.semiconductor!=Semiconductor{}) {
+        validate_semiconductor(c);const auto& s=c.semiconductor;
+        out<<"semiconductor "<<std::quoted(c.id)<<' '<<unsigned(s.model)<<' '<<s.ron<<' '<<s.roff<<' '<<s.forward_voltage<<'\n';
+    }
     for(const auto& c:p.components)if(c.source!=SourceWaveform{}) {
         validate_waveform(c);const auto& s=c.source;
         out<<"source "<<std::quoted(c.id)<<' '<<unsigned(s.kind)<<' '<<s.offset<<' '<<s.frequency<<' '<<s.phase<<' '<<s.delay<<' '<<s.duty<<' '<<s.points.size();
