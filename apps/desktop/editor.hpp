@@ -289,6 +289,7 @@ class EditorWindow : public QMainWindow {
     bool load_simulation_snapshot(const QString &path);
     void show_initial_settings();
     void show_step_settings();
+    void show_experiments();
     const std::optional<SimulationSnapshot> &simulation_snapshot() const { return continuation_; }
     void undo();
     void redo();

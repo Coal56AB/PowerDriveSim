@@ -345,6 +345,38 @@ class DesktopTests : public QObject {
         QVERIFY(window.result().samples.empty());
         QVERIFY(window.result().channels.empty());
     }
+    void experiment_dialog_runs_sweep() {
+        QTemporaryDir temp;
+        EditorWindow window("ru", temp.path());
+        window.show();
+        QVERIFY(window.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc-sweep.pds"));
+        QCOMPARE(window.root_project().experiments.size(), size_t(1));
+        bool checked = false;
+        QTimer::singleShot(80, [&] {
+            auto *dialog = window.findChild<QDialog *>("experiments_dialog");
+            QVERIFY(dialog);
+            auto *list = dialog->findChild<QListWidget *>("experiments_list");
+            QVERIFY(list);
+            QCOMPARE(list->count(), 1);
+            auto *run = dialog->findChild<QPushButton *>("experiment_run");
+            QVERIFY(run);
+            QTest::mouseClick(run, Qt::LeftButton);
+        });
+        QTimer::singleShot(1400, [&] {
+            auto *dialog = window.findChild<QDialog *>("experiments_dialog");
+            QVERIFY(dialog);
+            auto *cases = dialog->findChild<QTableWidget *>("experiment_cases");
+            QVERIFY(cases);
+            QCOMPARE(cases->rowCount(), 6);
+            for (int row = 0; row < cases->rowCount(); ++row)
+                QVERIFY(cases->item(row, 5)->text().isEmpty());
+            checked = true;
+            dialog->accept();
+        });
+        window.show_experiments();
+        QVERIFY(checked);
+        QCOMPARE(window.root_project().experiments.size(), size_t(1));
+    }
     void wire_tool_and_empty_state() {
         QTemporaryDir temp;
         EditorWindow window("ru", temp.path());

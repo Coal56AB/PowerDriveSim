@@ -897,6 +897,7 @@ void EditorWindow::build_ui() {
     simulation_menu->addSeparator();
     action(simulation_menu, "initial_settings", {}, [this] { show_initial_settings(); });
     action(simulation_menu, "step_settings", {}, [this] { show_step_settings(); });
+    action(simulation_menu, "experiments", {}, [this] { show_experiments(); });
     auto *examples = menuBar()->addMenu(text("examples"));
     build_examples_menu(examples);
     auto *toolbar = addToolBar("PowerDriveSim");
