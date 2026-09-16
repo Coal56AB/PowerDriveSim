@@ -2,6 +2,7 @@
 #include "apps/desktop/number_input.hpp"
 #include <QApplication>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFormLayout>
@@ -49,8 +50,11 @@ void EditorWindow::load_component_specs() {
         for (auto value : spec.value("fields").toArray()) {
             auto field = value.toObject();
             auto key = field.value("key").toString(), editor = field.value("editor").toString();
+            if (editor == "enum" && field.value("options").toArray().isEmpty())
+                throw std::runtime_error(("Empty choices in " + file.fileName()).toStdString());
             if (key.isEmpty() || !keys.insert(key).second ||
-                !QStringList{"text", "number", "bool", "integer", "events", "points"}.contains(editor) ||
+                !QStringList{"text", "number", "bool", "integer", "enum", "events", "points", "samples"}
+                     .contains(editor) ||
                 field.value("scale").toDouble(1) <= 0)
                 throw std::runtime_error(("Invalid property in " + file.fileName()).toStdString());
         }
@@ -78,6 +82,13 @@ void EditorWindow::build_property_editors() {
                         apply_inspector();
                 });
                 connect(line, &QLineEdit::textEdited, this, [this] { remember_draft(); });
+            } else if (kind == "enum") {
+                auto *combo = new QComboBox;
+                widget = combo;
+                connect(combo, &QComboBox::activated, this, [this, combo] {
+                    combo->setProperty("draft", true);
+                    apply_inspector();
+                });
             } else if (kind == "bool") {
                 auto *check = new QCheckBox;
                 widget = check;
@@ -90,11 +101,14 @@ void EditorWindow::build_property_editors() {
                     if (!inspector_loading_)
                         apply_inspector();
                 });
-            } else if (kind == "events") {
+            } else if (kind == "events" || kind == "samples") {
                 auto *table = new QTableWidget(1, 2);
                 table->setItemDelegateForColumn(0, new EventTimeDelegate(table));
+                if (kind == "samples")
+                    table->setItemDelegateForColumn(1, new EventTimeDelegate(table));
                 widget = table;
-                table->setHorizontalHeaderLabels({text("time_s"), text("state")});
+                table->setHorizontalHeaderLabels(
+                    {text("time_s"), text(kind == "events" ? "state" : "value")});
                 table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
                 table->verticalHeader()->hide();
                 table->setMaximumHeight(160);

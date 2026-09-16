@@ -59,6 +59,15 @@ namespace pds::desktop {
 static QString q(const std::string &s) {
     return QString::fromStdString(s);
 }
+static QString component_label(const Component &c) {
+    const auto unit=component_unit(c.kind);
+    if(unit.empty())return {};
+    const auto value=engineering_value(c.value,unit);
+    if(c.source.kind==Waveform::dc)return value;
+    if(c.source.kind==Waveform::piecewise_linear)return text("wave_table_short");
+    return (c.source.kind==Waveform::sine?QString::fromUtf8("∿ "):text("wave_pulse")+" ")+
+        value+" · "+engineering_value(c.source.frequency,"Hz");
+}
 static std::string serialized(const Project &p) {
     std::ostringstream out;
     write_project(p, out);
@@ -382,6 +391,7 @@ bool EditorWindow::edit_text_at(QPoint point) {
             auto field = entry.toObject();
             if (field.value("inline").toString() != role)
                 continue;
+            if(!property_visible(project(),id,field))continue;
             if (field.contains("inlinePart")) {
                 auto *a = static_cast<Atom *>(atoms_.at(id));
                 auto parts = a->value.split(" · ");
@@ -399,6 +409,9 @@ bool EditorWindow::edit_text_at(QPoint point) {
             edit_inline(id, field, canvas_->mapFromScene(item->sceneBoundingRect()).boundingRect());
             return true;
         }
+        select_object(id);
+        if(auto samples=property_editors_.find("source_points");samples!=property_editors_.end()&&samples->second->isVisible())samples->second->setFocus();
+        return true;
     }
     return false;
 }
@@ -431,10 +444,20 @@ void EditorWindow::update_labels() {
             if (canvas_->editing_gesture() && label->isSelected() && !atom->isSelected())
                 continue;
             LabelLayout layout;
+            bool custom_layout=false;
             for (const auto &l : project().labels)
-                if (l.object == id && l.role == role.toStdString())
+                if (l.object == id && l.role == role.toStdString()) {
                     layout = l;
-            label->setPos(atom->mapToScene(anchor + QPointF(layout.x, layout.y)));
+                    custom_layout=true;
+                }
+            auto position=anchor+QPointF(layout.x,layout.y);
+            if(!custom_layout&&atom->type==0) {
+                const auto direction=atom->mapToScene(anchor)-atom->scenePos();
+                const double clearance=40+label->boundingRect().width()/2;
+                if(std::abs(direction.x())>std::abs(direction.y())&&std::abs(direction.x())<clearance)
+                    position=atom->mapFromScene(atom->scenePos()+QPointF(std::copysign(clearance,direction.x()),direction.y()));
+            }
+            label->setPos(atom->mapToScene(position));
             QTransform transform;
             transform.rotate(layout.orientation.quarter_turns * 90);
             if (layout.orientation.mirrored)
@@ -518,9 +541,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         return a;
     };
     for (const auto &c : fragment.components) {
-        auto unit = component_unit(c.kind);
-        auto *a =
-            add(c, 0, q(kind_name(c.kind)), unit.empty() ? QString() : engineering_value(c.value, unit));
+        auto *a = add(c, 0, q(kind_name(c.kind)), component_label(c));
         a->port("p", {-60, 0}, QColor("#146cca"));
         a->port("n", {60, 0}, QColor("#146cca"));
         if (c.kind == Kind::ideal_switch)
@@ -1369,8 +1390,7 @@ void EditorWindow::rebuild_scene() {
     };
     for (const auto &c : project().components) {
         auto *a = atom(c.id, c.name, q(kind_name(c.kind)), 0);
-        auto unit = component_unit(c.kind);
-        a->value = unit.empty() ? QString() : engineering_value(c.value, unit);
+        a->value = component_label(c);
         std::vector<std::pair<QString, QPointF>> list{{"p", {-60, 0}}, {"n", {60, 0}}};
         if (c.kind == Kind::ideal_switch)
             list.push_back({"gate", {0, -40}});
@@ -1580,6 +1600,7 @@ void EditorWindow::update_wires() {
     for (const auto &w : project().wires)
         if (w.id == selected_ && !wires_.at(w.id)->data(wire_segment_role).toInt()) {
             auto it = net_cache_.find(endpoint_key(w.from));
+            if(it==net_cache_.end())it=net_cache_.find(endpoint_key(w.to));
             if (it != net_cache_.end())
                 highlight = it->second;
         }
@@ -1615,10 +1636,13 @@ void EditorWindow::update_wires() {
                               : manual_route(a, b, bends);
             item->setPath(base_wire_routes_[w.id]);
         }
-        auto net = net_cache_.find(endpoint_key(w.from));
+        const auto from_domain=port_types_.at(endpoint_key(w.from)).domain;
+        const auto to_domain=port_types_.at(endpoint_key(w.to)).domain;
+        const auto domain=from_domain==Domain::electrical&&to_domain==Domain::electrical?Domain::electrical:
+            (from_domain==Domain::gate||to_domain==Domain::gate?Domain::gate:Domain::signal);
+        auto net = net_cache_.find(endpoint_key(to_domain==Domain::electrical?w.to:w.from));
         bool active = (item->isSelected() && !item->data(wire_segment_role).toInt()) ||
                       (!highlight.empty() && net != net_cache_.end() && net->second == highlight);
-        auto domain = port_types_.at(endpoint_key(w.from)).domain;
         const bool channel_active =
             !channel.empty() && ((!gate_channel && net != net_cache_.end() && net->second == channel) ||
                                  (gate_channel && domain == Domain::gate &&
@@ -1651,7 +1675,8 @@ void EditorWindow::share_wire_trunks(const std::vector<QRectF> &obstacles,
         item->junctions.clear();
         if (auto found = base_wire_routes_.find(wire.id); found != base_wire_routes_.end())
             item->setPath(found->second);
-        if (port_types_.at(endpoint_key(wire.from)).domain == Domain::electrical)
+        if (port_types_.at(endpoint_key(wire.from)).domain == Domain::electrical &&
+            port_types_.at(endpoint_key(wire.to)).domain == Domain::electrical)
             ordered.push_back(&wire);
     }
     auto rank = [&](const Wire *wire) {

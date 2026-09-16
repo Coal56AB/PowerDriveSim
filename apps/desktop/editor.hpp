@@ -40,6 +40,7 @@ inline constexpr int wire_segment_role = 3; // 1-based path edge; zero selects t
 inline constexpr int channel_highlight_role = 6;
 QString text(const char *key);
 QString engineering_value(double value, const std::string &unit);
+bool property_visible(const Project &project,const std::string &id,const QJsonObject &field);
 void init_language(const QString &language);
 class Canvas : public QGraphicsView {
   public:

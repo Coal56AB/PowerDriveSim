@@ -1,5 +1,6 @@
 #include "formats/project/project.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/model/waveform.hpp"
 #include <iomanip>
 #include <map>
 #include <istream>
@@ -17,10 +18,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::istringstream header(line);
     if(!(header >> tag >> p.schema)) throw Diagnostic("parse_error","","Malformed header");
     header >> std::ws;
-    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>7))
-        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..7");
+    if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>8))
+        throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1..8");
     bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false;
     std::map<std::string,Orientation> orientations;
+    std::map<std::string,SourceWaveform> sources;
     size_t number=1;
     while(std::getline(in,line)) {
         ++number;
@@ -189,6 +191,13 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && p.schema<4)
                 throw Diagnostic("schema_version",c.id,"Probes require schema 4");
             p.components.push_back(c);
+        } else if(tag=="source" && p.schema>=8) {
+            std::string id; SourceWaveform s; unsigned kind=0;size_t count=0;
+            row>>std::quoted(id)>>kind>>s.offset>>s.frequency>>s.phase>>s.delay>>s.duty>>count;
+            if(kind>3||count>100000||sources.count(id))throw Diagnostic("parse_error",id,"Invalid or duplicate source waveform");
+            s.kind=Waveform(kind);
+            for(size_t i=0;i<count;++i){Point point;row>>point.x>>point.y;s.points.push_back(point);}
+            sources.emplace(id,std::move(s));
         } else if(tag=="event") {
             GateEvent e{}; int closed=-1;
             row >> e.time >> std::quoted(e.target) >> closed;
@@ -205,7 +214,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.patterns);apply(p.plots);apply(p.instances);
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
-    p.schema=7;
+    for(const auto& [id,source]:sources) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
+        if(c==p.components.end())throw Diagnostic("missing_source_target",id,"Source waveform component does not exist");
+        c->source=source;validate_waveform(*c);
+    }
+    p.schema=8;
     for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
@@ -221,7 +235,7 @@ Project read_project(std::istream& in) {
     return p;
 }
 void write_project(const Project& p, std::ostream& out) {
-    if(p.schema!=7) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
+    if(p.schema!=8) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
     const auto check_text=[](const std::string& value,const std::string& object) {
         if(value.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("invalid_text",object,"Project format strings must be single-line");
@@ -243,7 +257,7 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
-    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 7\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
+    out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim 8\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
         << p.profile.current_tolerance << ' ' << p.profile.relative_tolerance << '\n';
@@ -268,6 +282,12 @@ void write_project(const Project& p, std::ostream& out) {
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';
+    for(const auto& c:p.components)if(c.source!=SourceWaveform{}) {
+        validate_waveform(c);const auto& s=c.source;
+        out<<"source "<<std::quoted(c.id)<<' '<<unsigned(s.kind)<<' '<<s.offset<<' '<<s.frequency<<' '<<s.phase<<' '<<s.delay<<' '<<s.duty<<' '<<s.points.size();
+        for(const auto& point:s.points)out<<' '<<point.x<<' '<<point.y;
+        out<<'\n';
+    }
     for(const auto& l:p.labels)out<<"x-label "<<std::quoted(l.object)<<' '<<std::quoted(l.role)<<' '<<l.x<<' '<<l.y<<' '<<l.orientation.quarter_turns<<' '<<(l.orientation.mirrored?1:0)<<'\n';
     for(const auto& v:p.view_options){out<<"x-view "<<std::quoted(v.plot)<<' '<<v.y_low<<' '<<v.y_high<<' '<<v.manual_y<<' '<<v.free_cursors<<' '<<v.separate_axes<<' '<<v.grid<<' '<<v.legend<<' '<<v.line_width<<' '<<v.time_span<<' '<<std::quoted(v.cursor_channel_a)<<' '<<std::quoted(v.cursor_channel_b)<<' '<<v.cursor_y_a<<' '<<v.cursor_y_b<<' '<<v.display_columns<<' '<<v.signal_displays.size();for(const auto& binding:v.signal_displays)out<<' '<<std::quoted(binding.first)<<' '<<binding.second;out<<' '<<v.hidden_channels.size();for(const auto& channel:v.hidden_channels)out<<' '<<std::quoted(channel);out<<' '<<v.curve_styles.size();for(const auto& style:v.curve_styles)out<<' '<<std::quoted(style.channel)<<' '<<unsigned(style.line)<<' '<<style.width<<' '<<unsigned(style.marker)<<' '<<style.marker_size;out<<' '<<v.legend_positions.size();for(const auto& pos:v.legend_positions)out<<' '<<pos.display<<' '<<pos.x<<' '<<pos.y;out<<' '<<v.curve_names.size();for(const auto& name:v.curve_names)out<<' '<<std::quoted(name.first)<<' '<<std::quoted(name.second);out<<' '<<v.viewport<<' '<<v.begin<<' '<<v.end<<' '<<v.cursor_a<<' '<<v.cursor_b<<'\n';}
     for(const auto& e:p.extensions) {

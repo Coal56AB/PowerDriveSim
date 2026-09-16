@@ -1,4 +1,5 @@
 #include "core/solver/reference/equation_cache.hpp"
+#include "core/model/waveform.hpp"
 namespace pds {
 const std::vector<double> &EquationCache::solve(double time, double h, bool initialize,
                                                 const std::vector<bool> &gates,
@@ -37,13 +38,21 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 system.conductance(p, n, 1 / c.value);
                 break;
             case Kind::current:
-                system.inject(p, -c.value);
-                system.inject(n, c.value);
+                if (c.source.kind == Waveform::dc) {
+                    system.inject(p, -c.value);
+                    system.inject(n, c.value);
+                } else {
+                    entry->dynamic.push_back({i, p, c.kind, -1});
+                    entry->dynamic.push_back({i, n, c.kind, 1});
+                }
                 break;
             case Kind::voltage:
                 system.add(b, p, 1);
                 system.add(b, n, -1);
-                system.inject(b, c.value);
+                if (c.source.kind == Waveform::dc)
+                    system.inject(b, c.value);
+                else
+                    entry->dynamic.push_back({i, b, c.kind, 1});
                 break;
             case Kind::capacitor:
                 system.add(b, p, 1);
@@ -96,7 +105,10 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
     entry.system.rhs = entry.constant;
     for (const auto &term : entry.dynamic) {
         double value;
-        if (term.kind == Kind::capacitor)
+        if (term.kind == Kind::voltage || term.kind == Kind::current)
+            value = term.factor * source_value(ir_.stamps[term.state].component, time,
+                                               initialize ? TimeSide::right : TimeSide::left);
+        else if (term.kind == Kind::capacitor)
             value = states[term.state] + (!initialize && trapezoidal ? term.factor * history[term.state] : 0);
         else
             value = initialize ? states[term.state]

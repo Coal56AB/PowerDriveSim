@@ -40,7 +40,7 @@ int main(int argc, char **argv) {
                 v4 << line << '\n';
         std::istringstream old(v4.str());
         auto migrated = read_project(old);
-        check(migrated.schema == 7 && !migrated.scope_enabled && migrated.plots.empty(),
+        check(migrated.schema == 8 && !migrated.scope_enabled && migrated.plots.empty(),
               "Schema 4 migrates with recording disabled");
         auto probe = doc.add_component(Kind::voltage_probe, 400, 200);
         doc.connect({probe, "p"}, {base.nodes[2].id, "node"});
@@ -81,7 +81,7 @@ int main(int argc, char **argv) {
         write_project(doc.project(), saved);
         std::istringstream in(saved.str());
         auto loaded = read_project(in);
-        check(loaded.schema == 7 && loaded.plots.size() == 2 && !loaded.scope_enabled,
+        check(loaded.schema == 8 && loaded.plots.size() == 2 && !loaded.scope_enabled,
               "Schema 5 roundtrip defaults recording off");
         check(loaded.plots[0].cursor_a == .0015 && loaded.plots[1].cursor_a == -1,
               "Independent plot cursors roundtrip");

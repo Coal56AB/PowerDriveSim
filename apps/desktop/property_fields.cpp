@@ -1,8 +1,9 @@
-#include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
 #include <QCheckBox>
+#include <QComboBox>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -15,7 +16,18 @@
 #include <cmath>
 #include <sstream>
 namespace pds::desktop {
+bool property_visible(const Project &project, const std::string &id, const QJsonObject &field) {
+    const auto conditions = field.value("when").toObject();
+    for (auto condition = conditions.begin(); condition != conditions.end(); ++condition) {
+        const auto current = std::get<unsigned>(read_property(project, id, condition.key().toStdString()));
+        if (!condition.value().toArray().contains(int(current)))
+            return false;
+    }
+    return true;
+}
 static QString field_text(QWidget *widget) {
+    if (auto *combo = qobject_cast<QComboBox *>(widget))
+        return combo->currentData().toString();
     if (auto *line = qobject_cast<QLineEdit *>(widget))
         return line->text();
     if (auto *check = qobject_cast<QCheckBox *>(widget))
@@ -36,6 +48,10 @@ static QString field_text(QWidget *widget) {
     return result;
 }
 static void set_field_text(QWidget *widget, const QString &text) {
+    if (auto *combo = qobject_cast<QComboBox *>(widget)) {
+        combo->setCurrentIndex(combo->findData(text.toUInt()));
+        return;
+    }
     if (auto *line = qobject_cast<QLineEdit *>(widget)) {
         line->setText(text);
         line->setModified(false);
@@ -90,6 +106,16 @@ static PropertyValue parse_field(const QString &input, const QJsonObject &field)
         return input.toStdString();
     if (editor == "bool")
         return input == "1";
+    if (editor == "enum") {
+        bool valid = false;
+        auto number = input.toUInt(&valid);
+        bool found = false;
+        for (const auto &option : field.value("options").toArray())
+            found |= option.toObject().value("value").toInt() == int(number);
+        if (!valid || !found)
+            throw std::runtime_error("Invalid choice");
+        return number;
+    }
     if (editor == "number" || editor == "integer") {
         double number = parse_si(input.toStdString(), field.value("unit").toString().toStdString());
         if ((field.contains("min") &&
@@ -117,6 +143,12 @@ static PropertyValue parse_field(const QString &input, const QJsonObject &field)
             if (!(in >> time >> state) || (in >> extra) || (state != 0 && state != 1))
                 throw std::runtime_error(text("events_format").toStdString());
             events.push_back({parse_si(time, "s"), "", state != 0});
+        } else if (editor == "samples") {
+            std::string time, value;
+            if (!(in >> time >> value) || (in >> extra))
+                throw std::runtime_error(text("samples_format").toStdString());
+            points.push_back(
+                {parse_si(time, "s"), parse_si(value, field.value("unit").toString().toStdString())});
         } else {
             Point point;
             if (!(in >> point.x >> point.y) || (in >> extra) || !std::isfinite(point.x) ||
@@ -180,8 +212,18 @@ void EditorWindow::fill_inspector() {
         auto field = value.toObject();
         if (field.value("condition") == "internal_gate" && external)
             continue;
+        if (!property_visible(project(), selected_, field))
+            continue;
         auto key = field.value("key").toString();
         auto *widget = property_editors_.at(key);
+        if (auto *combo = qobject_cast<QComboBox *>(widget)) {
+            combo->clear();
+            for (const auto &entry : field.value("options").toArray()) {
+                const auto option = entry.toObject();
+                combo->addItem(text(option.value("label").toString().toUtf8().constData()),
+                               unsigned(option.value("value").toInt()));
+            }
+        }
         if (auto *spin = qobject_cast<QSpinBox *>(widget))
             spin->setRange(field.value("min").toInt(0), field.value("max").toInt(2147483647));
         auto contents = display_value(read_property(project(), selected_, key.toStdString()), field);
@@ -190,11 +232,20 @@ void EditorWindow::fill_inspector() {
             contents = draft->second.value(key);
         set_field_text(widget, contents);
         widget->show();
-        properties_->insertRow(row++,
-                               field.contains("displayLabel")
-                                   ? field.value("displayLabel").toString()
-                                   : text(field.value("label").toString().toUtf8().constData()),
-                               widget);
+        const auto label = field.contains("displayLabel")
+                               ? field.value("displayLabel").toString()
+                               : text(field.value("label").toString().toUtf8().constData());
+        if (field.value("span").toBool()) {
+            properties_->insertRow(row++, widget);
+            widget->setAccessibleName(label);
+            widget->setToolTip(label);
+        } else
+            properties_->insertRow(row++, label, widget);
+        if (field.value("editor") == "samples") {
+            auto *table = qobject_cast<QTableWidget *>(widget);
+            table->setHorizontalHeaderLabels(
+                {text("time_s"), text("value") + ", " + field.value("unit").toString()});
+        }
         active_fields_.append(field);
     }
 }

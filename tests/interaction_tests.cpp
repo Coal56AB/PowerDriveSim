@@ -73,6 +73,79 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void source_waveform_properties_and_run() {
+        QTemporaryDir dir;
+        EditorWindow w("ru",dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/rc.pds")));
+        ready(w);
+        const auto source=std::find_if(w.project().components.begin(),w.project().components.end(),
+            [](const auto &c){return c.kind==Kind::voltage;})->id;
+        w.select_object(source);
+        auto *mode=w.findChild<QComboBox*>("property_source_mode");
+        QVERIFY(mode&&mode->isVisible());
+        auto select_mode=[&](int index){mode->setCurrentIndex(index);QMetaObject::invokeMethod(mode,"activated",Q_ARG(int,index));};
+        select_mode(1);
+        auto *frequency=w.findChild<QLineEdit*>("property_source_frequency");
+        QVERIFY(frequency->isVisible());
+        frequency->setText("75 Hz");QTest::keyClick(frequency,Qt::Key_Return);
+        auto selected_source=[&]() -> const Component& {
+            return *std::find_if(w.project().components.begin(),w.project().components.end(),
+                [&](const auto &c){return c.id==source;});
+        };
+        QCOMPARE(selected_source().source.kind,Waveform::sine);
+        QCOMPARE(selected_source().source.frequency,75.);
+        w.start_simulation();QTRY_VERIFY_WITH_TIMEOUT(!w.running(),2000);
+        QVERIFY(w.has_result());
+        w.select_object(source);
+        select_mode(2);
+        auto *duty=w.findChild<QLineEdit*>("property_source_duty");
+        QVERIFY(duty->isVisible());
+        duty->setText("25");QTest::keyClick(duty,Qt::Key_Return);
+        QCOMPARE(selected_source().source.duty,.25);
+        select_mode(3);
+        auto *points=w.findChild<QTableWidget*>("property_source_points");
+        QVERIFY(points->isVisible());QVERIFY(!frequency->isVisible());
+        points->setItem(0,0,new QTableWidgetItem("0s"));points->setItem(0,1,new QTableWidgetItem("0V"));
+        points->setItem(1,0,new QTableWidgetItem("2ms"));points->setItem(1,1,new QTableWidgetItem("3V"));
+        QTest::mouseClick(w.findChild<QPushButton*>("apply_properties"),Qt::LeftButton);
+        QCOMPARE(selected_source().source.points,(std::vector<Point>{{0,0},{.002,3}}));
+        w.start_simulation();QTRY_VERIFY_WITH_TIMEOUT(!w.running(),2000);QVERIFY(w.has_result());
+        if(auto path=qEnvironmentVariable("PDS_SOURCE_SCREENSHOT");!path.isEmpty())QVERIFY(w.grab().save(path));
+        const auto saved=dir.filePath("source.pds");QVERIFY(w.save_project(saved));
+        const auto expected=encoded(w.root_project());QVERIFY(w.open_project(saved));
+        QCOMPARE(encoded(w.root_project()),expected);
+        w.select_object(source);select_mode(0);QVERIFY(!points->isVisible());
+        QCOMPARE(selected_source().source.kind,Waveform::dc);
+        w.undo();QCOMPARE(selected_source().source.kind,Waveform::piecewise_linear);
+        for(const auto *form:{"sine","pulse","table"}) {
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/rc-%1.pds").arg(form)));
+            const auto example_source=std::find_if(w.project().components.begin(),w.project().components.end(),
+                [](const auto &c){return c.kind==Kind::voltage;})->id;
+            for(auto *label:w.canvas()->scene()->items())
+                if(label->data(1).toString()=="label"&&label->data(0).toString().toStdString()==example_source)
+                    QVERIFY(!label->sceneBoundingRect().intersects(item(w,example_source)->mapRectToScene(QRectF(-28,-28,56,56))));
+            auto reversed=w.project();
+            for(auto &wire:reversed.wires) {
+                if(wire.to.object!=reversed.plots.front().id)continue;
+                QCOMPARE(static_cast<QGraphicsPathItem*>(item(w,wire.id))->pen().color(),QColor("#8c67c8"));
+                std::swap(wire.from,wire.to);
+                std::reverse(wire.bends.begin(),wire.bends.end());
+            }
+            w.set_project(reversed);
+            for(const auto &wire:reversed.wires)
+                if(wire.from.object==reversed.plots.front().id)
+                    QCOMPARE(static_cast<QGraphicsPathItem*>(item(w,wire.id))->pen().color(),QColor("#8c67c8"));
+            w.start_simulation();QTRY_VERIFY_WITH_TIMEOUT(!w.running(),2000);
+            QVERIFY(w.has_result()&&!w.result().samples.empty());
+            w.open_plot(w.project().plots.front().id);
+            auto *graph=w.findChild<QDialog*>("plot_"+QString::fromStdString(w.project().plots.front().id));
+            QVERIFY(graph&&graph->isVisible());
+            if(auto path=qEnvironmentVariable("PDS_SOURCE_SCREENSHOT");!path.isEmpty()&&QString(form)=="sine") {
+                QVERIFY(w.grab().save(path+"-example.png"));
+                QVERIFY(graph->grab().save(path+"-plot.png"));
+            }
+        }
+    }
     void dark_theme_editor_graphs_and_persistence() {
         QTemporaryDir dir;
         {

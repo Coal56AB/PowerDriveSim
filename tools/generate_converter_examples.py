@@ -16,6 +16,8 @@ class Diagram:
         self.key, self.name = key, name
         self.id = self.uuid("diagram")
         self.lines, self.ports, self.port_ids = [], [], {}
+        self.schema = 7
+        self.profile = "0.006 0.00001 BackwardEuler"
 
     def uuid(self, key):
         return str(uuid.uuid5(uuid.NAMESPACE_URL, "powerdrivesim/examples/" + self.key + "/" + key))
@@ -33,9 +35,11 @@ class Diagram:
             self.lines.append("orientation {} {} 0".format(quoted(ident), turns))
         return {port: (ident, port) for port in ("p", "n", "gate", "out")}
 
-    def wire(self, a, b):
+    def wire(self, a, b, bends=()):
         ident = self.uuid("wire/" + "/".join(a + b))
-        self.lines.append("wire {} {} {} {} {} 0".format(quoted(ident), *(quoted(v) for v in a + b)))
+        self.lines.append("wire {} {} {} {} {} {}{}".format(
+            quoted(ident), *(quoted(v) for v in a + b), len(bends),
+            "".join(" {} {}".format(x, y) for x, y in bends)))
 
     def port(self, name, terminal, gate=False, output=False):
         ident = self.uuid("port/" + name)
@@ -59,16 +63,16 @@ class Diagram:
                 self.lines.append("event {} {} {}".format(index * .001, quoted(ident), int(states[index])))
         return ident, "out"
 
-    def plot(self, name, terminals, x, y):
+    def plot(self, name, terminals, x, y, routes=None):
         ident = self.uuid("plot/" + name)
         self.lines.append("plot {} {} {} {} {} 0 -1 -1 -1".format(
             quoted(ident), quoted(name), x, y, len(terminals)))
         for index, terminal in enumerate(terminals, 1):
-            self.wire(terminal, (ident, "in" + str(index)))
+            self.wire(terminal, (ident, "in" + str(index)), routes[index - 1] if routes else ())
 
     def body(self):
-        return ["PowerDriveSim 7", "project {} {}".format(quoted(self.id), quoted(self.name)),
-                "profile 0.006 0.00001 BackwardEuler", "nonlinear 64 1e-9 1e-12 1e-9",
+        return ["PowerDriveSim " + str(self.schema), "project {} {}".format(quoted(self.id), quoted(self.name)),
+                "profile " + self.profile, "nonlinear 64 1e-9 1e-12 1e-9",
                 "wiring wires", "scope_enabled 0", "scopeview 0 -1 -1 -1"] + self.lines
 
     def definition(self):

@@ -271,5 +271,16 @@
   "public_parameters": "Parameters",
   "public_ports": "Ports",
   "subcircuit": "Subcircuit",
-  "dark_theme": "Dark theme"
+  "dark_theme": "Dark theme",
+  "source_amplitude": "DC / amplitude",
+  "source_mode": "Waveform",
+  "wave_dc": "Constant (DC)",
+  "wave_sine": "Sine",
+  "wave_pulse": "Pulse",
+  "wave_table": "Table (linear)",
+  "source_offset": "Offset",
+  "source_phase": "Initial phase, rad",
+  "source_points": "Time and value",
+  "samples_format": "Enter time and value on each row, for example: 1ms 5V",
+  "wave_table_short": "Table"
 }

@@ -1,0 +1,27 @@
+PowerDriveSim 8
+project "c3dd0cf3-af46-5473-bca3-d4e39ca90a9e" "RC with pulse voltage source"
+profile 0.05 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "de17cfd5-cef9-5efe-9a4c-a3e363d7f045" "ground" 1 0 240
+node "04c5dfd2-f6ba-57f6-954d-6f0c7376c943" "input" 0 -240 0
+node "546b4fd4-ec60-579e-b33f-8d0a3ca21828" "output" 0 240 0
+component "95ae54eb-9793-593d-93a3-3b78f3df398f" "Source" V "" "" 2 0 -240 100 0
+orientation "95ae54eb-9793-593d-93a3-3b78f3df398f" 1 0
+component "b996083a-c433-5c02-9b6e-bc24dc6d1c8a" "R" R "" "" 10 0 0 0 0
+component "b1c42830-92d6-5dcd-8020-245f52ab5823" "C" C "" "" 0.001 0 240 100 0
+orientation "b1c42830-92d6-5dcd-8020-245f52ab5823" 1 0
+wire "ffeaf035-2546-5e05-b71e-12b700240076" "04c5dfd2-f6ba-57f6-954d-6f0c7376c943" "node" "95ae54eb-9793-593d-93a3-3b78f3df398f" "p" 0
+wire "28067d37-e605-5952-9c11-7a2447cfe9b9" "95ae54eb-9793-593d-93a3-3b78f3df398f" "n" "de17cfd5-cef9-5efe-9a4c-a3e363d7f045" "node" 0
+wire "e6f6b5cf-a0ca-5b38-b92f-5e9f9240407b" "04c5dfd2-f6ba-57f6-954d-6f0c7376c943" "node" "b996083a-c433-5c02-9b6e-bc24dc6d1c8a" "p" 0
+wire "823b1711-3344-521c-9a0f-7eae2a72997a" "b996083a-c433-5c02-9b6e-bc24dc6d1c8a" "n" "546b4fd4-ec60-579e-b33f-8d0a3ca21828" "node" 0
+wire "421cec51-f1ae-57b6-8f40-e476735b610a" "546b4fd4-ec60-579e-b33f-8d0a3ca21828" "node" "b1c42830-92d6-5dcd-8020-245f52ab5823" "p" 0
+wire "02ea3250-76b7-573d-8b88-d34af01750c3" "b1c42830-92d6-5dcd-8020-245f52ab5823" "n" "de17cfd5-cef9-5efe-9a4c-a3e363d7f045" "node" 0
+plot "51097288-a5c0-5c4b-9390-26caef7de4f0" "Input and output" 520 20 2 0 -1 -1 -1
+wire "1087359e-7f93-58ce-8071-8e3aaad647a1" "04c5dfd2-f6ba-57f6-954d-6f0c7376c943" "node" "51097288-a5c0-5c4b-9390-26caef7de4f0" "in1" 3 -240 -140 440 -140 440 8
+wire "582d5131-66fb-5708-a49c-3c0a20ff6049" "546b4fd4-ec60-579e-b33f-8d0a3ca21828" "node" "51097288-a5c0-5c4b-9390-26caef7de4f0" "in2" 3 240 -80 420 -80 420 32
+x-label "04c5dfd2-f6ba-57f6-954d-6f0c7376c943" "name" 0 -65 0 0
+x-label "546b4fd4-ec60-579e-b33f-8d0a3ca21828" "name" 0 -65 0 0
+source "95ae54eb-9793-593d-93a3-3b78f3df398f" 2 0 50 0 0 0.4 0

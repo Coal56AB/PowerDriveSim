@@ -1,5 +1,6 @@
 #include "core/ir/ir.hpp"
 #include "core/compiler/topology.hpp"
+#include "core/model/waveform.hpp"
 #include "core/model/connectivity.hpp"
 #include "core/model/hierarchy.hpp"
 #include <algorithm>
@@ -8,7 +9,7 @@
 #include <set>
 namespace pds {
 static SimulationIR compile_flat(const Project& p) {
-    if(p.schema!=7) throw Diagnostic("schema_version",p.id,"Unsupported schema");
+    if(p.schema!=8) throw Diagnostic("schema_version",p.id,"Unsupported schema");
     std::set<std::string> ids;
     auto check_id=[&](const std::string& id) {
         if(!valid_uuid(id) || !ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"UUID is invalid or duplicated");
@@ -38,6 +39,7 @@ static SimulationIR compile_flat(const Project& p) {
     for(const auto& c:components) {
         check_id(c.id);
         (void)kind_name(c.kind);
+        validate_waveform(c);
         if(!indices.count(c.positive) || !indices.count(c.negative))
             throw Diagnostic("missing_terminal",c.id,"Connect both terminals to existing electrical nodes");
         if(c.positive==c.negative && c.kind!=Kind::voltage_probe) throw Diagnostic("shorted_component",c.id,"Both terminals reference the same node");
@@ -56,7 +58,8 @@ static SimulationIR compile_flat(const Project& p) {
             ir.observations.push_back({{c.id,"u:"+c.name,"V"},s.positive,s.negative});
         else ir.stamps.push_back(s);
         if(c.kind==Kind::resistor)ir.observations.push_back({{c.id,"i:"+c.name,"A"},s.positive,s.negative,1/c.value,0});
-        if(c.kind==Kind::current)ir.observations.push_back({{c.id,"i:"+c.name,"A"},-1,-1,0,c.value});
+        if(c.kind==Kind::current)ir.observations.push_back({{c.id,"i:"+c.name,"A"},-1,-1,0,c.value,
+            c.source.kind==Waveform::dc?-1:static_cast<int>(ir.stamps.size()-1)});
     }
     // Current sources do not establish a voltage-reference path.
     // State-dependent ideal loops/islands are diagnosed after a failed solve.

@@ -3,6 +3,12 @@
 Запуск из корня: powerdrive-cli examples/rc.pds output.csv
 (укажите путь к собранному executable; см. корневой README).
 
+- rc-sine.pds, rc-pulse.pds, rc-table.pds: R=10 Ω, C=1 mF, Trapezoidal,
+  h=10 μs, 50 ms. Источники: синус 2 V/50 Hz; импульсы 0/2 V, 50 Hz, 40%;
+  линейная таблица (0,0), (10 ms,2 V), (25 ms,−1 V), (40 ms,0 V).
+  Вход/выход подключены к графику. Группа source-waveforms проверяет весь
+  аналитический отклик с допуском 2 μV. Генератор: tools/generate_source_examples.py.
+
 - rc.pds: 1 V, R=1 kΩ, C=1 μF, τ=1 ms; uC(t)=1-exp(-t/τ).
   Backward Euler h=1 μs, 5 ms. Максимальная ошибка <0.2 mV.
 - rlc.pds: 1 V, R=2 Ω, L=10 mH, C=1 mF; h=2 μs, 40 ms.

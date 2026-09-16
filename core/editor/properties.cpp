@@ -1,5 +1,6 @@
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/model/waveform.hpp"
 #include <algorithm>
 #include <optional>
 namespace pds {
@@ -64,6 +65,11 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return c.initial;
             if (key == "closed")
                 return c.closed;
+            if(c.kind==Kind::voltage||c.kind==Kind::current) {
+                if(key=="source_mode")return unsigned(c.source.kind);
+                if(key=="source_points")return c.source.points;
+                if(auto v=source_parameter(c.source,key))return *v;
+            }
         }
     for (const auto &n : p.nodes)
         if (n.id == id)
@@ -139,6 +145,13 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 c.initial = std::get<double>(value);
             if (key == "closed")
                 c.closed = std::get<bool>(value);
+            if(key=="source_mode") {
+                c.source.kind=Waveform(std::get<unsigned>(value));
+                if(c.source.kind==Waveform::piecewise_linear&&c.source.points.empty())
+                    c.source.points={{0,0},{.01,c.value}};
+            }
+            if(key=="source_points")c.source.points=std::get<std::vector<Point>>(value);
+            if(auto v=source_parameter(c.source,key))*v=std::get<double>(value);
             return;
         }
     for (auto &n : p.nodes)

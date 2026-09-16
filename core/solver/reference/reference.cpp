@@ -1,6 +1,7 @@
 #include "core/solver/reference/reference.hpp"
 #include "core/solver/reference/equation_cache.hpp"
 #include "core/compiler/topology.hpp"
+#include "core/model/waveform.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -83,6 +84,9 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     for(size_t i=0;i<analog_count;++i)if(selected(catalog[i].object)){analog_indices.push_back(i);result.channels.push_back(catalog[i]);}
     for(size_t i=analog_count;i<catalog.size();++i)if(selected(catalog[i].object)){gate_indices.push_back(i-analog_count);result.gate_objects.push_back(catalog[i].object.substr(5));}
     std::vector<size_t> switch_indices;
+    std::vector<size_t> source_indices;
+    for(size_t i=0;i<ir.stamps.size();++i)
+        if(ir.stamps[i].component.source.kind!=Waveform::dc)source_indices.push_back(i);
     std::vector<bool> signal_values;for(const auto& signal:ir.gate_signals)signal_values.push_back(signal.initial);
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size());
@@ -205,7 +209,9 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         Sample sample;sample.time=t;sample.values.reserve(analog_indices.size());sample.gates.reserve(gate_indices.size());
         for(size_t index:analog_indices){
             if(index<ir.unknowns.size())sample.values.push_back(values[index]);
-            else {const auto& o=ir.observations[index-ir.unknowns.size()];sample.values.push_back(((o.positive<0?0:values[o.positive])-(o.negative<0?0:values[o.negative]))*o.gain+o.offset);}
+            else {const auto& o=ir.observations[index-ir.unknowns.size()];sample.values.push_back(o.source_stamp>=0?
+                source_value(ir.stamps[o.source_stamp].component,t):
+                ((o.positive<0?0:values[o.positive])-(o.negative<0?0:values[o.negative]))*o.gain+o.offset);}
         }
         for(size_t index:gate_indices)sample.gates.push_back(index<switch_indices.size()?gates[switch_indices[index]]:signal_values[index-switch_indices.size()]);
         result.samples.push_back(std::move(sample));
@@ -225,6 +231,9 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         const double grid_time=static_cast<double>(grid)*ir.profile.step;
         double end=std::min(grid_time,ir.profile.stop);
         if(next_event<ir.events.size()) end=std::min(end,ir.events[next_event].time);
+        double source_edge=std::numeric_limits<double>::infinity();
+        for(auto index:source_indices)source_edge=std::min(source_edge,next_source_breakpoint(ir.stamps[index].component,time));
+        end=std::min(end,source_edge);
         if(end<=time) throw Diagnostic("time_resolution",ir.project_id,"Time step cannot advance floating-point time",time);
         const auto* values=&solve(end,end-time,false);
         ++result.accepted_steps;
@@ -232,7 +241,8 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(time==grid_time) ++grid;
         // Integrate to the edge with the old topology. Apply all simultaneous
         // gates before solving algebraic variables with continuous C/L states.
-        if(apply_events(time)) values=&solve(time,0,true);
+        const bool gate_event=apply_events(time);
+        if(gate_event||time==source_edge) values=&solve(time,0,true);
         record(time,*values);
         if(stream && result.accepted_steps%1024==0 && std::chrono::steady_clock::now()>=next_publish){publish();next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);}
     }

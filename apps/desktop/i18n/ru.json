@@ -271,5 +271,16 @@
   "public_parameters": "Параметры",
   "public_ports": "Порты",
   "subcircuit": "Подсхема",
-  "dark_theme": "Тёмная тема"
+  "dark_theme": "Тёмная тема",
+  "source_amplitude": "DC / амплитуда",
+  "source_mode": "Форма сигнала",
+  "wave_dc": "Постоянный (DC)",
+  "wave_sine": "Синусоида",
+  "wave_pulse": "Импульсы",
+  "wave_table": "Таблица (линейная)",
+  "source_offset": "Смещение",
+  "source_phase": "Начальная фаза, рад",
+  "source_points": "Время и значение",
+  "samples_format": "Укажите время и значение в каждой строке, например: 1ms 5V",
+  "wave_table_short": "Таблица"
 }

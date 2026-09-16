@@ -1,4 +1,5 @@
 #include "core/compiler/topology.hpp"
+#include "core/model/waveform.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -46,9 +47,11 @@ std::optional<Diagnostic> voltage_loop(const SimulationIR &ir, bool fixed_only, 
         const auto &s = ir.stamps[i];
         const auto kind = s.component.kind;
         double voltage = 0;
-        if (kind == Kind::voltage)
-            voltage = s.component.value;
-        else if (kind == Kind::current_probe) {
+        if (kind == Kind::voltage) {
+            if (fixed_only && s.component.source.kind != Waveform::dc)
+                continue;
+            voltage = source_value(s.component, time, initialize ? TimeSide::right : TimeSide::left);
+        } else if (kind == Kind::current_probe) {
         } else if (fixed_only)
             continue;
         else if (kind == Kind::capacitor && initialize)
@@ -108,7 +111,7 @@ std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, boo
         const auto &s = ir.stamps[i];
         double current;
         if (s.component.kind == Kind::current)
-            current = s.component.value;
+            current = source_value(s.component, time, initialize ? TimeSide::right : TimeSide::left);
         else if (s.component.kind == Kind::inductor && initialize)
             current = states[i];
         else

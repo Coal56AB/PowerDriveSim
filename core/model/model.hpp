@@ -9,6 +9,14 @@ std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
 struct Orientation { unsigned quarter_turns=0; bool mirrored=false; bool operator==(const Orientation&) const = default; };
 struct Node { std::string id, name; bool ground = false; double x=0, y=0; Orientation orientation; bool operator==(const Node&) const = default; };
+struct Point { double x=0,y=0; bool operator==(const Point&) const = default; };
+enum class Waveform { dc, sine, pulse, piecewise_linear };
+struct SourceWaveform {
+    Waveform kind=Waveform::dc;
+    double offset=0, frequency=50, phase=0, delay=0, duty=.5;
+    std::vector<Point> points;
+    bool operator==(const SourceWaveform&) const = default;
+};
 struct Component {
     std::string id, name;
     Kind kind = Kind::resistor;
@@ -16,6 +24,7 @@ struct Component {
     double value = 1.0, initial = 0.0, x = 0.0, y = 0.0;
     bool closed = false;
     Orientation orientation;
+    SourceWaveform source;
     bool operator==(const Component&) const = default;
 };
 struct GateEvent { double time; std::string target; bool closed; bool operator==(const GateEvent&) const = default; };
@@ -29,7 +38,6 @@ struct Profile {
     double voltage_tolerance = 1e-9, current_tolerance = 1e-12, relative_tolerance = 1e-9;
     bool operator==(const Profile&) const = default;
 };
-struct Point { double x=0,y=0; bool operator==(const Point&) const = default; };
 struct Endpoint {
     std::string object, port;
     bool operator==(const Endpoint&) const = default;
@@ -126,7 +134,7 @@ struct ObjectPath {
     bool operator==(const ObjectPath&) const = default;
 };
 struct Project : Schematic {
-    unsigned schema = 7;
+    unsigned schema = 8;
     std::string id, name;
     Profile profile;
     std::vector<Definition> definitions;
