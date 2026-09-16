@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/routing.hpp"
+#include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
 #include <QAction>
 #include <QApplication>
@@ -70,6 +71,145 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void hierarchy_edit_run_save_and_undo() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        auto initial = w.project();
+        initial.scope_enabled = true;
+        initial.scope_channels = {initial.nodes[2].id};
+        w.set_project(initial);
+        const auto resistor = initial.components[1].id, capacitor = initial.components[2].id,
+                   output = initial.nodes[2].id;
+        for (const auto &id : {resistor, capacitor, output})
+            item(w, id)->setSelected(true);
+        const auto grouped = w.group_selection("RC cell");
+        QVERIFY(!grouped.empty());
+        QCOMPARE(w.root_project().instances.size(), size_t(1));
+        QVERIFY(item(w, grouped));
+        const auto shared = w.root_project().instances.front().definition;
+        w.canvas()->resetTransform();
+        w.canvas()->centerOn(item(w, grouped)->pos());
+        QTest::mouseDClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                           w.canvas()->mapFromScene(item(w, grouped)->pos()));
+        QCOMPARE(w.hierarchy_path(), std::vector<std::string>{grouped});
+        QCOMPARE(w.project().components.size(), size_t(2));
+        w.select_object(resistor);
+        auto *value = w.findChild<QLineEdit *>("property_value");
+        QVERIFY(value->isReadOnly());
+        w.findChild<QAction *>("edit_definition")->trigger();
+        QVERIFY(!value->isReadOnly());
+        value->setFocus();
+        value->selectAll();
+        QTest::keyClicks(value, "2 kOhm");
+        QTest::keyClick(value, Qt::Key_Return);
+        QCOMPARE(definition(w.root_project(), shared).components.front().value, 2000.);
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
+        QVERIFY(w.has_result());
+        QVERIFY(!w.result().samples.empty());
+        QCOMPARE(w.result().project_id, w.root_project().id);
+        const auto path = dir.filePath("hierarchical.pds");
+        QVERIFY(w.save_project(path));
+        QFile saved(path);
+        QVERIFY(saved.open(QIODevice::ReadOnly));
+        std::istringstream data(saved.readAll().toStdString());
+        auto loaded = read_project(data);
+        QCOMPARE(loaded, w.root_project());
+        QVERIFY(loaded.instances.size() == 1 && loaded.components.size() == 1);
+        w.findChild<QAction *>("hierarchy_up")->trigger();
+        QVERIFY(w.hierarchy_path().empty());
+        w.undo();
+        QCOMPARE(w.hierarchy_path(), std::vector<std::string>{grouped});
+        w.redo();
+        QVERIFY(w.hierarchy_path().empty());
+        w.select_object(grouped);
+        w.detach_selected();
+        QVERIFY(w.root_project().instances.front().definition != shared);
+        w.open_subcircuit(grouped);
+        w.select_object(resistor);
+        w.findChild<QAction *>("edit_definition")->trigger();
+        value = w.findChild<QLineEdit *>("property_value");
+        value->setFocus();
+        value->selectAll();
+        QTest::keyClicks(value, "3 kOhm");
+        QTest::keyClick(value, Qt::Key_Return);
+        QCOMPARE(definition(w.root_project(), shared).components.front().value, 2000.);
+        w.navigate_hierarchy({});
+        w.select_object(grouped);
+        w.expand_selected();
+        QVERIFY(w.root_project().instances.empty());
+        QCOMPARE(w.project().components.size(), size_t(3));
+        w.undo();
+        QCOMPARE(w.project().instances.size(), size_t(1));
+        if (auto screenshot = qEnvironmentVariable("PDS_HIERARCHY_SCREENSHOT_PATH"); !screenshot.isEmpty()) {
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-80, -80, 80, 80),
+                                  Qt::KeepAspectRatio);
+            QVERIFY(w.grab().save(screenshot));
+        }
+    }
+    void public_interface_and_instance_parameters() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto resistor = w.project().components[1].id;
+        w.select_object(resistor);
+        auto group = w.group_selection("R cell");
+        QVERIFY(!group.empty());
+        bool handled = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            if (!dialog)
+                return;
+            auto *ports = dialog->findChild<QTableWidget *>("public_ports");
+            ports->item(0, 0)->setText("positive");
+            ports->item(1, 0)->setText("negative");
+            auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            parameters->item(0, 0)->setText("Resistance");
+            qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->setText("2 kOhm");
+            handled = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        // Ensure a regression cannot leave an unattended modal window hanging.
+        QTimer::singleShot(2000, &w, [&] {
+            if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog"))
+                dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(handled);
+        auto definition_id = w.project().instances.front().definition;
+        const auto &d = definition(w.root_project(), definition_id);
+        QCOMPARE(d.ports[0].name, std::string("positive"));
+        QCOMPARE(d.parameters.size(), size_t(1));
+        QCOMPARE(d.parameters[0].value, 2000.);
+        auto *parameter =
+            w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(d.parameters[0].id));
+        QVERIFY(parameter && parameter->isVisible());
+        parameter->setFocus();
+        parameter->selectAll();
+        QTest::keyClicks(parameter, "3 kOhm");
+        QTest::keyClick(parameter, Qt::Key_Return);
+        QCOMPARE(w.project().instances.front().parameters.front().second, 3000.);
+        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 2000.);
+        w.open_subcircuit(group);
+        w.select_object(resistor);
+        w.findChild<QAction *>("edit_definition")->trigger();
+        auto *value = w.findChild<QLineEdit *>("property_value");
+        value->setFocus();
+        value->selectAll();
+        QTest::keyClicks(value, "4 kOhm");
+        QTest::keyClick(value, Qt::Key_Return);
+        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 4000.);
+        auto flat = flatten(w.root_project()).project;
+        auto component = std::find_if(flat.components.begin(), flat.components.end(), [&](const auto &c) {
+            return c.id == expanded_uuid({group}, resistor);
+        });
+        QVERIFY(component != flat.components.end());
+        QCOMPARE(component->value, 3000.);
+    }
     void decimal_comma_in_scalar_fields() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());

@@ -71,6 +71,7 @@ void EditorWindow::transform_selection(int turns, bool mirror) {
         transform(paste_fragment_->nodes);
         transform(paste_fragment_->patterns);
         transform(paste_fragment_->plots);
+        transform(paste_fragment_->instances);
         for (auto &w : paste_fragment_->wires)
             for (auto &p : w.bends)
                 turn(p.x, p.y);
@@ -121,7 +122,7 @@ bool EditorWindow::copy_selection(bool cut) {
         return false;
     auto fragment = document_->copy(ids);
     if (fragment.components.empty() && fragment.nodes.empty() && fragment.patterns.empty() &&
-        fragment.plots.empty())
+        fragment.plots.empty() && fragment.instances.empty())
         return false;
     try {
         std::ostringstream out;
@@ -157,7 +158,7 @@ void EditorWindow::paste_selection(bool duplicate) {
             fragment = read_project(in);
         }
         if (fragment.components.empty() && fragment.nodes.empty() && fragment.patterns.empty() &&
-            fragment.plots.empty())
+            fragment.plots.empty() && fragment.instances.empty())
             return;
         canvas_->cancel_gesture();
         double x = 0, y = 0;
@@ -173,6 +174,7 @@ void EditorWindow::paste_selection(bool duplicate) {
         center(fragment.nodes);
         center(fragment.patterns);
         center(fragment.plots);
+        center(fragment.instances);
         x = count ? std::round(x / count / 20) * 20 : 0;
         y = count ? std::round(y / count / 20) * 20 : 0;
         auto shift = [&](auto &list) {
@@ -185,6 +187,7 @@ void EditorWindow::paste_selection(bool duplicate) {
         shift(fragment.nodes);
         shift(fragment.patterns);
         shift(fragment.plots);
+        shift(fragment.instances);
         for (auto &w : fragment.wires)
             for (auto &p : w.bends) {
                 p.x -= x;
@@ -235,6 +238,12 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
     menu.setObjectName("element_context");
     if (!id.empty()) {
         menu.addAction(commands_.at("properties"));
+        if (std::any_of(project().instances.begin(), project().instances.end(),
+                        [&](const auto &i) { return i.id == id; })) {
+            for (const char *key : {"open_internals", "edit_definition", "detach_subcircuit",
+                                    "expand_subcircuit", "public_interface"})
+                menu.addAction(commands_.at(key));
+        }
         if (std::any_of(project().plots.begin(), project().plots.end(),
                         [&](const PlotBlock &g) { return g.id == id; }))
             menu.addAction(text("plot"), this, [this, id] { open_plot(id); });
@@ -248,6 +257,7 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
         menu.addAction(text("observe_voltage"), this, [this, id] { observe_object(id); });
     }
     menu.addAction(commands_.at("paste"));
+    menu.addAction(commands_.at("group_subcircuit"));
     menu.addSeparator();
     menu.addAction(commands_.at("shortcuts"));
     menu.exec(global);

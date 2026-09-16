@@ -34,6 +34,7 @@ class QLabel;
 class QAction;
 class QTableWidget;
 class QToolBar;
+class QMenu;
 namespace pds::desktop {
 inline constexpr int wire_segment_role = 3; // 1-based path edge; zero selects the whole wire.
 inline constexpr int channel_highlight_role = 6;
@@ -232,6 +233,7 @@ struct Outcome {
     std::optional<Result> result;
     QString error;
     std::string object;
+    std::vector<std::string> path;
     double preparation_seconds = 0, execution_seconds = 0;
 };
 class EditorWindow : public QMainWindow {
@@ -239,6 +241,13 @@ class EditorWindow : public QMainWindow {
     explicit EditorWindow(const QString &language = "ru", const QString &recovery_dir = {});
     ~EditorWindow() override;
     const Project &project() const { return document_->project(); }
+    const Project &root_project() const { return document_->root_project(); }
+    const std::vector<std::string> &hierarchy_path() const { return document_->location(); }
+    void open_subcircuit(const std::string &id);
+    void navigate_hierarchy(const std::vector<std::string> &path);
+    std::string group_selection(const QString &name);
+    void detach_selected();
+    void expand_selected();
     Canvas *canvas() const { return canvas_; }
     Scope *scope() const { return scope_; }
     bool running() const { return busy_; }
@@ -272,6 +281,18 @@ class EditorWindow : public QMainWindow {
 
   private:
     std::unique_ptr<Document> document_;
+    QLabel *breadcrumbs_ = nullptr;
+    QTreeWidget *hierarchy_ = nullptr;
+    std::vector<std::string> scene_path_;
+    bool hierarchy_edit_enabled_ = false;
+    bool editing_allowed() const {
+        return !running() && (hierarchy_path().empty() || hierarchy_edit_enabled_);
+    }
+    void build_hierarchy_actions(QMenu *menu);
+    void refresh_hierarchy();
+    void update_instance_specs();
+    void edit_public_interface(const std::string &definition);
+    std::vector<std::string> visible_plot_channels(const std::string &id) const;
     Canvas *canvas_ = nullptr;
     Scope *scope_ = nullptr;
     QTreeWidget *library_ = nullptr;
@@ -313,6 +334,8 @@ class EditorWindow : public QMainWindow {
     std::optional<Project> result_project_, scene_project_;
     std::map<std::string, std::string> net_cache_;
     std::map<std::string, PortType> port_types_;
+    std::map<std::string, ObjectPath> source_paths_;
+    std::map<std::string, std::string> signal_sources_;
     std::map<std::string, QPointF> route_positions_;
     std::map<std::string, QRectF> obstacle_cache_;
     bool topology_dirty_ = true;

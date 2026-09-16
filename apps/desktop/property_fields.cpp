@@ -189,12 +189,16 @@ void EditorWindow::fill_inspector() {
             contents = draft->second.value(key);
         set_field_text(widget, contents);
         widget->show();
-        properties_->insertRow(row++, text(field.value("label").toString().toUtf8().constData()), widget);
+        properties_->insertRow(row++,
+                               field.contains("displayLabel")
+                                   ? field.value("displayLabel").toString()
+                                   : text(field.value("label").toString().toUtf8().constData()),
+                               widget);
         active_fields_.append(field);
     }
 }
 void EditorWindow::apply_inspector() {
-    if (running() || selected_.empty() || applying_ || inspector_loading_)
+    if (!editing_allowed() || selected_.empty() || applying_ || inspector_loading_)
         return;
     QScopedValueRollback<bool> guard(applying_, true);
     remember_draft();

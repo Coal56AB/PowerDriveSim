@@ -43,20 +43,22 @@ void EditorWindow::commit_profile() {
     }
 }
 void EditorWindow::update_command_state() {
+    if (!document_)
+        return;
     for (const auto &[id, action] : component_actions_)
-        action->setEnabled(!running());
+        action->setEnabled(editing_allowed());
     for (const auto &[key, widget] : property_editors_)
         if (auto *line = qobject_cast<QLineEdit *>(widget))
-            line->setReadOnly(running());
+            line->setReadOnly(!editing_allowed());
         else
-            widget->setEnabled(!running());
+            widget->setEnabled(editing_allowed());
     for (auto *field : {stop_, step_})
         if (field)
             field->setReadOnly(running());
     if (method_)
         method_->setEnabled(!running());
     if (apply_button_)
-        apply_button_->setEnabled(!running());
+        apply_button_->setEnabled(editing_allowed());
 
     auto *focus = QApplication::focusWidget();
     bool editing = qobject_cast<QLineEdit *>(focus) || qobject_cast<QPlainTextEdit *>(focus) ||
@@ -74,9 +76,10 @@ void EditorWindow::update_command_state() {
         else if (std::string(id) != "fit" && std::string(id) != "fit_selection" &&
                  std::string(id) != "actual_size" && std::string(id) != "copy" &&
                  std::string(id) != "select_all")
-            enabled &= !running();
+            enabled &= editing_allowed();
         it->second->setEnabled(enabled);
     }
+    refresh_hierarchy();
 }
 bool EditorWindow::eventFilter(QObject *watched, QEvent *event) {
     if (watched == this && event->type() == QEvent::WindowDeactivate && canvas_ &&

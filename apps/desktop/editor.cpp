@@ -4,6 +4,7 @@
 #include "apps/desktop/routing.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "core/editor/properties.hpp"
+#include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
 #include "results/csv.hpp"
 #include <QApplication>
@@ -21,6 +22,7 @@
 #include <QGraphicsItemGroup>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
+#include <QGraphicsSimpleTextItem>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -137,6 +139,8 @@ class Atom final : public QGraphicsItem {
     QString name, symbol, value;
     int type = 0;
     unsigned input_count = 2;
+    std::vector<std::pair<QString, QPointF>> public_ports;
+    std::vector<PublicPort> definition_ports;
     bool ground = false, separate_labels = false;
     Atom(std::string uuid, QString label, QString mark, int category)
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
@@ -148,7 +152,45 @@ class Atom final : public QGraphicsItem {
         prepareGeometryChange();
         input_count = count;
     }
+    void set_definition(const Definition &definition) {
+        if (definition_ports == definition.ports)
+            return;
+        prepareGeometryChange();
+        definition_ports = definition.ports;
+        public_ports.clear();
+        for (auto *child : childItems())
+            delete child;
+        std::vector<const PublicPort *> left, right;
+        unsigned electrical = 0;
+        for (const auto &port : definition.ports) {
+            bool on_right = port.direction == Direction::output ||
+                            (port.direction == Direction::conserving && electrical++ % 2);
+            (on_right ? right : left).push_back(&port);
+        }
+        input_count = unsigned(std::max(left.size(), right.size()));
+        auto side = [&](const auto &group, double x) {
+            for (size_t n = 0; n < group.size(); ++n) {
+                QPointF pt(x, (double(n) - (group.size() - 1) / 2.) * 26);
+                const auto &external = *group[n];
+                public_ports.push_back({q(external.name), pt});
+                port(q(external.id), pt,
+                     QColor(external.domain == Domain::gate     ? "#17866d"
+                            : external.domain == Domain::signal ? "#8c67c8"
+                                                                : "#146cca"));
+            }
+        };
+        side(left, -108);
+        side(right, 108);
+        for (auto *child : childItems())
+            for (const auto &port : definition.ports)
+                if (child->data(2).toString() == q(port.id))
+                    child->setToolTip(q(port.name));
+    }
     QRectF boundingRect() const override {
+        if (type == 4) {
+            double h = std::max(36., input_count * 14.);
+            return {-110, -h - 8, 220, 2 * h + 40};
+        }
         if (type == 3) {
             double h = std::max(36.0, input_count * 12.0);
             return {-80, -h - 14, 160, 2 * h + 52};
@@ -157,6 +199,11 @@ class Atom final : public QGraphicsItem {
     }
     QPainterPath shape() const override {
         QPainterPath path;
+        if (type == 4) {
+            double h = std::max(36., input_count * 14.);
+            path.addRect(QRectF(-90, -h, 180, 2 * h));
+            return path;
+        }
         if (type == 1) {
             if (ground)
                 path.addRect(QRectF(-18, -5, 36, 34));
@@ -208,6 +255,27 @@ class Atom final : public QGraphicsItem {
                                          : QColor("#263c55"),
                        channel_highlight ? 3 : 2));
         p->setBrush(Qt::white);
+        if (type == 4) {
+            double h = std::max(36., input_count * 14.);
+            p->setBrush(QColor("#f1f5fc"));
+            p->drawRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
+            auto font = p->font();
+            font.setPointSize(8);
+            p->setFont(font);
+            for (const auto &[port_name, point] : public_ports) {
+                p->drawLine(point, QPointF(point.x() < 0 ? -90 : 90, point.y()));
+                label(p, QRectF(point.x() < 0 ? -86 : 6, point.y() - 10, 80, 20),
+                      point.x() < 0 ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
+                      QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 65));
+            }
+            p->setPen(QPen(QColor("#607b9e"), 1.5));
+            p->drawRect(QRectF(-8, -12, 16, 8));
+            p->drawLine(0, -4, 0, 5);
+            p->drawLine(-9, 5, 9, 5);
+            p->drawRect(QRectF(-13, 5, 8, 8));
+            p->drawRect(QRectF(5, 5, 8, 8));
+            return;
+        }
         if (type == 3) {
             double h = std::max(36.0, input_count * 12.0);
             p->setBrush(QColor("#ffffff"));
@@ -299,6 +367,8 @@ class Atom final : public QGraphicsItem {
     }
 };
 bool EditorWindow::edit_text_at(QPoint point) {
+    if (!editing_allowed())
+        return false;
     for (auto *item : canvas_->items(point)) {
         if (item->data(1).toString() != "label")
             continue;
@@ -352,6 +422,7 @@ void EditorWindow::update_labels() {
             const QPointF anchor = role == "value"   ? QPointF(0, -41)
                                    : atom->type == 1 ? QPointF(0, 41)
                                    : atom->type == 3 ? QPointF(0, std::max(36., atom->input_count * 12.) + 19)
+                                   : atom->type == 4 ? QPointF(0, std::max(36., atom->input_count * 14.) + 19)
                                                      : QPointF(0, 39);
             label->setData(5, anchor);
             if (canvas_->editing_gesture() && label->isSelected() && !atom->isSelected())
@@ -472,6 +543,8 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
             a->port("in" + QString::number(i), {-70, (static_cast<double>(i) - (g.inputs + 1) / 2.0) * 22},
                     QColor("#8c67c8"));
     }
+    for (const auto &instance : fragment.instances)
+        add(instance, 4, {}, {})->set_definition(definition(fragment, instance.definition));
     auto position = [&](const Endpoint &endpoint) {
         for (auto *child : group->childItems())
             if (auto *a = dynamic_cast<Atom *>(child); a && a->id == endpoint.object)
@@ -503,6 +576,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
                 QPointF anchor(0, role == "value" ? -41
                                   : a->type == 1  ? 41
                                   : a->type == 3  ? std::max(36., a->input_count * 12.) + 19
+                                  : a->type == 4  ? std::max(36., a->input_count * 14.) + 19
                                                   : 39);
                 LabelLayout layout;
                 for (const auto &stored : fragment.labels)
@@ -712,6 +786,7 @@ void EditorWindow::build_ui() {
     for (const char *mode : {"left", "right", "top", "bottom", "horizontal", "vertical"})
         action(nullptr, mode, {}, [this, mode] { arrange_selection(mode); });
     action(edit_menu, "shortcuts", {}, [this] { show_shortcuts(); });
+    build_hierarchy_actions(edit_menu->addMenu(text("hierarchy")));
     auto *wire_action = action(edit_menu, "connect_tool", QKeySequence("Ctrl+W"), [this] {
         if (running())
             return;
@@ -803,9 +878,20 @@ void EditorWindow::build_ui() {
     auto *tools_layout = new QHBoxLayout(canvas_tools);
     tools_layout->setContentsMargins(16, 8, 16, 8);
     auto *title = new QLabel(text("canvas_title"));
+    breadcrumbs_ = title;
+    title->setObjectName("hierarchy_breadcrumbs");
+    title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    connect(title, &QLabel::linkActivated, this, [this](const QString &link) {
+        auto path = hierarchy_path();
+        bool valid = false;
+        auto depth = link.toUInt(&valid);
+        if (valid && depth <= path.size()) {
+            path.resize(depth);
+            navigate_hierarchy(path);
+        }
+    });
     title->setStyleSheet("font-weight:600;border:0;padding-right:16px;");
-    tools_layout->addWidget(title);
-    tools_layout->addStretch();
+    tools_layout->addWidget(title, 1);
     for (auto *a : {wire_action, undo_, redo_, fit_action}) {
         auto *button = new QToolButton;
         button->setDefaultAction(a);
@@ -849,6 +935,17 @@ void EditorWindow::build_ui() {
     connect(objects_, &QListWidget::itemClicked, this,
             [this](QListWidgetItem *i) { select_object(i->data(Qt::UserRole).toString().toStdString()); });
     left_tabs->addTab(objects_, text("objects"));
+    hierarchy_ = new QTreeWidget;
+    hierarchy_->setHeaderHidden(true);
+    hierarchy_->setObjectName("hierarchy_tree");
+    left_tabs->addTab(hierarchy_, text("hierarchy"));
+    connect(hierarchy_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {
+        auto path = item->data(0, Qt::UserRole).toStringList();
+        std::vector<std::string> steps;
+        for (const auto &step : path)
+            steps.push_back(step.toStdString());
+        navigate_hierarchy(steps);
+    });
     auto *left = dock("workspace", left_tabs, Qt::LeftDockWidgetArea);
     left->setMinimumWidth(255);
     left->setMaximumWidth(380);
@@ -890,8 +987,13 @@ void EditorWindow::build_ui() {
     errors_->setObjectName("diagnostics_list");
     dl->addWidget(errors_, 1);
     bottom_->addTab(diagnostics, text("diagnostics"));
-    connect(errors_, &QListWidget::itemClicked, this,
-            [this](QListWidgetItem *i) { select_object(i->data(Qt::UserRole).toString().toStdString()); });
+    connect(errors_, &QListWidget::itemClicked, this, [this](QListWidgetItem *i) {
+        std::vector<std::string> path;
+        for (const auto &step : i->data(Qt::UserRole + 1).toStringList())
+            path.push_back(step.toStdString());
+        navigate_hierarchy(path);
+        select_object(i->data(Qt::UserRole).toString().toStdString());
+    });
     scope_page_ = new QWidget;
     scope_layout_ = new QVBoxLayout(scope_page_);
     scope_layout_->setContentsMargins(6, 4, 6, 4);
@@ -1001,6 +1103,11 @@ void EditorWindow::build_ui() {
     };
     canvas_->released = [this] { commit_positions(); };
     canvas_->open_object = [this](std::string id) {
+        if (std::any_of(project().instances.begin(), project().instances.end(),
+                        [&](const auto &i) { return i.id == id; })) {
+            open_subcircuit(id);
+            return;
+        }
         if (std::any_of(project().plots.begin(), project().plots.end(),
                         [&](const PlotBlock &p) { return p.id == id; }))
             open_plot(id);
@@ -1060,7 +1167,7 @@ void EditorWindow::set_project(Project p) {
     selected_.clear();
 
     path_.clear();
-    saved_state_ = serialized(project());
+    saved_state_ = serialized(root_project());
     refresh();
     canvas_->resetTransform();
     canvas_->centerOn(200, 120);
@@ -1097,7 +1204,7 @@ bool EditorWindow::save_project(const QString &path) {
         return false;
     try {
         QSaveFile file(path);
-        auto bytes = serialized(project());
+        auto bytes = serialized(root_project());
         if (!file.open(QIODevice::WriteOnly) ||
             file.write(bytes.data(), static_cast<qint64>(bytes.size())) !=
                 static_cast<qint64>(bytes.size()) ||
@@ -1117,11 +1224,11 @@ QString EditorWindow::recovery_path() const {
     return recovery_dir_ + "/recovery.pds.autosave";
 }
 bool EditorWindow::autosave() {
-    if (!document_ || serialized(project()) == saved_state_)
+    if (!document_ || serialized(root_project()) == saved_state_)
         return false;
     QDir().mkpath(recovery_dir_);
     QSaveFile file(recovery_path());
-    auto bytes = serialized(project());
+    auto bytes = serialized(root_project());
     return file.open(QIODevice::WriteOnly) &&
            file.write(bytes.data(), static_cast<qint64>(bytes.size())) == static_cast<qint64>(bytes.size()) &&
            file.commit();
@@ -1137,6 +1244,32 @@ bool EditorWindow::recover(const QString &path) {
 }
 void EditorWindow::refresh(bool invalidate) {
     rebuilding_ = true;
+    if (scene_path_ != hierarchy_path()) {
+        canvas_->cancel_gesture();
+        cancel_inline_edit();
+        for (auto &[id, window] : plot_windows_) {
+            (void)id;
+            if (window)
+                delete window;
+        }
+        plot_windows_.clear();
+        plot_views_.clear();
+        atoms_.clear();
+        wires_.clear();
+        labels_.clear();
+        canvas_->scene()->clear();
+        base_wire_routes_.clear();
+        route_positions_.clear();
+        obstacle_cache_.clear();
+        scene_project_.reset();
+        selected_.clear();
+        drafts_.clear();
+        inspector_id_.clear();
+        scene_path_ = hierarchy_path();
+        hierarchy_edit_enabled_ = false;
+        topology_dirty_ = true;
+    }
+    update_instance_specs();
     const bool model_changed = !scene_project_ || !same_simulation(*scene_project_, project());
     auto labels = [](const Project &p) {
         std::map<std::string, std::string> result;
@@ -1148,6 +1281,7 @@ void EditorWindow::refresh(bool invalidate) {
         collect(p.components);
         collect(p.patterns);
         collect(p.plots);
+        collect(p.instances);
         return result;
     };
     const bool labels_changed = !scene_project_ || labels(*scene_project_) != labels(project());
@@ -1155,7 +1289,7 @@ void EditorWindow::refresh(bool invalidate) {
                                    scene_project_->scope_enabled != project().scope_enabled ||
                                    scene_project_->scope_channels != project().scope_channels;
     topology_dirty_ |= model_changed;
-    if (invalidate && result_ && result_project_ && !same_simulation(*result_project_, project())) {
+    if (invalidate && result_ && result_project_ && !same_simulation(*result_project_, root_project())) {
         clear_result();
         banner_->setText(text("result_outdated"));
     }
@@ -1173,6 +1307,8 @@ void EditorWindow::refresh(bool invalidate) {
         item(g.id, g.name);
     for (const auto &g : project().plots)
         item(g.id, g.name);
+    for (const auto &i : project().instances)
+        item(i.id, i.name);
     if (!stop_->isModified())
         stop_->setText(QString::number(project().profile.stop, 'g', 12));
     if (!step_->isModified())
@@ -1185,7 +1321,7 @@ void EditorWindow::refresh(bool invalidate) {
         refresh_channel_catalog();
     if (labels_changed && result_) {
         try {
-            auto catalog = available_channels(compile(project()));
+            auto catalog = available_channels(compile(root_project()));
             for (auto &channel : result_->channels)
                 for (const auto &fresh : catalog)
                     if (channel.object == fresh.object) {
@@ -1202,6 +1338,8 @@ void EditorWindow::refresh(bool invalidate) {
     scene_project_ = project();
     rebuilding_ = false;
     fill_inspector();
+    refresh_hierarchy();
+    update_command_state();
     update_title();
 }
 void EditorWindow::rebuild_scene() {
@@ -1272,6 +1410,9 @@ void EditorWindow::rebuild_scene() {
                 {"in" + QString::number(i), {-70, (static_cast<double>(i) - (g.inputs + 1) / 2.0) * 22}});
         ports(a, list, QColor("#8c67c8"));
     }
+    for (const auto &i : project().instances) {
+        atom(i.id, i.name, {}, 4)->set_definition(definition(project(), i.definition));
+    }
     for (auto i = atoms_.begin(); i != atoms_.end();)
         if (!present.count(i->first)) {
             delete i->second;
@@ -1293,6 +1434,7 @@ void EditorWindow::rebuild_scene() {
     geometry(project().nodes);
     geometry(project().patterns);
     geometry(project().plots);
+    geometry(project().instances);
     update_labels();
     present.clear();
     for (const auto &w : project().wires) {
@@ -1340,7 +1482,9 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
     if (atom->type == 1)
         return point;
     QPointF delta(0, -20);
-    if (e.port == "p" || e.port.rfind("in", 0) == 0)
+    if (atom->type == 4)
+        delta = {atom->mapFromScene(point).x() < 0 ? -20. : 20., 0};
+    else if (e.port == "p" || e.port.rfind("in", 0) == 0)
         delta = {-20, 0};
     else if (e.port == "n" || (e.port == "out" && atom->type == 2))
         delta = {20, 0};
@@ -1361,10 +1505,30 @@ void EditorWindow::update_wires() {
     std::set<std::string> changed_networks;
     if (topology_dirty_) {
         net_cache_ = resolve_connections(project()).nets;
+        auto expanded = flatten(root_project());
+        source_paths_ = std::move(expanded.origins);
+        signal_sources_.clear();
+        if (!hierarchy_path().empty()) {
+            auto global = resolve_connections(root_project()).nets;
+            for (auto &[key, net] : net_cache_) {
+                auto slash = key.find('/');
+                const auto expanded_key =
+                    expanded_uuid(hierarchy_path(), key.substr(0, slash)) + key.substr(slash);
+                if (auto found = global.find(expanded_key); found != global.end())
+                    net = found->second;
+            }
+        }
         port_types_.clear();
         for (const auto &w : project().wires) {
             port_types_[endpoint_key(w.from)] = port_type(project(), w.from);
             port_types_[endpoint_key(w.to)] = port_type(project(), w.to);
+            for (auto endpoint : {w.from, w.to}) {
+                const auto key = endpoint_key(endpoint);
+                endpoint.object = expanded_uuid(hierarchy_path(), endpoint.object);
+                auto alias = expanded.terminals.find(endpoint_key(endpoint));
+                signal_sources_[key] =
+                    alias == expanded.terminals.end() ? endpoint.object : alias->second.object;
+            }
         }
         topology_dirty_ = false;
     }
@@ -1376,7 +1540,10 @@ void EditorWindow::update_wires() {
             continue;
         double h = std::max(36.0, atom->input_count * 12.0);
         auto box =
-            atom->mapRectToScene(atom->type == 3 ? QRectF(-46, -h, 104, 2 * h) : QRectF(-38, -28, 76, 56));
+            atom->mapRectToScene(atom->type == 4   ? QRectF(-90, -std::max(36., atom->input_count * 14.), 180,
+                                                            2 * std::max(36., atom->input_count * 14.))
+                                 : atom->type == 3 ? QRectF(-46, -h, 104, 2 * h)
+                                                   : QRectF(-38, -28, 76, 56));
         obstacles.push_back(box);
         next_boxes[id] = box;
         auto old = obstacle_cache_.find(id);
@@ -1396,11 +1563,20 @@ void EditorWindow::update_wires() {
                                     : std::string();
     const bool gate_channel = channel.starts_with("gate/");
     const std::string channel_object = gate_channel ? channel.substr(5) : channel;
+    std::string visible_source = channel_object;
+    if (auto source = source_paths_.find(channel_object); source != source_paths_.end()) {
+        const auto &path = source->second.instances;
+        const auto &active = hierarchy_path();
+        if (path.size() >= active.size() && std::equal(active.begin(), active.end(), path.begin()))
+            visible_source = path.size() == active.size() ? source->second.object : path[active.size()];
+        else
+            visible_source.clear();
+    }
     for (const auto &[id, atom] : atoms_) {
         const auto node = net_cache_.find(endpoint_key({id, "node"}));
         const bool active =
             !channel.empty() &&
-            (id == channel_object || (!gate_channel && node != net_cache_.end() && node->second == channel));
+            (id == visible_source || (!gate_channel && node != net_cache_.end() && node->second == channel));
         if (atom->data(channel_highlight_role).toBool() != active) {
             atom->setData(channel_highlight_role, active);
             atom->update();
@@ -1451,7 +1627,8 @@ void EditorWindow::update_wires() {
         const bool channel_active =
             !channel.empty() && ((!gate_channel && net != net_cache_.end() && net->second == channel) ||
                                  (gate_channel && domain == Domain::gate &&
-                                  (w.from.object == channel_object || w.to.object == channel_object)));
+                                  (signal_sources_[endpoint_key(w.from)] == channel_object ||
+                                   signal_sources_[endpoint_key(w.to)] == channel_object)));
         item->setData(channel_highlight_role, channel_active);
         item->setPen(QPen(channel_active ? QColor("#b34cce")
                           : active       ? QColor("#e88b22")
@@ -1634,6 +1811,8 @@ void EditorWindow::commit_positions() {
         check(g);
     for (const auto &g : project().plots)
         check(g);
+    for (const auto &i : project().instances)
+        check(i);
     if (!moved)
         return;
     document_->apply("Move objects", [&](Project &p) {
@@ -1654,6 +1833,8 @@ void EditorWindow::commit_positions() {
             move(g);
         for (auto &g : p.plots)
             move(g);
+        for (auto &i : p.instances)
+            move(i);
     });
     refresh();
 }
@@ -1682,16 +1863,23 @@ void EditorWindow::delete_selected() {
                         routes.push_back(route);
                     }
                 if (routes.size() == 2) {
-                    document_->remove_junction(node.id, routes[0], routes[1]);
-                    selected_.clear();
-                    refresh();
+                    try {
+                        document_->remove_junction(node.id, routes[0], routes[1]);
+                        selected_.clear();
+                        refresh();
+                    } catch (const std::exception &e) {
+                        show_error(e);
+                    }
                     return;
                 }
             }
-    document_->erase(ids);
-    selected_.clear();
-
-    refresh();
+    try {
+        document_->erase(ids);
+        selected_.clear();
+        refresh();
+    } catch (const std::exception &e) {
+        show_error(e);
+    }
 }
 void EditorWindow::undo() {
     bool gesture = canvas_->editing_gesture();
@@ -1748,6 +1936,12 @@ void EditorWindow::show_error(const std::exception &e) {
     auto *item = new QListWidgetItem(message, errors_);
     if (d)
         item->setData(Qt::UserRole, q(d->object));
+    if (d) {
+        QStringList path;
+        for (const auto &step : d->path)
+            path.push_back(q(step));
+        item->setData(Qt::UserRole + 1, path);
+    }
     bottom_->setCurrentIndex(0);
     banner_->setText(text("error_hint"));
 }
@@ -1792,7 +1986,7 @@ void EditorWindow::start_simulation() {
         for (auto &[id, view] : plot_views_)
             if (view)
                 view->set_live(true);
-        result_project_ = project();
+        result_project_ = root_project();
         scope_enable_->setEnabled(false);
         cancel_ = false;
         paused_ = false;
@@ -1808,7 +2002,7 @@ void EditorWindow::start_simulation() {
         busy_ = true;
         update_run_button();
         update_command_state();
-        const auto snapshot = project();
+        const auto snapshot = root_project();
         const auto keys = recording_keys();
         watcher_.setFuture(QtConcurrent::run([this, snapshot, keys] {
             Outcome outcome;
@@ -1835,6 +2029,7 @@ void EditorWindow::start_simulation() {
             } catch (const Diagnostic &e) {
                 outcome.error = q(e.code) + ": " + QString::fromUtf8(e.what());
                 outcome.object = e.object;
+                outcome.path = e.path;
             } catch (const std::exception &e) {
                 outcome.error = QString::fromUtf8(e.what());
             }
@@ -1868,8 +2063,8 @@ void EditorWindow::finish_simulation() {
     paused_ = false;
     update_run_button();
     update_command_state();
-    canvas_->set_editable(true);
-    library_->setEnabled(true);
+    canvas_->set_editable(editing_allowed());
+    library_->setEnabled(editing_allowed());
     run_->setEnabled(true);
     scope_enable_->setEnabled(true);
     if (channels_)
@@ -1884,6 +2079,10 @@ void EditorWindow::finish_simulation() {
                 view->set_live(false);
         auto *item = new QListWidgetItem(outcome.error, errors_);
         item->setData(Qt::UserRole, q(outcome.object));
+        QStringList path;
+        for (const auto &step : outcome.path)
+            path.push_back(q(step));
+        item->setData(Qt::UserRole + 1, path);
         bottom_->setCurrentIndex(0);
         banner_->setText(text("error_hint"));
         return;
@@ -1935,15 +2134,16 @@ void EditorWindow::choose_channels() {
 void EditorWindow::update_title() {
     if (!document_)
         return;
-    setWindowTitle("PowerDriveSim — " + (path_.isEmpty() ? q(project().name) : QFileInfo(path_).fileName()) +
-                   (serialized(project()) == saved_state_ ? "" : " *"));
+    setWindowTitle("PowerDriveSim — " +
+                   (path_.isEmpty() ? q(root_project().name) : QFileInfo(path_).fileName()) +
+                   (serialized(root_project()) == saved_state_ ? "" : " *"));
     statusBar()->showMessage(QString::number(project().components.size()) + " " + text("components") + " · " +
                              QString::number(project().wires.size()) + " " + text("wires"));
 }
 bool EditorWindow::confirm_discard() {
     if (!commit_inline_edit())
         return false;
-    if (!document_ || serialized(project()) == saved_state_)
+    if (!document_ || serialized(root_project()) == saved_state_)
         return true;
     auto choice = QMessageBox::question(this, text("unsaved"), text("save_question"),
                                         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);

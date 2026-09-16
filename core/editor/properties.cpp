@@ -1,4 +1,5 @@
 #include "core/editor/properties.hpp"
+#include "core/model/hierarchy.hpp"
 #include <algorithm>
 #include <optional>
 namespace pds {
@@ -20,6 +21,7 @@ std::string object_type(const Project &p, const std::string &id) {
     for (const auto &g : p.plots)
         if (g.id == id)
             return "plot";
+    for(const auto& i:p.instances)if(i.id==id)return "instance:"+i.definition;
     for (const auto &w : p.wires)
         if (w.id == id)
             return "wire";
@@ -42,6 +44,16 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
             return o.y;
         return {};
     };
+    for(const auto& i:p.instances)if(i.id==id) {
+        if(auto v=common(i))return *v;
+        if(key.rfind("parameter/",0)==0) {
+            const auto parameter=key.substr(10);
+            for(const auto& param:definition(p,i.definition).parameters)if(param.id==parameter) {
+                for(const auto& override:i.parameters)if(override.first==parameter)return override.second;
+                return param.value;
+            }
+        }
+    }
     for (const auto &c : p.components)
         if (c.id == id) {
             if (auto v = common(c))
@@ -84,6 +96,16 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
 }
 void write_property(Project &p, const std::string &id, const std::string &key, const PropertyValue &value) {
     (void)read_property(p, id, key); // Validate the binding before mutation.
+    for(auto& i:p.instances)if(i.id==id) {
+        if(key=="name"){i.name=std::get<std::string>(value);return;}
+        if(key=="x"){i.x=std::get<double>(value);return;}
+        if(key=="y"){i.y=std::get<double>(value);return;}
+        if(key.rfind("parameter/",0)==0) {
+            const auto parameter=key.substr(10);auto v=std::find_if(i.parameters.begin(),i.parameters.end(),[&](const auto& v){return v.first==parameter;});
+            if(v==i.parameters.end())i.parameters.emplace_back(parameter,std::get<double>(value));else v->second=std::get<double>(value);
+            return;
+        }
+    }
     if (key == "events") {
         std::erase_if(p.events, [&](const GateEvent &e) { return e.target == id; });
         for (auto e : std::get<std::vector<GateEvent>>(value)) {

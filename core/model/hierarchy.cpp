@@ -24,12 +24,12 @@ Project definition_project(const Project &p, const std::string &id) {
     return body;
 }
 std::string expanded_uuid(const std::vector<std::string> &path, const std::string &object) {
-    if (path.empty())
-        return object;
-    std::string key = "instance:";
-    for (const auto &id : path)
-        key += id + "/";
-    return derived_uuid(key + object);
+    auto id = object;
+    // Compose from the leaf outwards so replacing a nested instance with its
+    // expanded local UUIDs preserves the identities seen from every ancestor.
+    for (auto i = path.rbegin(); i != path.rend(); ++i)
+        id = derived_uuid("instance:" + *i + "/" + id);
+    return id;
 }
 namespace {
 void parameter_value(Schematic &s, const Project &catalog, const PublicParameter &p, double value) {
@@ -116,15 +116,15 @@ void validate_schematic(const Project &p) {
     }
 }
 Point transform(Point p, Point offset, Orientation o) {
-    if (o.mirrored)
-        p.x = -p.x;
     for (unsigned n = 0; n < o.quarter_turns; ++n)
         p = {-p.y, p.x};
+    if (o.mirrored)
+        p.x = -p.x;
     return {p.x + offset.x, p.y + offset.y};
 }
 Orientation compose(Orientation parent, Orientation child) {
     int turns =
-        int(parent.quarter_turns) + (parent.mirrored ? -int(child.quarter_turns) : int(child.quarter_turns));
+        int(child.quarter_turns) + (child.mirrored ? -int(parent.quarter_turns) : int(parent.quarter_turns));
     return {unsigned((turns + 4) % 4), parent.mirrored != child.mirrored};
 }
 } // namespace
@@ -184,8 +184,18 @@ FlattenedProject flatten(const Project &source) {
     result.project = source;
     result.project.definitions.clear();
     result.project.instances.clear();
-    if (source.instances.empty())
+    if (source.instances.empty()) {
+        auto remember = [&](const auto &objects) {
+            for (const auto &o : objects)
+                result.origins.emplace(o.id, ObjectPath{{}, o.id});
+        };
+        remember(source.nodes);
+        remember(source.components);
+        remember(source.patterns);
+        remember(source.plots);
+        remember(source.wires);
         return result;
+    }
     static_cast<Schematic &>(result.project) = Schematic{};
     result.project.wired = true;
     result.project.extensions = source.extensions;

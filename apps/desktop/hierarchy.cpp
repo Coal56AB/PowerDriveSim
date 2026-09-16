@@ -1,0 +1,443 @@
+#include "core/model/hierarchy.hpp"
+#include "apps/desktop/editor.hpp"
+#include "apps/desktop/number_input.hpp"
+#include <QAction>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QGraphicsScene>
+#include <QGraphicsSimpleTextItem>
+#include <QHeaderView>
+#include <QInputDialog>
+#include <QLabel>
+#include <QLineEdit>
+#include <QMenu>
+#include <QPushButton>
+#include <QTabWidget>
+#include <QTableWidget>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+#include <algorithm>
+namespace pds::desktop {
+void EditorWindow::update_instance_specs() {
+    bool changed = false;
+    for (const auto &d : root_project().definitions) {
+        QJsonArray fields{
+            QJsonObject{{"key", "name"}, {"editor", "text"}, {"label", "name"}, {"inline", "name"}}};
+        for (const auto &p : d.parameters) {
+            QJsonObject field;
+            for (const auto &c : d.components)
+                if (c.id == p.object && component_specs_.count(kind_name(c.kind)))
+                    for (const auto &entry : component_specs_.at(kind_name(c.kind)).value("fields").toArray())
+                        if (entry.toObject().value("key").toString() == QString::fromStdString(p.field))
+                            field = entry.toObject();
+            field.remove("inline");
+            field.remove("inlinePart");
+            field.remove("condition");
+            field["key"] = QString::fromStdString("parameter/" + p.id);
+            field["editor"] = "number";
+            field["displayLabel"] = QString::fromStdString(p.name);
+            field["unit"] = QString::fromStdString(p.unit);
+            fields.append(field);
+        }
+        QJsonObject spec{{"fields", fields}};
+        auto key = "instance:" + d.id;
+        if (!component_specs_.count(key) || component_specs_.at(key) != spec) {
+            component_specs_[key] = spec;
+            changed = true;
+        }
+    }
+    if (changed)
+        build_property_editors();
+}
+void EditorWindow::navigate_hierarchy(const std::vector<std::string> &path) {
+    if (running() || !commit_inline_edit())
+        return;
+    try {
+        canvas_->cancel_gesture();
+        document_->navigate(path);
+        refresh(false);
+        canvas_->fitInView(canvas_->scene()->itemsBoundingRect().adjusted(-70, -70, 70, 70),
+                           Qt::KeepAspectRatio);
+    } catch (const std::exception &e) {
+        show_error(e);
+    }
+}
+void EditorWindow::open_subcircuit(const std::string &id) {
+    auto path = hierarchy_path();
+    path.push_back(id);
+    navigate_hierarchy(path);
+}
+std::string EditorWindow::group_selection(const QString &name) {
+    if (!editing_allowed())
+        return {};
+    try {
+        canvas_->cancel_gesture();
+        auto id = document_->create_definition(selected_ids(), name.toStdString());
+        refresh();
+        select_object(id);
+        return id;
+    } catch (const std::exception &e) {
+        show_error(e);
+        return {};
+    }
+}
+void EditorWindow::detach_selected() {
+    if (!editing_allowed())
+        return;
+    try {
+        document_->detach_instance(selected_);
+        refresh();
+    } catch (const std::exception &e) {
+        show_error(e);
+    }
+}
+void EditorWindow::expand_selected() {
+    if (!editing_allowed())
+        return;
+    try {
+        document_->expand_instance(selected_);
+        selected_.clear();
+        refresh();
+    } catch (const std::exception &e) {
+        show_error(e);
+    }
+}
+void EditorWindow::build_hierarchy_actions(QMenu *menu) {
+    menu->addSeparator();
+    auto add = [&](const char *key, const QKeySequence &shortcut, const std::function<void()> &callback) {
+        auto *action = new QAction(text(key), this);
+        action->setObjectName(key);
+        action->setShortcut(shortcut);
+        addAction(action);
+        menu->addAction(action);
+        commands_[key] = action;
+        default_shortcuts_[key] = shortcut;
+        connect(action, &QAction::triggered, this, callback);
+    };
+    add("group_subcircuit", QKeySequence("Ctrl+G"), [this] {
+        if (!editing_allowed())
+            return;
+        bool ok = false;
+        auto name = QInputDialog::getText(this, text("group_subcircuit"), text("name"), QLineEdit::Normal,
+                                          text("subcircuit"), &ok);
+        if (ok && !name.trimmed().isEmpty())
+            group_selection(name.trimmed());
+    });
+    add("open_internals", QKeySequence("Ctrl+Return"), [this] { open_subcircuit(selected_); });
+    add("hierarchy_up", QKeySequence("Alt+Up"), [this] {
+        auto path = hierarchy_path();
+        if (!path.empty()) {
+            path.pop_back();
+            navigate_hierarchy(path);
+        }
+    });
+    add("edit_definition", {}, [this] {
+        if (running())
+            return;
+        if (std::any_of(project().instances.begin(), project().instances.end(),
+                        [&](const auto &i) { return i.id == selected_; }))
+            open_subcircuit(selected_);
+        if (!hierarchy_path().empty()) {
+            hierarchy_edit_enabled_ = true;
+            refresh_hierarchy();
+            update_command_state();
+            banner_->setText(text("editing_shared_definition"));
+        }
+    });
+    add("detach_subcircuit", {}, [this] { detach_selected(); });
+    add("expand_subcircuit", {}, [this] { expand_selected(); });
+    add("public_interface", {}, [this] {
+        if (!editing_allowed())
+            return;
+        for (const auto &i : project().instances)
+            if (i.id == selected_) {
+                edit_public_interface(i.definition);
+                return;
+            }
+        if (!hierarchy_path().empty())
+            edit_public_interface(document_->current_definition());
+    });
+    add("insert_subcircuit", {}, [this] {
+        if (!editing_allowed() || root_project().definitions.empty())
+            return;
+        QStringList names;
+        for (const auto &d : root_project().definitions)
+            names.push_back(QString::fromStdString(d.name) + " · " +
+                            QString::fromStdString(d.id.substr(0, 8)));
+        bool ok = false;
+        auto name =
+            QInputDialog::getItem(this, text("insert_subcircuit"), text("definition"), names, 0, false, &ok);
+        if (ok) {
+            try {
+                auto index = names.indexOf(name);
+                auto point = canvas_->insertion_position();
+                auto id = document_->add_instance(root_project().definitions[size_t(index)].id, point.x(),
+                                                  point.y());
+                refresh();
+                select_object(id);
+            } catch (const std::exception &e) {
+                show_error(e);
+            }
+        }
+    });
+}
+void EditorWindow::refresh_hierarchy() {
+    if (!hierarchy_ || !document_)
+        return;
+    const auto &root = root_project();
+    QString breadcrumb = "<a href=\"0\">" + QString::fromStdString(root.name).toHtmlEscaped() + "</a>";
+    const Schematic *level = &root;
+    size_t depth = 0;
+    for (const auto &step : hierarchy_path()) {
+        auto i = std::find_if(level->instances.begin(), level->instances.end(),
+                              [&](const auto &i) { return i.id == step; });
+        if (i == level->instances.end())
+            break;
+        breadcrumb += " / <a href=\"" + QString::number(++depth) + "\">" +
+                      QString::fromStdString(i->name).toHtmlEscaped() + "</a>";
+        level = &definition(root, i->definition);
+    }
+    if (depth)
+        breadcrumb +=
+            " · " +
+            text(hierarchy_edit_enabled_ ? "definition_shared" : "definition_readonly").toHtmlEscaped();
+    breadcrumbs_->setText(breadcrumb);
+    breadcrumbs_->setToolTip(text("editing_shared_definition"));
+    std::map<std::string, QString> exposed;
+    if (depth)
+        for (const auto &port : definition(root, document_->current_definition()).ports)
+            exposed[endpoint_key(port.terminal)] += QString::fromStdString(port.name) + " ";
+    for (auto &[id, atom] : atoms_)
+        for (auto *dot : atom->childItems())
+            if (dot->data(1).toString() == "port") {
+                const auto label =
+                    exposed[endpoint_key({id, dot->data(2).toString().toStdString()})].trimmed();
+                if (dot->data(7).toString() == label)
+                    continue;
+                dot->setData(7, label);
+                for (auto *old : dot->childItems())
+                    delete old;
+                if (!label.isEmpty()) {
+                    auto *note = new QGraphicsSimpleTextItem(label, dot);
+                    note->setAcceptedMouseButtons(Qt::NoButton);
+                    note->setBrush(QColor("#7351b5"));
+                    auto font = note->font();
+                    font.setPointSize(8);
+                    note->setFont(font);
+                    note->setPos(5, -20);
+                }
+            }
+    hierarchy_->clear();
+    auto *root_item = new QTreeWidgetItem(hierarchy_, {QString::fromStdString(root.name)});
+    root_item->setData(0, Qt::UserRole, QStringList{});
+    std::function<void(QTreeWidgetItem *, const Schematic &, QStringList)> children =
+        [&](QTreeWidgetItem *parent, const Schematic &schematic, QStringList path) {
+            for (const auto &i : schematic.instances) {
+                auto steps = path;
+                steps.push_back(QString::fromStdString(i.id));
+                auto *item = new QTreeWidgetItem(parent, {QString::fromStdString(i.name)});
+                item->setData(0, Qt::UserRole, steps);
+                children(item, definition(root, i.definition), steps);
+            }
+        };
+    children(root_item, root, {});
+    hierarchy_->expandAll();
+    const bool instance = std::any_of(project().instances.begin(), project().instances.end(),
+                                      [&](const auto &i) { return i.id == selected_; });
+    commands_.at("group_subcircuit")->setEnabled(editing_allowed() && !selected_ids().empty());
+    commands_.at("open_internals")->setEnabled(!running() && instance);
+    commands_.at("hierarchy_up")->setEnabled(!running() && !hierarchy_path().empty());
+    commands_.at("edit_definition")->setEnabled(!running() && (instance || !hierarchy_path().empty()));
+    commands_.at("detach_subcircuit")->setEnabled(editing_allowed() && instance);
+    commands_.at("expand_subcircuit")->setEnabled(editing_allowed() && instance);
+    commands_.at("public_interface")
+        ->setEnabled(editing_allowed() && (instance || !hierarchy_path().empty()));
+    commands_.at("insert_subcircuit")->setEnabled(editing_allowed() && !root.definitions.empty());
+    canvas_->set_editable(editing_allowed());
+    library_->setEnabled(editing_allowed());
+}
+std::vector<std::string> EditorWindow::visible_plot_channels(const std::string &id) const {
+    return plot_channels(root_project(), expanded_uuid(hierarchy_path(), id));
+}
+
+void EditorWindow::edit_public_interface(const std::string &definition_id) {
+    Definition edited = definition(root_project(), definition_id);
+    auto body = definition_project(root_project(), definition_id);
+    struct Terminal {
+        QString name;
+        Endpoint endpoint;
+        PortType type;
+    };
+    std::vector<Terminal> terminals;
+    auto terminal = [&](const std::string &id, const std::string &name, const std::string &port) {
+        Endpoint e{id, port};
+        terminals.push_back({QString::fromStdString(name + " / " + port), e, port_type(body, e)});
+    };
+    for (const auto &n : body.nodes)
+        terminal(n.id, n.name, "node");
+    for (const auto &c : body.components) {
+        terminal(c.id, c.name, "p");
+        terminal(c.id, c.name, "n");
+        if (c.kind == Kind::ideal_switch)
+            terminal(c.id, c.name, "gate");
+        if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
+            terminal(c.id, c.name, "out");
+    }
+    for (const auto &g : body.patterns)
+        terminal(g.id, g.name, "out");
+    for (const auto &i : body.instances)
+        for (const auto &port : definition(body, i.definition).ports) {
+            terminal(i.id, i.name, port.id);
+            terminals.back().name = QString::fromStdString(i.name + " / " + port.name);
+        }
+    struct Binding {
+        QString name;
+        std::string object, field, unit;
+        double value;
+    };
+    std::vector<Binding> bindings;
+    for (const auto &c : body.components) {
+        if (c.kind == Kind::resistor || c.kind == Kind::capacitor || c.kind == Kind::inductor ||
+            c.kind == Kind::voltage || c.kind == Kind::current)
+            bindings.push_back({QString::fromStdString(c.name) + " / " + text("value"), c.id, "value",
+                                component_unit(c.kind), c.value});
+        if (c.kind == Kind::capacitor || c.kind == Kind::inductor)
+            bindings.push_back({QString::fromStdString(c.name) + " / " + text("initial"), c.id, "initial",
+                                c.kind == Kind::capacitor ? "V" : "A", c.initial});
+    }
+    for (const auto &i : body.instances)
+        for (const auto &p : definition(body, i.definition).parameters)
+            bindings.push_back(
+                {QString::fromStdString(i.name + " / " + p.name), i.id, p.id, p.unit, p.value});
+    QDialog dialog(this);
+    dialog.setObjectName("public_interface_dialog");
+    dialog.setWindowTitle(text("public_interface") + " · " + QString::fromStdString(edited.name));
+    dialog.resize(730, 440);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *tabs = new QTabWidget;
+    layout->addWidget(tabs);
+    QTableWidget ports(0, 2), parameters(0, 3);
+    ports.setObjectName("public_ports");
+    parameters.setObjectName("public_parameters");
+    ports.setHorizontalHeaderLabels({text("name"), text("internal_terminal")});
+    parameters.setHorizontalHeaderLabels({text("name"), text("parameter_binding"), text("default_value")});
+    auto page = [&](QTableWidget &table, const QString &title, const std::function<void()> &append) {
+        auto *widget = new QWidget;
+        auto *box = new QVBoxLayout(widget);
+        box->addWidget(&table);
+        table.horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+        table.setSelectionBehavior(QAbstractItemView::SelectRows);
+        auto *buttons = new QHBoxLayout;
+        auto *add = new QPushButton(text("add"));
+        add->setObjectName(table.objectName() + "_add");
+        auto *remove = new QPushButton(text("delete"));
+        buttons->addWidget(add);
+        buttons->addWidget(remove);
+        buttons->addStretch();
+        box->addLayout(buttons);
+        connect(add, &QPushButton::clicked, &dialog, append);
+        connect(remove, &QPushButton::clicked, &dialog, [&table] {
+            if (table.currentRow() >= 0)
+                table.removeRow(table.currentRow());
+        });
+        tabs->addTab(widget, title);
+    };
+    auto add_port = [&](const PublicPort &port) {
+        int row = ports.rowCount();
+        ports.insertRow(row);
+        auto *name = new QTableWidgetItem(QString::fromStdString(port.name));
+        name->setData(Qt::UserRole, QString::fromStdString(port.id.empty() ? new_uuid() : port.id));
+        ports.setItem(row, 0, name);
+        auto *combo = new QComboBox;
+        int selected = 0;
+        for (size_t n = 0; n < terminals.size(); ++n) {
+            combo->addItem(terminals[n].name);
+            if (terminals[n].endpoint == port.terminal)
+                selected = int(n);
+        }
+        combo->setCurrentIndex(selected);
+        ports.setCellWidget(row, 1, combo);
+    };
+    auto add_parameter = [&](const PublicParameter &p) {
+        int row = parameters.rowCount();
+        parameters.insertRow(row);
+        auto *name = new QTableWidgetItem(QString::fromStdString(p.name));
+        name->setData(Qt::UserRole, QString::fromStdString(p.id.empty() ? new_uuid() : p.id));
+        parameters.setItem(row, 0, name);
+        auto *combo = new QComboBox;
+        int selected = 0;
+        for (size_t n = 0; n < bindings.size(); ++n) {
+            combo->addItem(bindings[n].name);
+            if (bindings[n].object == p.object && bindings[n].field == p.field)
+                selected = int(n);
+        }
+        combo->setCurrentIndex(selected);
+        parameters.setCellWidget(row, 1, combo);
+        auto *value = new QLineEdit(QString::number(p.value, 'g', 12));
+        normalize_decimal_point(value);
+        parameters.setCellWidget(row, 2, value);
+        connect(combo, &QComboBox::activated, &dialog, [&, value](int n) {
+            value->setText(QString::number(bindings.at(size_t(n)).value, 'g', 12));
+        });
+    };
+    page(ports, text("public_ports"), [&] {
+        if (!terminals.empty())
+            add_port({{}, "port" + std::to_string(ports.rowCount() + 1), terminals.front().endpoint});
+    });
+    page(parameters, text("public_parameters"), [&] {
+        if (!bindings.empty()) {
+            auto b = bindings.front();
+            add_parameter({{},
+                           "parameter" + std::to_string(parameters.rowCount() + 1),
+                           b.unit,
+                           b.object,
+                           b.field,
+                           b.value});
+        }
+    });
+    for (const auto &port : edited.ports)
+        add_port(port);
+    for (const auto &param : edited.parameters)
+        add_parameter(param);
+    auto *error = new QLabel;
+    error->setWordWrap(true);
+    layout->addWidget(error);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        try {
+            auto updated = edited;
+            updated.ports.clear();
+            updated.parameters.clear();
+            for (int row = 0; row < ports.rowCount(); ++row) {
+                auto *combo = qobject_cast<QComboBox *>(ports.cellWidget(row, 1));
+                const auto &t = terminals.at(size_t(combo->currentIndex()));
+                updated.ports.push_back({ports.item(row, 0)->data(Qt::UserRole).toString().toStdString(),
+                                         ports.item(row, 0)->text().trimmed().toStdString(), t.endpoint,
+                                         t.type.domain, t.type.direction});
+            }
+            for (int row = 0; row < parameters.rowCount(); ++row) {
+                auto *combo = qobject_cast<QComboBox *>(parameters.cellWidget(row, 1));
+                auto b = bindings.at(size_t(combo->currentIndex()));
+                auto value = parse_si(
+                    qobject_cast<QLineEdit *>(parameters.cellWidget(row, 2))->text().toStdString(), b.unit);
+                updated.parameters.push_back(
+                    {parameters.item(row, 0)->data(Qt::UserRole).toString().toStdString(),
+                     parameters.item(row, 0)->text().trimmed().toStdString(), b.unit, b.object, b.field,
+                     value});
+            }
+            document_->edit_definition(definition_id, [&](Definition &d) {
+                d.ports = updated.ports;
+                d.parameters = updated.parameters;
+            });
+            dialog.accept();
+        } catch (const std::exception &e) {
+            error->setText(QString::fromUtf8(e.what()));
+        }
+    });
+    if (dialog.exec() == QDialog::Accepted)
+        refresh();
+}
+} // namespace pds::desktop

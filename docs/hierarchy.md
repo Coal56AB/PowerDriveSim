@@ -16,7 +16,11 @@ The complete catalog is checked for missing definitions, invalid local UUIDs, in
 
 `Document` provides grouping from selection, adding an instance, editing a shared definition, deep detach and replacement with editable atoms. Boundary wires become public ports when grouping. Detach copies reachable definitions and retains local object UUIDs. Each operation is one undoable transaction. Clipboard imports preserve conflicting definitions by assigning a separate catalog identity.
 
-These APIs are the model layer; desktop navigation and public-port editing are the next integration step.
+The desktop uses the same transactions for grouping, insertion, detach and expansion. Breadcrumbs and the hierarchy tree navigate between levels. Opening internals initially shows a read-only shared definition; Edit definition enables changes affecting all linked instances. Public ports and numeric parameter bindings are editable in a dialog. Instance parameter overrides are shown in the Inspector. Run, save and autosave always operate on the complete root project, including when an internal level is open. Undo/redo restores the corresponding navigation level.
+
+Grouping inside a definition preserves its enclosing public ports and parameter bindings. Expanded UUIDs compose from the leaf outward, so replacing a nested instance with atoms preserves result identities. Recording subscriptions are remapped for all linked instances when grouping changes object paths.
+
+Remaining integration work includes keeping graph windows open across level changes and independent persistent graph views for repeated instances.
 
 ## Schema 7
 
@@ -24,4 +28,4 @@ The loader migrates schema 1–6 to 7. Existing flat records retain their meanin
 
 ## Verification
 
-The hierarchy test compares two parameterized RC instances with the analytical transient, checks independent initial states, nested source mapping and order independence, then exercises serialization, cycles, missing references, port mismatches, addressed diagnostics, deep detach, shared edits, expansion, grouping, clipboard conflicts and undo/redo. Public gate fanout and external graph taps are checked separately. The complete Windows Release suite passed 14/14 groups on 16 September 2026.
+The hierarchy test compares two parameterized RC instances with the analytical transient, checks independent initial states, nested source mapping and order independence, then exercises serialization, cycles, missing references, port mismatches, addressed diagnostics, deep detach, shared edits, expansion, grouping, clipboard conflicts and undo/redo. Public gate fanout and external graph taps are checked separately. Desktop tests exercise grouping, internal navigation, shared editing, simulation/save from an internal level, detach/expand, the public interface dialog and instance overrides. The complete Windows Release suite passed 14/14 groups on 16 September 2026 (5.55 s). The two new desktop scenarios also passed using the native Windows platform at 100% and 200% DPI; captured root-level windows were visually checked.

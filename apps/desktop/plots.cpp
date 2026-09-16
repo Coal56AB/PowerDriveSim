@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/ui_icons.hpp"
+#include "core/model/hierarchy.hpp"
 #include <QCheckBox>
 #include <QDialog>
 #include <QGraphicsPathItem>
@@ -62,8 +63,9 @@ std::vector<std::string> EditorWindow::recording_keys() const {
     std::set<std::string> keys;
     if (project().scope_enabled)
         keys.insert(project().scope_channels.begin(), project().scope_channels.end());
-    for (const auto &plot : project().plots) {
-        auto connected = plot_channels(project(), plot.id);
+    const auto flat = flatten(root_project()).project;
+    for (const auto &plot : flat.plots) {
+        auto connected = plot_channels(flat, plot.id);
         keys.insert(connected.begin(), connected.end());
     }
     return {keys.begin(), keys.end()};
@@ -179,7 +181,7 @@ void EditorWindow::refresh_channel_catalog() {
         channels_->currentItem() ? channels_->currentItem()->data(Qt::UserRole) : QVariant();
     channels_->clear();
     try {
-        for (const auto &channel : available_channels(compile(project()))) {
+        for (const auto &channel : available_channels(compile(root_project()))) {
             auto *item = new QListWidgetItem(QString::fromStdString(channel.name + " [" + channel.unit + "]"),
                                              channels_);
             item->setData(Qt::UserRole, QString::fromStdString(channel.object));
@@ -199,10 +201,12 @@ void EditorWindow::refresh_channel_catalog() {
 void EditorWindow::observe_object(const std::string &id) {
     if (running())
         return;
-    auto resolved = resolve_connections(project());
+    auto resolved = resolve_connections(root_project());
     std::string key;
     auto net = [&](const Endpoint &endpoint) {
-        auto i = resolved.nets.find(endpoint_key(endpoint));
+        auto global = endpoint;
+        global.object = expanded_uuid(hierarchy_path(), endpoint.object);
+        auto i = resolved.nets.find(endpoint_key(global));
         if (i != resolved.nets.end())
             key = i->second;
     };
@@ -213,7 +217,12 @@ void EditorWindow::observe_object(const std::string &id) {
                 net(w.from);
             else {
                 auto source = type.direction == Direction::output ? w.from : w.to;
-                key = (port_type(project(), source).domain == Domain::gate ? "gate/" : "") + source.object;
+                auto global = source;
+                global.object = expanded_uuid(hierarchy_path(), source.object);
+                auto expanded = flatten(root_project());
+                auto alias = expanded.terminals.find(endpoint_key(global));
+                key = (port_type(project(), source).domain == Domain::gate ? "gate/" : "") +
+                      (alias == expanded.terminals.end() ? global.object : alias->second.object);
             }
         }
     for (const auto &node : project().nodes)
@@ -282,7 +291,7 @@ void EditorWindow::open_plot(const std::string &id) {
     plot_windows_[id] = window;
     plot_views_[id] = view;
     connect(export_button, &QPushButton::clicked, this,
-            [this, id] { export_csv(plot_channels(project(), id)); });
+            [this, id] { export_csv(visible_plot_channels(id)); });
     view->changed = [this, id](double a, double b, double ca, double cb) {
         document_->set_view(id, a, b, ca, cb);
         if (plot_views_[id]) {
@@ -307,7 +316,7 @@ void EditorWindow::update_graphs() {
         }
         window->setWindowTitle(QString::fromStdString(plot->name) + " · PowerDriveSim");
         window->findChild<QLabel *>("plot_heading")->setText(QString::fromStdString(plot->name));
-        auto keys = plot_channels(project(), id);
+        auto keys = visible_plot_channels(id);
         auto indexes = result_indices(keys);
         window->findChild<QPushButton *>("plot_export")
             ->setEnabled(result_ && !result_->samples.empty() && !indexes.empty());

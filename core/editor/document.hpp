@@ -11,7 +11,11 @@ struct WireAnchor {
 class Document {
 public:
     explicit Document(Project project);
-    const Project& project() const { return current_; }
+    const Project& project() const { return location_.empty()?current_:view_; }
+    const Project& root_project() const { return current_; }
+    const std::vector<std::string>& location() const { return location_; }
+    std::string current_definition() const;
+    void navigate(const std::vector<std::string>& path);
     void apply(const std::string& label,const std::function<void(Project&)>& change);
     bool can_undo() const { return !undo_.empty(); }
     bool can_redo() const { return !redo_.empty(); }
@@ -39,8 +43,11 @@ public:
     void detach_instance(const std::string& id);
     void expand_instance(const std::string& id);
 private:
-    struct Change { std::string label; Project before,after; };
-    Project current_;
+    struct Change { std::string label; Project before,after; std::vector<std::string> before_path,after_path; };
+    Project current_,view_;
+    std::vector<std::string> location_;
+    void rebuild_view();
+    Project merge_view(const Project& view) const;
     std::vector<Change> undo_,redo_;
 };
 bool same_simulation(const Project& a, const Project& b);

@@ -98,6 +98,15 @@ int main() try {
         require(ir.origins.at(node) == ObjectPath{{id(20 + n)}, id(11)}, "Source mapping");
     }
     auto permuted = p;
+    auto oriented = p;
+    oriented.instances[0].orientation = {1, true};
+    oriented.definitions[0].components[1].orientation = {1, false};
+    auto geometry = flatten(oriented).project;
+    auto rotated = std::find_if(geometry.components.begin(), geometry.components.end(),
+                                [&](const auto &c) { return c.id == expanded_uuid({id(20)}, id(13)); });
+    require(rotated != geometry.components.end() && rotated->x == -100 && rotated->y == 100 &&
+                rotated->orientation == Orientation{2, true},
+            "Flatten uses the canvas rotation/mirror convention");
     std::reverse(permuted.instances.begin(), permuted.instances.end());
     std::reverse(permuted.wires.begin(), permuted.wires.end());
     require(execute(compile(permuted)).samples.back().values == result.samples.back().values,
@@ -218,6 +227,57 @@ int main() try {
     text.erase(text.rfind("end_definition"));
     std::istringstream broken(text);
     error("parse_error", [&] { read_project(broken); });
+    Document navigating(nested());
+    const auto unedited = navigating.root_project();
+    navigating.navigate({id(20), id(31)});
+    require(navigating.project().id != navigating.root_project().id &&
+                navigating.project().components.size() == 2,
+            "Active hierarchy view");
+    navigating.apply("Edit inside", [](Project &v) { v.components[0].value = 3000; });
+    require(definition(navigating.root_project(), id(10)).parameters[0].value == 3000,
+            "Internal bound edits update shared defaults");
+    require(navigating.root_project().instances.size() == 2, "Editing view retains root instances");
+    std::ostringstream whole;
+    write_project(navigating.root_project(), whole);
+    std::istringstream saved(whole.str());
+    require(read_project(saved) == navigating.root_project(),
+            "Save from an internal view retains the full project");
+    navigating.undo();
+    require(navigating.location().size() == 2 && navigating.root_project() == unedited,
+            "Undo inside definition");
+    navigating.undo();
+    require(navigating.location().empty(), "Undo navigation");
+    navigating.redo();
+    require(navigating.location().size() == 2, "Redo navigation");
+    navigating.redo();
+    require(navigating.project().components[0].value == 3000, "Redo shared edit");
+    navigating.apply("Record both instances", [](Project &p) {
+        p.scope_enabled = true;
+        p.scope_channels = {expanded_uuid({id(20), id(31)}, id(12)), expanded_uuid({id(21), id(31)}, id(12))};
+    });
+    const auto grouped_inside = navigating.create_definition({id(12)}, "Inner resistor");
+    require(navigating.root_project().scope_channels ==
+                std::vector<std::string>{expanded_uuid({id(20), id(31), grouped_inside}, id(12)),
+                                         expanded_uuid({id(21), id(31), grouped_inside}, id(12))},
+            "Grouping remaps recording in every linked instance");
+    require(definition(navigating.root_project(), id(10)).ports[0].terminal.object == grouped_inside,
+            "Grouping preserves enclosing public port");
+    require(definition(navigating.root_project(), id(10)).parameters[0].object == grouped_inside,
+            "Grouping preserves enclosing parameter binding");
+    auto nested_before = execute(compile(navigating.root_project()));
+    navigating.expand_instance(grouped_inside);
+    auto nested_after = execute(compile(navigating.root_project()));
+    require(nested_after.samples.back().values == nested_before.samples.back().values,
+            "Nested expansion retains the full numerical result and UUID ordering");
+    for (size_t c = 0; c < nested_before.channels.size(); ++c) {
+        // Component UUIDs at the edited level change after explicit replacement;
+        // unaffected output nodes retain their identities and physical response.
+        auto object = nested_before.channels[c].object;
+        if (object == expanded_uuid({id(20), id(31)}, id(11)) ||
+            object == expanded_uuid({id(21), id(31)}, id(11)))
+            require(std::abs(output(nested_before, object) - output(nested_after, object)) < 1e-10,
+                    "Internal expansion preserves public bindings and physics");
+    }
     std::cout << "Hierarchy: numerical, isolation, nesting, round trip, diagnostics, detach, grouping, "
                  "expansion, clipboard and history passed\n";
     return 0;

@@ -6,43 +6,59 @@
 #include <cmath>
 #include <limits>
 namespace pds {
+namespace {
+void preserve_views(Project& to,const Project& from) {
+    auto preserve=[](Schematic& target,const Schematic& prior) {
+        for(auto& plot:target.plots)for(const auto& old:prior.plots)if(old.id==plot.id){plot.begin=old.begin;plot.end=old.end;plot.cursor_a=old.cursor_a;plot.cursor_b=old.cursor_b;}
+        for(const auto& options:prior.view_options)if(options.plot.empty()||std::any_of(target.plots.begin(),target.plots.end(),[&](const auto& plot){return plot.id==options.plot;})) {
+            auto item=std::find_if(target.view_options.begin(),target.view_options.end(),[&](const auto& v){return v.plot==options.plot;});
+            if(item==target.view_options.end())target.view_options.push_back(options);else *item=options;
+        }
+    };
+    preserve(to,from);for(auto& d:to.definitions)for(const auto& old:from.definitions)if(d.id==old.id)preserve(d,old);
+}
+}
 Document::Document(Project p):current_(make_wired(p)){}
 void Document::apply(const std::string& label,const std::function<void(Project&)>& change) {
-    auto next=current_; change(next);
+    auto edited=project();change(edited);
+    auto next=merge_view(edited);
     if(next == current_) return;
     // Connectivity is validated without solving an incomplete circuit.
     validate_hierarchy(next);
     (void)resolve_connections(next);
-    undo_.push_back({label,current_,next});
+    undo_.push_back({label,current_,next,location_,location_});
     if(undo_.size()>100) undo_.erase(undo_.begin());
-    current_=std::move(next); redo_.clear();
+    current_=std::move(next); redo_.clear();rebuild_view();
 }
 void Document::undo() {
     if(undo_.empty()) return;
     auto change=std::move(undo_.back()); undo_.pop_back();
-    auto views=current_; current_=change.before;
-    for(const auto& options:views.view_options)set_view_options(options);
-    set_view("",views.scope_begin,views.scope_end,views.cursor_a,views.cursor_b);
-    for(const auto& plot:views.plots) set_view(plot.id,plot.begin,plot.end,plot.cursor_a,plot.cursor_b);
+    auto views=current_; current_=change.before;location_=change.before_path;
+    preserve_views(current_,views);
+    current_.scope_begin=views.scope_begin;current_.scope_end=views.scope_end;current_.cursor_a=views.cursor_a;current_.cursor_b=views.cursor_b;
+    rebuild_view();
     redo_.push_back(std::move(change));
 }
 void Document::redo() {
     if(redo_.empty()) return;
     auto change=std::move(redo_.back()); redo_.pop_back();
-    auto views=current_; current_=change.after;
-    for(const auto& options:views.view_options)set_view_options(options);
-    set_view("",views.scope_begin,views.scope_end,views.cursor_a,views.cursor_b);
-    for(const auto& plot:views.plots) set_view(plot.id,plot.begin,plot.end,plot.cursor_a,plot.cursor_b);
+    auto views=current_; current_=change.after;location_=change.after_path;
+    preserve_views(current_,views);
+    current_.scope_begin=views.scope_begin;current_.scope_end=views.scope_end;current_.cursor_a=views.cursor_a;current_.cursor_b=views.cursor_b;
+    rebuild_view();
     undo_.push_back(std::move(change));
 }
 void Document::set_view(const std::string& id,double begin,double end,double a,double b) {
     if(id.empty()){current_.scope_begin=begin;current_.scope_end=end;current_.cursor_a=a;current_.cursor_b=b;}
-    else for(auto& plot:current_.plots) if(plot.id==id){plot.begin=begin;plot.end=end;plot.cursor_a=a;plot.cursor_b=b;break;}
+    else {auto view=project();for(auto& plot:view.plots)if(plot.id==id){plot.begin=begin;plot.end=end;plot.cursor_a=a;plot.cursor_b=b;break;}current_=merge_view(view);}
+    rebuild_view();
 }
 void Document::set_view_options(const ViewOptions& options) {
-    if(!options.plot.empty()&&std::none_of(current_.plots.begin(),current_.plots.end(),[&](const PlotBlock& p){return p.id==options.plot;}))return;
-    auto it=std::find_if(current_.view_options.begin(),current_.view_options.end(),[&](const ViewOptions& o){return o.plot==options.plot;});
-    if(it==current_.view_options.end())current_.view_options.push_back(options);else *it=options;
+    auto view=project();
+    if(!options.plot.empty()&&std::none_of(view.plots.begin(),view.plots.end(),[&](const PlotBlock& p){return p.id==options.plot;}))return;
+    auto it=std::find_if(view.view_options.begin(),view.view_options.end(),[&](const ViewOptions& o){return o.plot==options.plot;});
+    if(it==view.view_options.end())view.view_options.push_back(options);else *it=options;
+    current_=merge_view(view);rebuild_view();
 }
 bool same_simulation(const Project& a,const Project& b) {
     auto normalize=[](Project p){
@@ -124,17 +140,17 @@ void Document::connect_anchors(WireAnchor from,WireAnchor to,const std::vector<P
     });
 }
 Project Document::copy(const std::vector<std::string>& list) const {
-    std::set<std::string> ids(list.begin(),list.end());Project result;result.id=new_uuid();result.name="Clipboard";result.profile=current_.profile;result.wired=true;
-    for(const auto& c:current_.components)if(ids.count(c.id))result.components.push_back(c);
-    for(const auto& n:current_.nodes)if(ids.count(n.id))result.nodes.push_back(n);
-    for(const auto& g:current_.patterns)if(ids.count(g.id))result.patterns.push_back(g);
-    for(const auto& g:current_.plots)if(ids.count(g.id))result.plots.push_back(g);
-    for(const auto& i:current_.instances)if(ids.count(i.id))result.instances.push_back(i);
-    if(!result.instances.empty())result.definitions=current_.definitions;
-    for(const auto& w:current_.wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
-    for(const auto& e:current_.events)if(ids.count(e.target))result.events.push_back(e);
-    for(const auto& options:current_.view_options)if(ids.count(options.plot))result.view_options.push_back(options);
-    for(const auto& label:current_.labels)if(ids.count(label.object))result.labels.push_back(label);
+    std::set<std::string> ids(list.begin(),list.end());Project result;result.id=new_uuid();result.name="Clipboard";result.profile=project().profile;result.wired=true;
+    for(const auto& c:project().components)if(ids.count(c.id))result.components.push_back(c);
+    for(const auto& n:project().nodes)if(ids.count(n.id))result.nodes.push_back(n);
+    for(const auto& g:project().patterns)if(ids.count(g.id))result.patterns.push_back(g);
+    for(const auto& g:project().plots)if(ids.count(g.id))result.plots.push_back(g);
+    for(const auto& i:project().instances)if(ids.count(i.id))result.instances.push_back(i);
+    if(!result.instances.empty())result.definitions=project().definitions;
+    for(const auto& w:project().wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
+    for(const auto& e:project().events)if(ids.count(e.target))result.events.push_back(e);
+    for(const auto& options:project().view_options)if(ids.count(options.plot))result.view_options.push_back(options);
+    for(const auto& label:project().labels)if(ids.count(label.object))result.labels.push_back(label);
     return result;
 }
 std::vector<std::string> Document::paste(const Project& source,double dx,double dy){
