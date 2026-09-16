@@ -18,12 +18,16 @@
 #include <set>
 namespace pds::desktop {
 void EditorWindow::append_simulation_result(Result batch) {
+    batch.accepted_steps += continuation_steps_;
     if (!result_) {
         result_ = std::move(batch);
         return;
     }
     auto samples = std::move(result_->samples);
-    samples.insert(samples.end(), std::make_move_iterator(batch.samples.begin()),
+    auto first = batch.samples.begin();
+    if (!samples.empty() && first != batch.samples.end() && samples.back().time == first->time)
+        ++first; // A resumed run publishes its checkpoint endpoint once more.
+    samples.insert(samples.end(), std::make_move_iterator(first),
                    std::make_move_iterator(batch.samples.end()));
     result_ = std::move(batch);
     result_->samples = std::move(samples);

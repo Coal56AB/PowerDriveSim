@@ -1790,6 +1790,94 @@ class InteractionTests : public QObject {
         next.show_shortcuts();
         QVERIFY(loaded);
     }
+    void simulation_snapshots_and_step() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        ready(w);
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        w.set_scope_enabled(true);
+        auto *list = w.findChild<QListWidget *>("channels");
+        QVERIFY(list && list->count());
+        list->item(0)->setCheckState(Qt::Checked);
+        auto *step = w.findChild<QAction *>("action_simulation_step");
+        auto *resume = w.findChild<QAction *>("action_continue_state");
+        auto *save = w.findChild<QAction *>("action_snapshot_save");
+        QVERIFY(step && resume && save);
+        QVERIFY(step->isEnabled());
+        QVERIFY(!resume->isEnabled() && !save->isEnabled());
+        step->trigger();
+        QVERIFY(w.running());
+        QVERIFY(!step->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.simulation_snapshot());
+        QCOMPARE(w.result().accepted_steps, size_t(1));
+        QCOMPARE(w.result().samples.size(), size_t(2));
+        QVERIFY(resume->isEnabled() && save->isEnabled());
+        step->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QCOMPARE(w.result().accepted_steps, size_t(2));
+        QCOMPARE(w.result().samples.size(), size_t(3));
+        const auto checkpoint = *w.simulation_snapshot();
+        if (!qEnvironmentVariableIsEmpty("PDS_SNAPSHOT_SCREENSHOT")) {
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+            w.findChild<QTabWidget *>("results_tabs")->setCurrentIndex(1);
+            QVERIFY(w.grab().save(qEnvironmentVariable("PDS_SNAPSHOT_SCREENSHOT") + ".step.png"));
+        }
+        const auto path = dir.filePath("state.pdss");
+        QVERIFY(w.save_simulation_snapshot(path));
+        Recording recording;
+        recording.all = false;
+        recording.channels = w.project().scope_channels;
+        const auto expected = execute(compile(w.root_project()), nullptr, nullptr, &recording);
+        resume->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QCOMPARE(w.result().accepted_steps, expected.accepted_steps);
+        QCOMPARE(w.result().samples.size(), expected.samples.size());
+        for (size_t i = 0; i < expected.samples.size(); ++i) {
+            QCOMPARE(w.result().samples[i].time, expected.samples[i].time);
+            QCOMPARE(w.result().samples[i].values, expected.samples[i].values);
+        }
+        QVERIFY(w.load_simulation_snapshot(path));
+        QVERIFY(!w.has_result());
+        QCOMPARE(*w.simulation_snapshot(), checkpoint);
+        w.continue_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QCOMPARE(w.result().samples.size(), expected.samples.size() - 2);
+        for (size_t i = 0; i < w.result().samples.size(); ++i) {
+            QCOMPARE(w.result().samples[i].time, expected.samples[i + 2].time);
+            QCOMPARE(w.result().samples[i].values, expected.samples[i + 2].values);
+        }
+        const auto completed = *w.simulation_snapshot();
+        w.findChild<QLineEdit *>("sim_step")->setText("2e-6");
+        QVERIFY(!w.load_simulation_snapshot(path));
+        QCOMPARE(*w.simulation_snapshot(), completed);
+        w.findChild<QLineEdit *>("sim_step")->setText(QString::number(w.project().profile.step, 'g', 17));
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QCOMPARE(w.result().samples.front().time, 0.0);
+        if (!qEnvironmentVariableIsEmpty("PDS_SNAPSHOT_SCREENSHOT"))
+            QVERIFY(w.grab().save(qEnvironmentVariable("PDS_SNAPSHOT_SCREENSHOT")));
+        w.set_project(w.root_project());
+        QVERIFY(!w.simulation_snapshot());
+        QVERIFY(!save->isEnabled() && !resume->isEnabled());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/diode-freewheel.pds"));
+        w.set_scope_enabled(true);
+        list = w.findChild<QListWidget *>("channels");
+        bool gate_selected = false;
+        for (int i = 0; i < list->count(); ++i) {
+            const bool gate = list->item(i)->data(Qt::UserRole).toString().startsWith("gate/");
+            list->item(i)->setCheckState(gate ? Qt::Checked : Qt::Unchecked);
+            gate_selected |= gate;
+        }
+        QVERIFY(gate_selected);
+        for (int i = 0; i < 2; ++i) {
+            w.step_simulation();
+            QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        }
+        QVERIFY(!w.result().gate_objects.empty());
+        QCOMPARE(w.result().samples.size(), size_t(3));
+        QCOMPARE(w.result().accepted_steps, size_t(2));
+    }
     void live_simulation_pause_and_stop() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
@@ -1828,6 +1916,14 @@ class InteractionTests : public QObject {
         QVERIFY(w.result().cancelled);
         for (size_t i = 1; i < w.result().samples.size(); ++i)
             QVERIFY(w.result().samples[i].time > w.result().samples[i - 1].time);
+        QVERIFY(w.simulation_snapshot());
+        const auto stopped_samples = w.result().samples.size();
+        const auto stopped_steps = w.result().accepted_steps;
+        w.step_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QCOMPARE(w.result().accepted_steps, stopped_steps + 1);
+        QCOMPARE(w.result().samples.size(), stopped_samples + 1);
+        QVERIFY(!w.result().cancelled);
     }
     void inline_labels_and_configured_properties() {
         QTemporaryDir dir, configs;

@@ -24,6 +24,8 @@ enum class UiIcon {
     play,
     pause,
     stop,
+    continue_run,
+    step,
     undock,
     dock,
     visible,
@@ -157,6 +159,14 @@ class UiIconEngine final : public QIconEngine {
             p->setBrush(color);
             p->drawRect(QRectF(6, 4, 4, 16));
             p->drawRect(QRectF(15, 4, 4, 16));
+            break;
+        case UiIcon::continue_run:
+        case UiIcon::step:
+            p->drawPolygon(QPolygonF{{6, 5}, {17, 12}, {6, 19}});
+            if (kind_ == UiIcon::step)
+                line(21, 5, 21, 19);
+            else
+                line(2, 5, 2, 19);
             break;
         case UiIcon::stop:
             p->setBrush(color);

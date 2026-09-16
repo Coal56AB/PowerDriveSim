@@ -1,4 +1,12 @@
 {
+  "simulation_menu": "Расчёт",
+  "continue_state": "Продолжить из состояния",
+  "simulation_step": "Один шаг расчёта",
+  "snapshot_save": "Сохранить состояние расчёта…",
+  "snapshot_load": "Загрузить состояние расчёта…",
+  "snapshot_filter": "Состояние PowerDriveSim (*.pdss)",
+  "snapshot_saved": "Состояние сохранено · t = %1 с",
+  "snapshot_loaded": "Состояние загружено · t = %1 с · Можно продолжить или выполнить один шаг",
   "untitled": "Новая схема",
   "new": "Новая",
   "open": "Открыть",

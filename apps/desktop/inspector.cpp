@@ -59,6 +59,22 @@ void EditorWindow::update_command_state() {
         method_->setEnabled(!running());
     if (apply_button_)
         apply_button_->setEnabled(editing_allowed());
+    bool can_advance = true;
+    if (continuation_ && stop_) {
+        try {
+            can_advance = continuation_->time < parse_si(stop_->text().toStdString(), "s");
+        } catch (const std::exception &) {
+            can_advance = false;
+        }
+    }
+    for (const char *key : {"snapshot_save", "snapshot_load", "continue_state", "simulation_step"}) {
+        auto action = commands_.find(key);
+        if (action != commands_.end())
+            action->second->setEnabled(!running() &&
+                ((std::string(key) != "continue_state" && std::string(key) != "simulation_step") || can_advance) &&
+                ((std::string(key) != "snapshot_save" && std::string(key) != "continue_state") ||
+                 continuation_.has_value()));
+    }
 
     auto *focus = QApplication::focusWidget();
     bool editing = qobject_cast<QLineEdit *>(focus) || qobject_cast<QPlainTextEdit *>(focus) ||

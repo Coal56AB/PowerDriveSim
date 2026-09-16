@@ -1,4 +1,12 @@
 {
+  "simulation_menu": "Simulation",
+  "continue_state": "Continue from state",
+  "simulation_step": "Single simulation step",
+  "snapshot_save": "Save simulation state…",
+  "snapshot_load": "Load simulation state…",
+  "snapshot_filter": "PowerDriveSim state (*.pdss)",
+  "snapshot_saved": "State saved · t = %1 s",
+  "snapshot_loaded": "State loaded · t = %1 s · Continue or take a single step",
   "untitled": "New circuit",
   "new": "New",
   "open": "Open",

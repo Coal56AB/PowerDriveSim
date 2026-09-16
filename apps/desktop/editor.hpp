@@ -269,6 +269,11 @@ class EditorWindow : public QMainWindow {
     QPointF port_position(const Endpoint &endpoint) const;
     void start_simulation();
     void stop_simulation();
+    void continue_simulation();
+    void step_simulation();
+    bool save_simulation_snapshot(const QString &path);
+    bool load_simulation_snapshot(const QString &path);
+    const std::optional<SimulationSnapshot> &simulation_snapshot() const { return continuation_; }
     void undo();
     void redo();
     void select_object(const std::string &id);
@@ -330,6 +335,9 @@ class EditorWindow : public QMainWindow {
     void drain_simulation_stream();
     void append_simulation_result(Result result);
     void update_run_button();
+    void launch_simulation(std::optional<SimulationSnapshot> state, size_t max_steps = 0);
+    std::optional<SimulationSnapshot> continuation_;
+    size_t continuation_steps_ = 0;
     std::atomic<double> simulated_time_{0};
     std::atomic_bool preparing_{false};
     QElapsedTimer simulation_timer_;

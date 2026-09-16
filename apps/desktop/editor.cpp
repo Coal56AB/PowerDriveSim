@@ -843,6 +843,20 @@ void EditorWindow::build_ui() {
             if (auto *scope = dynamic_cast<Scope *>(widget))
                 scope->refresh_theme();
     });
+    auto *simulation_menu = menuBar()->addMenu(text("simulation_menu"));
+    auto *continue_action = action(simulation_menu, "continue_state", {}, [this] { continue_simulation(); });
+    auto *step_action = action(simulation_menu, "simulation_step", QKeySequence("F10"), [this] { step_simulation(); });
+    simulation_menu->addSeparator();
+    action(simulation_menu, "snapshot_save", {}, [this] {
+        auto path = QFileDialog::getSaveFileName(this, text("snapshot_save"), {}, text("snapshot_filter"));
+        if (!path.isEmpty())
+            save_simulation_snapshot(path);
+    });
+    action(simulation_menu, "snapshot_load", {}, [this] {
+        auto path = QFileDialog::getOpenFileName(this, text("snapshot_load"), {}, text("snapshot_filter"));
+        if (!path.isEmpty())
+            load_simulation_snapshot(path);
+    });
     auto *examples = menuBar()->addMenu(text("examples"));
     QDir dir(QCoreApplication::applicationDirPath() + "/examples");
     for (const auto &file : dir.entryList({"*.pds"}, QDir::Files))
@@ -888,6 +902,9 @@ void EditorWindow::build_ui() {
     run_button->setFixedSize(132, 36);
     toolbar->addWidget(run_button);
     stop_action_ = action(nullptr, "stop", QKeySequence("Escape"), [this] { stop_simulation(); });
+    simulation_menu->insertAction(continue_action, run_);
+    simulation_menu->insertAction(continue_action, stop_action_);
+    simulation_menu->insertSeparator(continue_action);
     auto *stop_button = new QToolButton;
     stop_button->setObjectName("stop_button");
     stop_button->setDefaultAction(stop_action_);
@@ -896,6 +913,17 @@ void EditorWindow::build_ui() {
     stop_button->setIconSize({16, 16});
     stop_button->setFixedSize(132, 36);
     toolbar->addWidget(stop_button);
+    for (auto [command, icon] : {std::pair{continue_action, UiIcon::continue_run},
+                               std::pair{step_action, UiIcon::step}}) {
+        command->setIcon(ui_icon(icon));
+        auto *button = new QToolButton;
+        button->setDefaultAction(command);
+        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        button->setIconSize({20, 20});
+        button->setFixedSize(36, 36);
+        button->setStyleSheet("QToolButton{padding:4px;}");
+        toolbar->addWidget(button);
+    }
     auto *spacer = new QWidget;
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolbar->addWidget(spacer);
@@ -1195,6 +1223,7 @@ void EditorWindow::set_project(Project p) {
     drafts_.clear();
     inspector_id_.clear();
     clear_result();
+    continuation_.reset();
     document_ = std::make_unique<Document>(std::move(p));
     delete scope_content_;
     scope_content_ = nullptr;
@@ -1997,6 +2026,11 @@ void EditorWindow::start_simulation() {
         }
         return;
     }
+    launch_simulation(std::nullopt);
+}
+void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, size_t max_steps) {
+    if (running())
+        return;
     simulation_timer_.start();
     if (!commit_inline_edit())
         return;
@@ -2011,7 +2045,21 @@ void EditorWindow::start_simulation() {
         stop_->setText(QString::number(profile.stop, 'g', 12));
         step_->setText(QString::number(profile.step, 'g', 12));
         errors_->clear();
-        clear_result();
+        const auto keys = recording_keys();
+        std::set<std::string> recorded;
+        if (result_) {
+            for (const auto &channel : result_->channels)
+                recorded.insert(channel.object);
+            for (const auto &gate : result_->gate_objects)
+                recorded.insert("gate/" + gate);
+        }
+        const bool append = state && result_ && result_->snapshot == state &&
+                            recorded == std::set<std::string>(keys.begin(), keys.end());
+        continuation_steps_ = append ? result_->accepted_steps : 0;
+        if (!append)
+            clear_result();
+        if (!state)
+            continuation_.reset();
         {
             std::lock_guard lock(stream_mutex_);
             stream_queue_.clear();
@@ -2025,7 +2073,7 @@ void EditorWindow::start_simulation() {
         scope_enable_->setEnabled(false);
         cancel_ = false;
         paused_ = false;
-        simulated_time_ = 0;
+        simulated_time_ = state ? state->time : 0;
         preparing_ = true;
 
         canvas_->set_editable(false);
@@ -2038,8 +2086,7 @@ void EditorWindow::start_simulation() {
         update_run_button();
         update_command_state();
         const auto snapshot = root_project();
-        const auto keys = recording_keys();
-        watcher_.setFuture(QtConcurrent::run([this, snapshot, keys] {
+        watcher_.setFuture(QtConcurrent::run([this, snapshot, keys, state = std::move(state), max_steps] {
             Outcome outcome;
             QElapsedTimer timer;
             timer.start();
@@ -2055,11 +2102,15 @@ void EditorWindow::start_simulation() {
                 outcome.preparation_seconds = timer.nsecsElapsed() / 1e9;
                 preparing_ = false;
                 timer.restart();
+                ExecutionOptions options;
+                options.resume = state ? &*state : nullptr;
+                options.capture_snapshot = true;
+                options.max_steps = max_steps;
                 outcome.result =
                     execute(ir, &cancel_, &simulated_time_, &plan, &paused_, [this](Result &&batch) {
                         std::lock_guard lock(stream_mutex_);
                         stream_queue_.push_back(std::move(batch));
-                    });
+                    }, &options);
                 outcome.execution_seconds = timer.nsecsElapsed() / 1e9;
             } catch (const Diagnostic &e) {
                 outcome.error = q(e.code) + ": " + QString::fromUtf8(e.what());
@@ -2123,6 +2174,8 @@ void EditorWindow::finish_simulation() {
         return;
     }
     append_simulation_result(std::move(*outcome.result));
+    continuation_ = result_->snapshot;
+    update_command_state();
     findChild<QLabel *>("diagnostic_status")
         ->setText(text(result_->cancelled ? "cancelled" : "diagnostics_ok") + " · " +
                   QString::number(result_->accepted_steps) + " " + text("steps"));
