@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QSettings>
+#include <QHeaderView>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
@@ -21,15 +22,31 @@ namespace {
 std::map<std::string, int> definition_icons;
 }
 int definition_icon_id(const std::string &id) {
+    if (id == "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70")
+        return 250;
+    if (id == "a4c4e197-11d8-5be1-9d41-71d772ca9ac1")
+        return 251;
+    if (id == "1a963f2c-ceb8-5cce-b927-44d735ec9e80")
+        return 280;
+    if (id == "eb613164-faf4-5b03-9014-806885fef344")
+        return 281;
+    if (id == "74a617da-88f1-5a89-bec5-a6a7f92b1000")
+        return 282;
+    if (id == "7947b68c-41de-59de-aa7e-fe70a3849762")
+        return 260;
+    if (id == "8cdac591-b468-5d74-8b29-c4c34714c7a0")
+        return 261;
+    if (id == "d745e2d9-4d37-5c64-97d7-45d87d506cb8")
+        return 270;
     const auto found = definition_icons.find(id);
     return found == definition_icons.end() ? -1 : found->second;
 }
 QIcon component_icon(int id) {
-    QPixmap image(64, 64);
+    QPixmap image(128, 128);
     image.fill(Qt::transparent);
     QPainter p(&image);
     p.setRenderHint(QPainter::Antialiasing);
-    p.scale(2, 2);
+    p.scale(4, 4);
     p.setPen(QPen(theme_colors().text, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
     if (id == 100) {
@@ -44,6 +61,18 @@ QIcon component_icon(int id) {
         line.cubicTo(13, 22, 12, 8, 19, 12);
         line.cubicTo(23, 15, 23, 21, 27, 14);
         p.drawPath(line);
+    } else if (id == 106) {
+        p.setPen(QPen(theme_colors().gate, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        QPainterPath tag;
+        tag.moveTo(4, 9);
+        tag.lineTo(21, 9);
+        tag.lineTo(29, 16);
+        tag.lineTo(21, 23);
+        tag.lineTo(4, 23);
+        tag.closeSubpath();
+        p.drawPath(tag);
+        p.drawEllipse(QPointF(9, 16), 1.8, 1.8);
+        p.drawText(QRectF(12, 10, 12, 12), Qt::AlignCenter, "T");
     } else if (id == 7 || id == 8 || id == 3 || id == 4) {
         p.drawLine(1, 16, 6, 16);
         p.drawEllipse(QRectF(6, 6, 20, 20));
@@ -72,19 +101,38 @@ QIcon component_icon(int id) {
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
     } else if (id == 270) {
-        p.drawRect(QRectF(1, 3, 7, 26)); p.drawRect(QRectF(24, 3, 7, 26));
+        p.drawLine(3, 4, 3, 28);
+        p.drawLine(29, 4, 29, 28);
         for (int y : {8, 16, 24}) {
-            p.drawLine(8, y, 12, y); p.drawRect(QRectF(12, y - 2, 8, 4)); p.drawLine(20, y, 24, y);
+            p.drawLine(3, y, 9, y);
+            p.drawLine(23, y, 29, y);
         }
+        p.drawLine(10, 8, 10, 24);
+        p.drawLine(22, 8, 22, 24);
+        p.drawLine(10, 16, 22, 16);
+        auto f = p.font();
+        f.setPixelSize(7);
+        f.setBold(true);
+        p.setFont(f);
+        p.drawText(QRectF(7, 2, 18, 8), Qt::AlignCenter, "OE");
     } else if (id == 260 || id == 261) {
-        p.drawLine(3, 2, 29, 2); p.drawLine(3, 30, 29, 30);
-        for (int x : {6, 16, 26}) {
-            p.drawLine(x, 2, x, 30);
-            p.setBrush(theme_colors().window);
-            for (int y : (id == 260 ? std::vector<int>{6, 22} : std::vector<int>{5, 11, 19, 25}))
-                p.drawRect(QRectF(x - 2, y - 2, 4, 4));
-            p.drawLine(x, 16, x + 5, 16);
+        p.drawLine(3, 4, 29, 4);
+        p.drawLine(3, 28, 29, 28);
+        for (int x : {8, 16, 24}) {
+            p.drawLine(x, 4, x, 28);
+            p.drawLine(x - 3, 12, x + 3, 8);
+            p.drawLine(x - 3, 22, x + 3, 18);
+            p.drawLine(x, 16, x + 4, 16);
+            if (id == 261) {
+                p.drawLine(x - 4, 16, x + 4, 16);
+                p.drawLine(x - 3, 10, x + 3, 22);
+            }
         }
+        auto f = p.font();
+        f.setPixelSize(7);
+        f.setBold(true);
+        p.setFont(f);
+        p.drawText(QRectF(7, 1, 18, 8), Qt::AlignCenter, id == 260 ? "2L" : "3L");
     } else if (id == 250) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16);
@@ -93,6 +141,28 @@ QIcon component_icon(int id) {
         p.drawText(QRectF(17, 16, 11, 13), Qt::AlignCenter, "~");
         p.setPen(QPen(theme_colors().gate, 1.6));
         p.drawLine(11, 32, 11, 25);
+    } else if (id == 251) {
+        p.drawRoundedRect(QRectF(3, 3, 26, 26), 2, 2);
+        for (int y : {9, 16, 23}) {
+            p.drawLine(0, y, 5, y);
+            p.drawLine(27, y, 32, y);
+            p.drawLine(7, y + 3, 18, y - 3);
+            p.drawLine(20, y, 25, y);
+        }
+        p.setPen(QPen(theme_colors().gate, 1.4));
+        p.drawLine(10, 30, 10, 26);
+        p.drawLine(16, 30, 16, 26);
+        p.drawLine(22, 30, 22, 26);
+    } else if (id == 282) {
+        p.drawLine(2, 8, 30, 8);
+        p.drawLine(2, 16, 30, 16);
+        p.drawLine(2, 24, 30, 24);
+        for (int y : {8, 16, 24}) {
+            p.drawLine(10, y, 20, y - 5);
+            p.setPen(QPen(theme_colors().gate, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.drawLine(14, y + 5, 14, y + 1);
+            p.setPen(QPen(theme_colors().text, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        }
     } else if (id >= 240 && id <= 242) {
         if (id == 241) {
             p.drawLine(16, 1, 16, 5); p.drawRect(QRectF(12, 5, 8, 9));
@@ -163,6 +233,16 @@ QIcon component_icon(int id) {
             p.drawLine(12, 28, 18, 31);
             p.drawLine(12, 25, 12, 31);
         }
+    } else if (id == 280) {
+        for (int y : {8, 16, 24}) {
+            p.drawLine(1, y, 8, y);
+            p.drawLine(8, y, 22, y - 5);
+            p.drawLine(24, y, 31, y);
+        }
+        p.setPen(QPen(theme_colors().gate, 1.6));
+        p.drawLine(16, 30, 16, 26);
+        p.drawLine(16, 26, 8, 26);
+        p.drawLine(16, 26, 24, 26);
     } else if (id == 5) {
         p.drawLine(1, 22, 8, 22);
         p.drawLine(8, 22, 24, 12);
@@ -235,7 +315,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
     });
     for (const auto &spec : ordered) {
         const auto entry = spec.value("palette").toObject();
-        if (entry.isEmpty() || entry.value("hidden").toBool())
+        if (entry.isEmpty())
             continue;
         const int id = entry.value("id").toInt();
         const auto label = entry.value("label").toString().toUtf8();
@@ -254,12 +334,22 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         if (spec.contains("template")) {
             QFile file(":/library/" + spec.value("template").toString());
             if (file.open(QIODevice::ReadOnly)) {
+                const auto template_path = spec.value("template").toString();
                 std::istringstream input(file.readAll().toStdString());
-                const auto project = read_project(input);
+                Project project;
+                try {
+                    project = read_project(input);
+                } catch (const std::exception &e) {
+                    throw std::runtime_error(("Failed to read library template " + template_path + ": " +
+                                              QString::fromUtf8(e.what()))
+                                                 .toStdString());
+                }
                 for (const auto &instance : project.instances)
                     definition_icons[instance.definition] = id;
             }
         }
+        if (entry.value("hidden").toBool())
+            continue;
         if (group.isEmpty())
             continue;
         QTreeWidgetItem *category = nullptr;
@@ -269,7 +359,8 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
             auto *&group_item = categories[path];
             if (!group_item) {
                 group_item = category ? new QTreeWidgetItem(category, {text(part.toUtf8().constData())})
-                                 : new QTreeWidgetItem(library_, {text(part.toUtf8().constData())});
+                                      : new QTreeWidgetItem(library_, {text(part.toUtf8().constData())});
+                group_item->setFirstColumnSpanned(true);
                 auto font = group_item->font(0); font.setBold(true); group_item->setFont(0, font);
                 group_item->setFlags(Qt::ItemIsEnabled);
                 group_item->setExpanded(false);
@@ -277,6 +368,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
             category = group_item;
         }
         auto *item = new QTreeWidgetItem(category, {text(label.constData())});
+        item->setIcon(0, component_icon(id));
         item->setData(0, Qt::UserRole, id);
     }
     search->setObjectName("library_search");
@@ -353,9 +445,6 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
     rebuild_component_bar();
 }
 void EditorWindow::rebuild_component_bar() {
-    for (auto *action : component_bar_->actions())
-        if (action->isSeparator())
-            delete action;
     component_bar_->clear();
     for (int id : {100, 7, 8, 103})
         if (component_actions_.count(id) && component_actions_.at(id)->property("fixed").toBool())

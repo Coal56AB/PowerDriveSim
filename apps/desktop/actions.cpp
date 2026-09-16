@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 #include <sstream>
 namespace pds::desktop {
 void EditorWindow::show_command_search() {
@@ -93,6 +94,9 @@ std::vector<std::string> EditorWindow::selected_ids() const {
     for (auto *item : canvas_->scene()->selectedItems()) {
         if (item->data(1).toString() == "label")
             continue;
+        const auto kind = item->data(1).toString();
+        if (kind != "atom" && kind != "wire")
+            continue;
         auto id = item->data(0).toString().toStdString();
         if (!id.empty())
             ids.push_back(id);
@@ -127,6 +131,7 @@ void EditorWindow::transform_selection(int turns, bool mirror) {
         };
         transform(paste_fragment_->components);
         transform(paste_fragment_->nodes);
+        transform(paste_fragment_->tags);
         transform(paste_fragment_->patterns);
         transform(paste_fragment_->plots);
         transform(paste_fragment_->instances);
@@ -147,6 +152,60 @@ void EditorWindow::transform_selection(int turns, bool mirror) {
         document_->transform(ids, turns, mirror);
         refresh();
         for (const auto &id : ids)
+            if (atoms_.count(id))
+                atoms_.at(id)->setSelected(true);
+    } catch (const std::exception &e) {
+        show_error(e);
+    }
+}
+void EditorWindow::scale_selection(double factor) {
+    if (running())
+        return;
+    auto apply_scale = [&](auto &list, const std::set<std::string> &ids) {
+        for (auto &object : list)
+            if (ids.count(object.id)) {
+                const double next = factor == 0 ? 1.0 : std::clamp(object.orientation.scale * factor, 0.5, 2.5);
+                object.orientation.scale = std::round(next * 10.0) / 10.0;
+            }
+    };
+    if (paste_fragment_) {
+        std::set<std::string> ids;
+        auto collect = [&](const auto &list) {
+            for (const auto &object : list)
+                ids.insert(object.id);
+        };
+        collect(paste_fragment_->components);
+        collect(paste_fragment_->nodes);
+        collect(paste_fragment_->tags);
+        collect(paste_fragment_->patterns);
+        collect(paste_fragment_->plots);
+        collect(paste_fragment_->instances);
+        apply_scale(paste_fragment_->components, ids);
+        apply_scale(paste_fragment_->nodes, ids);
+        apply_scale(paste_fragment_->tags, ids);
+        apply_scale(paste_fragment_->patterns, ids);
+        apply_scale(paste_fragment_->plots, ids);
+        apply_scale(paste_fragment_->instances, ids);
+        set_placement_preview();
+        return;
+    }
+    if (canvas_->editing_gesture())
+        return;
+    auto list = selected_ids();
+    std::set<std::string> ids(list.begin(), list.end());
+    if (ids.empty())
+        return;
+    try {
+        document_->apply("Scale objects", [&](Project &p) {
+            apply_scale(p.components, ids);
+            apply_scale(p.nodes, ids);
+            apply_scale(p.tags, ids);
+            apply_scale(p.patterns, ids);
+            apply_scale(p.plots, ids);
+            apply_scale(p.instances, ids);
+        });
+        refresh();
+        for (const auto &id : list)
             if (atoms_.count(id))
                 atoms_.at(id)->setSelected(true);
     } catch (const std::exception &e) {
@@ -179,7 +238,7 @@ bool EditorWindow::copy_selection(bool cut) {
     if (ids.empty())
         return false;
     auto fragment = document_->copy(ids);
-    if (fragment.components.empty() && fragment.nodes.empty() && fragment.patterns.empty() &&
+    if (fragment.components.empty() && fragment.nodes.empty() && fragment.tags.empty() && fragment.patterns.empty() &&
         fragment.plots.empty() && fragment.instances.empty())
         return false;
     try {
@@ -215,7 +274,7 @@ void EditorWindow::paste_selection(bool duplicate) {
             std::istringstream in(mime->data("application/x-powerdrivesim-project").toStdString());
             fragment = read_project(in);
         }
-        if (fragment.components.empty() && fragment.nodes.empty() && fragment.patterns.empty() &&
+        if (fragment.components.empty() && fragment.nodes.empty() && fragment.tags.empty() && fragment.patterns.empty() &&
             fragment.plots.empty() && fragment.instances.empty())
             return;
         canvas_->cancel_gesture();
@@ -230,6 +289,7 @@ void EditorWindow::paste_selection(bool duplicate) {
         };
         center(fragment.components);
         center(fragment.nodes);
+        center(fragment.tags);
         center(fragment.patterns);
         center(fragment.plots);
         center(fragment.instances);
@@ -243,6 +303,7 @@ void EditorWindow::paste_selection(bool duplicate) {
         };
         shift(fragment.components);
         shift(fragment.nodes);
+        shift(fragment.tags);
         shift(fragment.patterns);
         shift(fragment.plots);
         shift(fragment.instances);
@@ -301,13 +362,26 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
             for (const char *key : {"open_internals", "edit_definition", "detach_subcircuit",
                                     "expand_subcircuit", "public_interface"})
                 menu.addAction(commands_.at(key));
+            auto *lock = menu.addAction(text("lock_subcircuit"));
+            lock->setCheckable(true);
+            lock->setChecked(std::any_of(project().instances.begin(), project().instances.end(),
+                                         [&](const auto &i) { return i.id == id && i.locked; }));
+            connect(lock, &QAction::triggered, this, [this, id](bool checked) {
+                document_->apply("Lock subcircuit", [&](Project &p) {
+                    for (auto &i : p.instances)
+                        if (i.id == id)
+                            i.locked = checked;
+                });
+                refresh();
+            });
         }
         if (std::any_of(project().plots.begin(), project().plots.end(),
                         [&](const PlotBlock &g) { return g.id == id; }))
             menu.addAction(text("plot"), this, [this, id] { open_plot(id); });
         auto *arrange = menu.addMenu(text("arrange"));
         for (const char *key :
-             {"rotate", "rotate_back", "mirror", "left", "right", "top", "bottom", "horizontal", "vertical"})
+             {"rotate", "rotate_back", "mirror", "scale_up", "scale_down", "scale_reset", "left", "right", "top",
+              "bottom", "horizontal", "vertical"})
             arrange->addAction(commands_.at(key));
         menu.addSeparator();
         for (const char *key : {"copy", "cut", "duplicate", "delete"})
@@ -455,6 +529,10 @@ void EditorWindow::connect_gesture(WireAnchor from, WireAnchor to, std::vector<P
     if (running())
         return;
     try {
+        for (auto &point : bends) {
+            auto snapped = canvas_->snap_point({point.x, point.y});
+            point = {snapped.x(), snapped.y()};
+        }
         // Empty-space continuation is meaningful only for conserving electrical terminals.
         auto source = from.endpoint;
         if (source.object.empty())

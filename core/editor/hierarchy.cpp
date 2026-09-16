@@ -29,6 +29,7 @@ void Document::rebuild_view() {
             view_ = definition_project(current_, id);
             view_.id = derived_uuid("definition-editor:" + id);
             for (const auto &param : definition(current_, id).parameters)
+                if (param.object != "*")
                 write_property(view_, param.object,
                                valid_uuid(param.field) ? "parameter/" + param.field : param.field,
                                param.value);
@@ -62,6 +63,8 @@ Project Document::merge_view(const Project &view) const {
         static_cast<Schematic &>(*d) = view;
         std::erase_if(d->view_options, [](const auto &options) { return options.plot.empty(); });
         for (auto &param : d->parameters) {
+            if (param.object == "*")
+                continue;
             const auto &old_parameters = definition(current_, current_definition()).parameters;
             auto old = std::find_if(old_parameters.begin(), old_parameters.end(),
                                     [&](const auto &old) { return old.id == param.id; });
@@ -143,6 +146,7 @@ std::string Document::create_definition(const std::vector<std::string> &selected
             };
             center(p.nodes);
             center(p.components);
+            center(p.tags);
             center(p.patterns);
             center(p.plots);
             center(p.instances);
@@ -207,6 +211,7 @@ std::string Document::create_definition(const std::vector<std::string> &selected
             };
             move(p.nodes, d.nodes);
             move(p.components, d.components);
+            move(p.tags, d.tags);
             move(p.patterns, d.patterns);
             move(p.plots, d.plots);
             move(p.instances, d.instances);
@@ -351,6 +356,7 @@ void Document::expand_instance(const std::string &id) {
         auto append = [](auto &to, const auto &from) { to.insert(to.end(), from.begin(), from.end()); };
         append(p.nodes, expanded.project.nodes);
         append(p.components, expanded.project.components);
+        append(p.tags, expanded.project.tags);
         append(p.patterns, expanded.project.patterns);
         append(p.plots, expanded.project.plots);
         append(p.wires, expanded.project.wires);

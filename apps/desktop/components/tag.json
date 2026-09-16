@@ -1,0 +1,34 @@
+{
+  "type": "tag",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "tag_domain",
+      "editor": "enum",
+      "label": "tag_domain",
+      "options": [
+        {
+          "value": 0,
+          "label": "tag_electrical"
+        },
+        {
+          "value": 1,
+          "label": "tag_gate"
+        }
+      ]
+    }
+  ],
+  "palette": {
+    "id": 106,
+    "label": "tag",
+    "category": "signals",
+    "short": "Tag",
+    "fixed": true,
+    "hidden": false
+  }
+}

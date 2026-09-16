@@ -4,6 +4,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMenu>
+#include <QSettings>
 #include <QStandardPaths>
 
 namespace pds::desktop {
@@ -17,10 +18,15 @@ bool bundled_example(const QString &path) {
 QString EditorWindow::suggested_save_path() const {
     if (!path_.isEmpty())
         return path_;
+    QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+    const auto directory = settings.value("last_project_dir").toString();
     if (example_origin_.isEmpty())
-        return {};
+        return directory;
+    const auto filename = QFileInfo(example_origin_).completeBaseName() + "-copy.pds";
+    if (!directory.isEmpty())
+        return QDir(directory).filePath(filename);
     return QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-        .filePath(QFileInfo(example_origin_).completeBaseName() + "-copy.pds");
+        .filePath(filename);
 }
 void EditorWindow::build_examples_menu(QMenu *menu) {
     menu->setObjectName("examples_menu");
@@ -36,6 +42,7 @@ void EditorWindow::build_examples_menu(QMenu *menu) {
                                                 {"rc-sweep", "examples_experiments"},
                                                 {"diode-freewheel", "examples_devices"},
                                                 {"diode-recovery", "examples_devices"},
+                                                {"gate-script-pwm", "examples_devices"},
                                                 {"thyristor-halfwave", "examples_devices"},
                                                 {"diode-bridge-1p", "converters/rectifiers"},
                                                 {"diode-bridge-3p", "converters/rectifiers"},

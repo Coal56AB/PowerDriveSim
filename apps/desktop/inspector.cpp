@@ -79,7 +79,8 @@ void EditorWindow::update_command_state() {
     auto *focus = QApplication::focusWidget();
     bool editing = qobject_cast<QLineEdit *>(focus) || qobject_cast<QPlainTextEdit *>(focus) ||
                    qobject_cast<QSpinBox *>(focus);
-    for (const char *id : {"delete", "rotate", "rotate_back", "mirror", "copy", "cut", "paste", "duplicate",
+    for (const char *id : {"delete", "rotate", "rotate_back", "mirror", "scale_up", "scale_down", "scale_reset",
+                           "copy", "cut", "paste", "duplicate",
                            "select_all", "undo", "redo", "fit", "fit_selection", "actual_size"}) {
         auto it = commands_.find(id);
         if (it == commands_.end())

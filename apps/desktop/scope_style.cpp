@@ -45,6 +45,27 @@ CurveStyle Scope::curve_style(const std::string &key) const {
             return style;
     return {key, CurveLine::solid, line_width_, CurveMarker::none, 6};
 }
+double Scope::curve_multiplier(const std::string &key) const {
+    for (const auto &[channel, multiplier] : curve_multipliers_)
+        if (channel == key)
+            return multiplier;
+    return 1.0;
+}
+void Scope::set_curve_multiplier(const std::string &key, double value) {
+    if (key.empty() || !std::isfinite(value))
+        return;
+    std::erase_if(curve_multipliers_, [&](const auto &entry) { return entry.first == key; });
+    if (std::abs(value - 1.0) > 1e-15)
+        curve_multipliers_.emplace_back(key, value);
+    if (pending_options_)
+        pending_options_->curve_multipliers = curve_multipliers_;
+    extrema_.clear();
+    fit_y();
+    update_channel_controls();
+    if (changed)
+        changed(begin, end, cursor_a, cursor_b);
+    update();
+}
 void Scope::set_curve_style(const CurveStyle &style) {
     if (style.channel.empty() || unsigned(style.line) > unsigned(CurveLine::none) ||
         unsigned(style.marker) > unsigned(CurveMarker::triangle_down) || !std::isfinite(style.width) ||
@@ -99,6 +120,10 @@ void Scope::show_curve_settings(const std::string &key) {
     size->setObjectName("curve_marker_size");
     normalize_decimal_point(size);
     form->addRow(text("marker_size"), size);
+    auto *multiplier = new QLineEdit(QString::number(curve_multiplier(key), 'g', 12));
+    multiplier->setObjectName("curve_multiplier");
+    normalize_decimal_point(multiplier);
+    form->addRow(text("curve_multiplier"), multiplier);
     auto *error = new QLabel;
     error->setStyleSheet("color:palette(bright-text)");
     form->addRow(error);
@@ -106,14 +131,16 @@ void Scope::show_curve_settings(const std::string &key) {
     form->addRow(buttons);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
     connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog, [=, this] {
-        bool width_ok, size_ok;
+        bool width_ok, size_ok, multiplier_ok;
         double w = width->text().toDouble(&width_ok), s = size->text().toDouble(&size_ok);
-        if (!width_ok || !size_ok || !std::isfinite(w) || !std::isfinite(s) || w <= 0 || w > 10 || s < 1 ||
-            s > 24) {
+        double m = multiplier->text().toDouble(&multiplier_ok);
+        if (!width_ok || !size_ok || !multiplier_ok || !std::isfinite(w) || !std::isfinite(s) ||
+            !std::isfinite(m) || w <= 0 || w > 10 || s < 1 || s > 24) {
             error->setText(text("curve_style_error"));
             return;
         }
         set_curve_style({key, CurveLine(line->currentIndex()), w, CurveMarker(marker->currentIndex()), s});
+        set_curve_multiplier(key, m);
         error->clear();
     });
     dialog->show();

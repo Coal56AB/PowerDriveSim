@@ -28,6 +28,7 @@ PortType port_type(const Project& p,const Endpoint& e) {
         if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && e.port=="out") return {Domain::signal,Direction::output};
     }
     for(const auto& g:p.patterns) if(g.id==e.object && e.port=="out") return {Domain::gate,Direction::output};
+    for(const auto& t:p.tags) if(t.id==e.object && e.port=="io") return {t.domain,Direction::conserving};
     for(const auto& plot:p.plots)if(plot.id==e.object)
         for(unsigned i=1;i<=plot.inputs;++i)if(e.port=="in"+std::to_string(i))return {Domain::signal,Direction::input};
     throw Diagnostic("missing_port",e.object,"Port does not exist: "+e.port);
@@ -35,8 +36,9 @@ PortType port_type(const Project& p,const Endpoint& e) {
 void validate_wire(const Project& p,const Wire& w) {
     auto a=port_type(p,w.from),b=port_type(p,w.to);
     if(w.from==w.to) throw Diagnostic("invalid_connection",w.id,"Cannot connect a port to itself");
+    auto tag=[&](const Endpoint& e){return std::any_of(p.tags.begin(),p.tags.end(),[&](const auto& t){return t.id==e.object&&e.port=="io";});};
     bool gate_to_plot=((a.domain==Domain::gate||a.domain==Domain::electrical)&&plot_input(p,p,w.to))||((b.domain==Domain::gate||b.domain==Domain::electrical)&&plot_input(p,p,w.from));
-    if((a.domain!=b.domain&&!gate_to_plot) || (a.domain!=Domain::electrical && a.direction==b.direction))
+    if((a.domain!=b.domain&&!gate_to_plot) || (a.domain!=Domain::electrical && !tag(w.from) && !tag(w.to) && a.direction==b.direction))
         throw Diagnostic("incompatible_port",w.id,"Connect electrical terminals together or a matching output to an input");
     for(const auto& point:w.bends)
         if(!std::isfinite(point.x)||!std::isfinite(point.y)) throw Diagnostic("invalid_geometry",w.id,"Wire points must be finite");
@@ -52,7 +54,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         return resolved;
     }
     if(!source.wired) {
-        if(!source.wires.empty() || !source.patterns.empty() || !source.plots.empty()) throw Diagnostic("invalid_wiring",source.id,"Wire records require wired mode");
+        if(!source.wires.empty() || !source.tags.empty() || !source.patterns.empty() || !source.plots.empty()) throw Diagnostic("invalid_wiring",source.id,"Wire records require wired mode");
         return {source,{}};
     }
     Project p=source;
@@ -69,9 +71,18 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         if(!std::isfinite(n.x)||!std::isfinite(n.y)) throw Diagnostic("invalid_geometry",n.id,"Node position must be finite");
     }
     for(const auto& c:p.components) { uuid(c.id); add({c.id,"p"},c.name+".p"); add({c.id,"n"},c.name+".n"); }
+    for(const auto& t:p.tags) {
+        uuid(t.id);
+        if(t.name.empty())throw Diagnostic("invalid_tag",t.id,"Connection tag name must not be empty");
+        if(!std::isfinite(t.x)||!std::isfinite(t.y)) throw Diagnostic("invalid_geometry",t.id,"Tag position must be finite");
+        if(t.domain==Domain::electrical)
+            add({t.id,"io"},t.name);
+    }
     for(const auto& g:p.patterns) {
         uuid(g.id);
         if(g.pwm&&(!std::isfinite(g.frequency)||g.frequency<=0||!std::isfinite(g.duty)||g.duty<0||g.duty>1||!std::isfinite(g.delay)||g.delay<0))throw Diagnostic("invalid_pwm",g.id,"PWM frequency must be positive, duty must be 0..1 and delay non-negative");
+        if(g.script&&(!std::isfinite(g.script_step)||g.script_step<=0||g.code.empty()))throw Diagnostic("invalid_gate_script",g.id,"Gate script requires code and a positive sample step");
+        if(g.pwm&&g.script)throw Diagnostic("invalid_gate_script",g.id,"Gate script and PWM modes are mutually exclusive");
         if(!std::isfinite(g.x)||!std::isfinite(g.y)) throw Diagnostic("invalid_geometry",g.id,"Pattern position must be finite");
     }
     for(const auto& plot:p.plots){
@@ -90,7 +101,11 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     for(const auto& n:p.nodes) if(n.ground) {
         auto k=endpoint_key({n.id,"node"}); if(ground.empty()) ground=k; else join(ground,k);
     }
-    std::map<std::string,std::string> drivers;
+    for(const auto& tag:p.tags) if(tag.domain==Domain::electrical)
+        for(const auto& other:p.tags) if(other.id>tag.id&&other.domain==tag.domain&&other.name==tag.name)
+            join(endpoint_key({tag.id,"io"}),endpoint_key({other.id,"io"}));
+    std::map<std::string,std::string> drivers, tag_drivers;
+    std::map<std::string,std::vector<std::string>> tag_inputs;
     std::set<std::string> plot_inputs;
     std::set<std::pair<std::string,std::string>> pairs;
     for(const auto& w:p.wires) {
@@ -98,6 +113,10 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         auto a=endpoint_key(w.from),b=endpoint_key(w.to);
         if(!pairs.insert(std::minmax(a,b)).second) throw Diagnostic("duplicate_connection",w.id,"These ports are already connected");
         auto is_plot=[&](const Endpoint& e){return std::any_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& plot){return plot.id==e.object;});};
+        auto find_tag=[&](const Endpoint& e)->const ConnectionTag*{
+            auto it=std::find_if(p.tags.begin(),p.tags.end(),[&](const auto& tag){return tag.id==e.object&&e.port=="io";});
+            return it==p.tags.end()?nullptr:&*it;
+        };
         if(is_plot(w.from)||is_plot(w.to)){
             const auto& input=is_plot(w.from)?w.from:w.to;
             if(!plot_inputs.insert(endpoint_key(input)).second)throw Diagnostic("multiple_plot_drivers",input.object,"Each plot input accepts one signal");
@@ -105,6 +124,17 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         }
         if(port_type(p,w.from).domain==Domain::electrical) join(a,b);
         else {
+            if(auto* tag=find_tag(w.from)?find_tag(w.from):find_tag(w.to)) {
+                const auto& other=find_tag(w.from)?w.to:w.from;
+                const auto type=port_type(p,other);
+                const auto key=std::to_string(unsigned(tag->domain))+":"+tag->name;
+                if(type.direction==Direction::output) {
+                    if(!tag_drivers.emplace(key,other.object).second)
+                        throw Diagnostic("multiple_gate_drivers",tag->id,"A tag group accepts exactly one driver");
+                } else if(type.direction==Direction::input) tag_inputs[key].push_back(other.object);
+                else throw Diagnostic("incompatible_port",w.id,"Non-electrical tags connect outputs to inputs");
+                continue;
+            }
             const auto& input=port_type(p,w.from).direction==Direction::input?w.from:w.to;
             const auto& output=port_type(p,w.from).direction==Direction::output?w.from:w.to;
             bool plot=std::any_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==input.object;});
@@ -116,6 +146,10 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
                 throw Diagnostic("multiple_gate_drivers",input.object,"A gate input accepts exactly one driver");
         }
     }
+    for(const auto& [key,driver]:tag_drivers)
+        for(const auto& input:tag_inputs[key])
+            if(!drivers.emplace(input,driver).second)
+                throw Diagnostic("multiple_gate_drivers",input,"A gate input accepts exactly one driver");
     ResolvedGraph result;
     std::map<std::string,Node> nets;
     // Preserve named node UUIDs, choosing a stable representative if wires merge them.
@@ -166,7 +200,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
             for(const auto& [target,driver]:drivers) if(driver==event.target) events.push_back({event.time,target,event.closed});
         }
     }
-    p.events=std::move(events); p.wired=false; p.wires.clear(); p.patterns.clear(); p.plots.clear();
+    p.events=std::move(events); p.wired=false; p.wires.clear(); p.tags.clear(); p.patterns.clear(); p.plots.clear();
     result.project=std::move(p);
     return result;
 }

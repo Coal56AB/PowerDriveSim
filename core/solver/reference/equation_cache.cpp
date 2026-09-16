@@ -69,6 +69,8 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 entry->dynamic.push_back({i, b, c.kind, !initialize && trapezoidal ? h / (2 * c.value) : 0});
                 break;
             case Kind::inductor: {
+                if (c.parallel_resistance_enabled)
+                    system.conductance(p, n, 1 / c.parallel_resistance);
                 if (operating_point) {
                     system.add(b, p, 1); // DC: inductor voltage is zero.
                     system.add(b, n, -1);

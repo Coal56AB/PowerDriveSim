@@ -32,6 +32,7 @@ class QComboBox;
 class QFormLayout;
 class QGraphicsPathItem;
 class QLabel;
+class QProgressBar;
 class QAction;
 class QTableWidget;
 class QToolBar;
@@ -64,6 +65,7 @@ class Canvas : public QGraphicsView {
     std::function<void()> cancel_placement;
     void cancel_wire();
     void cancel_gesture();
+    void start_connect_mode();
     void set_editable(bool enabled);
     bool editing_gesture() const;
     bool transform_move(int turns, bool mirror);
@@ -71,6 +73,9 @@ class Canvas : public QGraphicsView {
     QPointF insertion_position() const;
     void set_ghost(QGraphicsItem *item);
     std::optional<Endpoint> hovered_port() const;
+    void set_grid_size(double size);
+    double grid_size() const { return grid_size_; }
+    QPointF snap_point(QPointF point) const;
 
   protected:
     void mousePressEvent(QMouseEvent *) override;
@@ -86,9 +91,10 @@ class Canvas : public QGraphicsView {
     void keyPressEvent(QKeyEvent *) override;
 
   private:
-    enum class Gesture { idle, selecting, moving, placing, wiring, routing, reconnecting, panning };
+    enum class Gesture { idle, selecting, moving, placing, wiring, routing, reconnecting, panning, scaling };
     Gesture gesture_ = Gesture::idle, resume_ = Gesture::idle;
-    bool editable_ = true, dragged_ = false;
+    bool editable_ = true, dragged_ = false, connect_mode_ = false;
+    double grid_size_ = 20.0;
     QGraphicsItem *ghost_ = nullptr;
     WireAnchor source_;
     std::string edited_wire_;
@@ -99,6 +105,9 @@ class Canvas : public QGraphicsView {
     std::map<QGraphicsItem *, QTransform> transforms_;
     QGraphicsItem *move_anchor_ = nullptr;
     QTransform move_transform_, move_base_;
+    QPointF scale_origin_;
+    double scale_start_distance_ = 1.0;
+    bool scale_x_axis_ = true, scale_y_axis_ = true;
     std::vector<QLineF> guides_;
     QPoint press_;
     QPointF press_scene_;
@@ -128,6 +137,8 @@ class Scope : public QWidget {
     QString curve_name(const std::string &key) const;
     void set_curve_name(const std::string &key, const QString &name);
     void set_curve_style(const CurveStyle &style);
+    double curve_multiplier(const std::string &key) const;
+    void set_curve_multiplier(const std::string &key, double value);
     void show_curve_settings(const std::string &key);
     void set_wheel_modifiers(Qt::KeyboardModifiers x, Qt::KeyboardModifiers y) {
         wheel_x_ = x;
@@ -171,6 +182,7 @@ class Scope : public QWidget {
     void update_channel_controls();
     std::vector<CurveStyle> curve_styles_;
     std::vector<std::pair<std::string, std::string>> curve_names_;
+    std::vector<std::pair<std::string, double>> curve_multipliers_;
     std::vector<LegendPosition> legend_positions_;
     struct LegendLayout {
         QRectF box;
@@ -311,8 +323,9 @@ class EditorWindow : public QMainWindow {
     QTreeWidget *hierarchy_ = nullptr;
     std::vector<std::string> scene_path_;
     bool hierarchy_edit_enabled_ = false;
+    bool current_hierarchy_locked() const;
     bool editing_allowed() const {
-        return !running() && (hierarchy_path().empty() || hierarchy_edit_enabled_);
+        return !running() && (hierarchy_path().empty() || hierarchy_edit_enabled_ || !current_hierarchy_locked());
     }
     void build_hierarchy_actions(QMenu *menu);
     void refresh_hierarchy();
@@ -343,7 +356,8 @@ class EditorWindow : public QMainWindow {
     QComboBox *method_ = nullptr;
     QFormLayout *properties_ = nullptr;
     QLabel *banner_ = nullptr;
-    QLabel *inspector_hint_ = nullptr;
+    QProgressBar *simulation_progress_ = nullptr;
+    QLabel *inspector_hint_ = nullptr, *inspector_type_ = nullptr;
     QPushButton *apply_button_ = nullptr;
     QAction *run_ = nullptr, *stop_action_ = nullptr, *undo_ = nullptr, *redo_ = nullptr;
     QFutureWatcher<Outcome> watcher_;
@@ -373,6 +387,7 @@ class EditorWindow : public QMainWindow {
     std::map<std::string, QAction *> commands_;
     std::map<std::string, QKeySequence> default_shortcuts_;
     QString path_, recovery_dir_;
+    QTimer *autosave_timer_ = nullptr;
     Qt::KeyboardModifiers scope_wheel_x_ = Qt::ControlModifier, scope_wheel_y_ = Qt::ShiftModifier;
     void update_scope_shortcuts();
     int placing_ = -1;
@@ -404,6 +419,7 @@ class EditorWindow : public QMainWindow {
     void cancel_placement();
     void place_at(QPointF point);
     void connect_gesture(WireAnchor from, WireAnchor to, std::vector<Point> bends, std::string replace);
+    bool auto_connect_nearby_pins();
     QPointF port_stub(const Endpoint &endpoint, QPointF point) const;
     QPainterPath preview_route(Endpoint from, std::optional<Endpoint> to, QPointF start, QPointF end) const;
     void commit_profile();
@@ -415,12 +431,17 @@ class EditorWindow : public QMainWindow {
     std::string inspector_id_;
     std::vector<std::string> selected_ids() const;
     void transform_selection(int turns, bool mirror);
+    void scale_selection(double factor);
     void arrange_selection(const std::string &mode);
     bool copy_selection(bool cut);
     void paste_selection(bool duplicate = false);
     void show_context(const std::string &id, QPoint global);
     void load_shortcuts();
+    void configure_autosave();
+    void update_autosave_timer();
+    void configure_grid();
     void refresh(bool invalidate = true);
+    void refresh_canvas(bool invalidate = true, bool topology = true);
     void rebuild_scene();
     void update_wires();
     void fill_inspector();

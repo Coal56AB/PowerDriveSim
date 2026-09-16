@@ -29,6 +29,7 @@ ViewOptions Scope::view_options() const {
     v.signal_displays = signal_displays_;
     v.curve_styles = curve_styles_;
     v.curve_names = curve_names_;
+    v.curve_multipliers = curve_multipliers_;
     v.legend_positions = legend_positions_;
     v.hidden_channels.assign(hidden_channels_.begin(), hidden_channels_.end());
     v.y_low = y_low;
@@ -54,6 +55,7 @@ void Scope::load_view_options(const ViewOptions &v) {
     signal_displays_ = v.signal_displays;
     curve_styles_ = v.curve_styles;
     curve_names_ = v.curve_names;
+    curve_multipliers_ = v.curve_multipliers;
     legend_positions_ = v.legend_positions;
     hidden_channels_ = {v.hidden_channels.begin(), v.hidden_channels.end()};
     screen_cursors_ = v.free_cursors;

@@ -19,6 +19,24 @@
       "editor": "number",
       "label": "initial",
       "unit": "A"
+    },
+    {
+      "key": "parallel_resistance_enabled",
+      "editor": "bool",
+      "label": "parallel_resistance_enabled"
+    },
+    {
+      "key": "parallel_resistance",
+      "editor": "number",
+      "label": "parallel_resistance",
+      "unit": "Ohm",
+      "min": 0,
+      "exclusiveMin": true,
+      "when": {
+        "parallel_resistance_enabled": [
+          1
+        ]
+      }
     }
   ],
   "palette": {

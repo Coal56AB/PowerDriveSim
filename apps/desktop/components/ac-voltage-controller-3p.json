@@ -1,0 +1,13 @@
+{
+  "type": "library:ac-voltage-controller-3p",
+  "fields": [],
+  "template": "converters/ac-voltage-controller-3p.pds",
+  "palette": {
+    "id": 251,
+    "label": "ac_voltage_controller_3p",
+    "category": "converters/ac_ac",
+    "short": "3~ AC/AC",
+    "fixed": false,
+    "hidden": false
+  }
+}

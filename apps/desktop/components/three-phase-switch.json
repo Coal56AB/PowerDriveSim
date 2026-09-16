@@ -1,0 +1,13 @@
+{
+  "type": "library:three-phase-switch",
+  "fields": [],
+  "template": "switching/three-phase-switch.pds",
+  "palette": {
+    "id": 282,
+    "label": "three_phase_switch",
+    "category": "switching",
+    "short": "3S",
+    "fixed": false,
+    "hidden": false
+  }
+}

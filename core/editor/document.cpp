@@ -1,12 +1,174 @@
 #include "core/editor/document.hpp"
 #include "core/model/hierarchy.hpp"
 #include <algorithm>
+#include <cctype>
 #include <set>
 #include <map>
 #include <cmath>
 #include <limits>
+#include <optional>
 namespace pds {
 namespace {
+std::pair<std::string, unsigned> name_stem(std::string name) {
+    auto suffix = name.rfind(" (");
+    if (suffix != std::string::npos && name.ends_with(")")) {
+        const auto number = name.substr(suffix + 2, name.size() - suffix - 3);
+        if (!number.empty() &&
+            std::all_of(number.begin(), number.end(), [](unsigned char c) { return std::isdigit(c); }))
+            name.erase(suffix);
+    }
+    size_t end = name.size();
+    while (end > 0 && std::isdigit(static_cast<unsigned char>(name[end - 1])))
+        --end;
+    if (end < name.size()) {
+        try {
+            return {name.substr(0, end), static_cast<unsigned>(std::stoul(name.substr(end)))};
+        } catch (...) {
+        }
+    }
+    return {name, 1};
+}
+std::string next_name(std::string name, const std::set<std::string> &used) {
+    if (name.empty() || !used.count(name))
+        return name;
+    auto [stem, number] = name_stem(std::move(name));
+    for (unsigned suffix = std::max(2u, number + 1); suffix < 1000000; ++suffix) {
+        auto candidate = stem + std::to_string(suffix);
+        if (!used.count(candidate))
+            return candidate;
+    }
+    return stem + std::to_string(used.size() + 1);
+}
+double point_distance(Point a, Point b) {
+    return std::hypot(a.x - b.x, a.y - b.y);
+}
+std::vector<Point> clean_bends(Point from, Point to, const std::vector<Point> &bends) {
+    std::vector<Point> points{from};
+    points.insert(points.end(), bends.begin(), bends.end());
+    points.push_back(to);
+    std::vector<Point> clean;
+    for (auto point : points) {
+        if (!clean.empty() && point_distance(clean.back(), point) < 1e-9)
+            continue;
+        while (clean.size() > 1) {
+            const auto a = clean[clean.size() - 2], b = clean.back();
+            const double ux = b.x - a.x, uy = b.y - a.y;
+            const double vx = point.x - b.x, vy = point.y - b.y;
+            if (std::abs(ux * vy - uy * vx) > 1e-9)
+                break;
+            clean.pop_back();
+        }
+        clean.push_back(point);
+    }
+    if (clean.size() <= 2)
+        return {};
+    return {clean.begin() + 1, clean.end() - 1};
+}
+Point endpoint_point(const Schematic &p, const Endpoint &endpoint) {
+    auto find = [&](const auto &objects) -> std::optional<Point> {
+        for (const auto &object : objects)
+            if (object.id == endpoint.object)
+                return Point{object.x, object.y};
+        return {};
+    };
+    if (auto point = find(p.components))
+        return *point;
+    if (auto point = find(p.nodes))
+        return *point;
+    if (auto point = find(p.tags))
+        return *point;
+    if (auto point = find(p.patterns))
+        return *point;
+    if (auto point = find(p.plots))
+        return *point;
+    if (auto point = find(p.instances))
+        return *point;
+    return {};
+}
+bool generated_node_name(const std::string &name) {
+    return name.empty();
+}
+bool endpoint_is_node(const Endpoint &endpoint, const std::string &node) {
+    return endpoint.object == node && endpoint.port == "node";
+}
+Endpoint other_endpoint(const Wire &wire, const std::string &node) {
+    return endpoint_is_node(wire.from, node) ? wire.to : wire.from;
+}
+std::vector<Point> route_from_other_to_node(const Schematic &s, const Wire &wire, const std::string &node) {
+    std::vector<Point> points;
+    if (endpoint_is_node(wire.to, node)) {
+        points.push_back(endpoint_point(s, wire.from));
+        points.insert(points.end(), wire.bends.begin(), wire.bends.end());
+        points.push_back(endpoint_point(s, wire.to));
+    } else {
+        points.push_back(endpoint_point(s, wire.to));
+        points.insert(points.end(), wire.bends.rbegin(), wire.bends.rend());
+        points.push_back(endpoint_point(s, wire.from));
+    }
+    return points;
+}
+bool merge_one_passthrough_node(Schematic &s) {
+    for (const auto &node : s.nodes) {
+        if (node.ground || !generated_node_name(node.name))
+            continue;
+        std::vector<size_t> incidents;
+        for (size_t i = 0; i < s.wires.size(); ++i) {
+            const auto &wire = s.wires[i];
+            const bool from = endpoint_is_node(wire.from, node.id);
+            const bool to = endpoint_is_node(wire.to, node.id);
+            if (from && to)
+                return false;
+            if (from || to)
+                incidents.push_back(i);
+        }
+        if (incidents.size() != 2)
+            continue;
+        const Wire first = s.wires[incidents[0]];
+        const Wire second = s.wires[incidents[1]];
+        const Endpoint from = other_endpoint(first, node.id);
+        const Endpoint to = other_endpoint(second, node.id);
+        if (from == to)
+            continue;
+        auto first_points = route_from_other_to_node(s, first, node.id);
+        auto second_points = route_from_other_to_node(s, second, node.id);
+        if (first_points.empty() || second_points.empty())
+            continue;
+        std::vector<Point> joined = first_points;
+        joined.insert(joined.end(), second_points.rbegin() + 1, second_points.rend());
+        if (joined.size() < 2)
+            continue;
+        Wire merged;
+        merged.id = first.id;
+        merged.from = from;
+        merged.to = to;
+        std::vector<Point> bends;
+        if (joined.size() > 2)
+            bends.assign(joined.begin() + 1, joined.end() - 1);
+        merged.bends = clean_bends(joined.front(), joined.back(), bends);
+        const auto hi = std::max(incidents[0], incidents[1]);
+        const auto lo = std::min(incidents[0], incidents[1]);
+        s.wires.erase(s.wires.begin() + static_cast<std::ptrdiff_t>(hi));
+        s.wires.erase(s.wires.begin() + static_cast<std::ptrdiff_t>(lo));
+        s.wires.push_back(std::move(merged));
+        std::erase_if(s.nodes, [&](const Node &candidate) { return candidate.id == node.id; });
+        std::erase_if(s.labels, [&](const LabelLayout &label) { return label.object == node.id; });
+        return true;
+    }
+    return false;
+}
+void normalize_wire_routes(Schematic &s) {
+    while (merge_one_passthrough_node(s)) {
+    }
+    for (auto &wire : s.wires)
+        wire.bends = clean_bends(endpoint_point(s, wire.from), endpoint_point(s, wire.to), wire.bends);
+    while (merge_one_passthrough_node(s)) {
+    }
+}
+void normalize_wire_routes(Project &p) {
+    normalize_wire_routes(static_cast<Schematic &>(p));
+    for (auto &definition : p.definitions)
+        normalize_wire_routes(static_cast<Schematic &>(definition));
+}
 void preserve_views(Project& to,const Project& from) {
     auto preserve=[](Schematic& target,const Schematic& prior) {
         for(auto& plot:target.plots)for(const auto& old:prior.plots)if(old.id==plot.id){plot.begin=old.begin;plot.end=old.end;plot.cursor_a=old.cursor_a;plot.cursor_b=old.cursor_b;}
@@ -23,7 +185,7 @@ void preserve_views(Project& to,const Project& from) {
     for(auto& d:to.definitions)for(const auto& old:from.definitions)if(d.id==old.id)preserve(d,old);
 }
 }
-Document::Document(Project p):current_(make_wired(p)){}
+Document::Document(Project p):current_(make_wired(p)){normalize_wire_routes(current_);}
 void Document::apply(const std::string& label,const std::function<void(Project&)>& change) {
     apply_with_root(label,change,[](Project&){});
 }
@@ -31,6 +193,7 @@ void Document::apply_with_root(const std::string& label,const std::function<void
     auto edited=project();change(edited);
     auto next=merge_view(edited);
     finalize(next);
+    normalize_wire_routes(next);
     if(next == current_) return;
     // Connectivity is validated without solving an incomplete circuit.
     validate_hierarchy(next);
@@ -97,8 +260,9 @@ bool same_simulation(const Project& a,const Project& b) {
         p.name.clear();
         p.experiments.clear();
         auto strip=[](auto& objects){for(auto& o:objects){o.name.clear();o.x=0;o.y=0;o.orientation={};}};
+        auto strip_tags=[](auto& objects){for(auto& o:objects){o.x=0;o.y=0;o.orientation={};}};
         auto schematic=[&](Schematic& s){
-            strip(s.components);strip(s.nodes);strip(s.patterns);strip(s.plots);strip(s.instances);
+            strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.instances);
             for(auto& w:s.wires)w.bends.clear();
             for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;}
             s.labels.clear();s.view_options.clear();
@@ -151,17 +315,18 @@ void Document::connect_anchors(WireAnchor from,WireAnchor to,const std::vector<P
                 if(type.domain!=Domain::electrical || port_type(p,it->to).domain!=Domain::electrical)
                     return type.direction==Direction::input?it->to:it->from;
                 if(anchor.route.size()<2)throw Diagnostic("invalid_geometry",anchor.wire,"Missing wire route");
-                auto distance=[](Point a,Point b){return std::hypot(a.x-b.x,a.y-b.y);};
-                if(distance(anchor.point,anchor.route.front())<1e-6)return it->from;
-                if(distance(anchor.point,anchor.route.back())<1e-6)return it->to;
+                if(point_distance(anchor.point,anchor.route.front())<1e-6)return it->from;
+                if(point_distance(anchor.point,anchor.route.back())<1e-6)return it->to;
                 size_t segment=1; double best=std::numeric_limits<double>::infinity();
-                for(size_t i=1;i<anchor.route.size();++i){double d=distance(anchor.route[i-1],anchor.point)+distance(anchor.point,anchor.route[i])-distance(anchor.route[i-1],anchor.route[i]);if(d<best){best=d;segment=i;}}
+                for(size_t i=1;i<anchor.route.size();++i){double d=point_distance(anchor.route[i-1],anchor.point)+point_distance(anchor.point,anchor.route[i])-point_distance(anchor.route[i-1],anchor.route[i]);if(d<best){best=d;segment=i;}}
                 if(best>1e-6||!std::isfinite(anchor.point.x)||!std::isfinite(anchor.point.y))throw Diagnostic("invalid_geometry",anchor.wire,"Junction is outside wire route");
                 auto id=new_uuid();Endpoint joint{id,"node"};
                 p.nodes.push_back({id,"",false,anchor.point.x,anchor.point.y});
                 Wire second{new_uuid(),joint,it->to,{}};
                 second.bends.assign(anchor.route.begin()+segment,anchor.route.end()-1);
                 it->to=joint;it->bends.assign(anchor.route.begin()+1,anchor.route.begin()+segment);
+                it->bends=clean_bends(anchor.route.front(),anchor.point,it->bends);
+                second.bends=clean_bends(anchor.point,anchor.route.back(),second.bends);
                 p.wires.push_back(std::move(second));return joint;
             }
             auto id=new_uuid();p.nodes.push_back({id,"",false,anchor.point.x,anchor.point.y});return {id,"node"};
@@ -169,7 +334,9 @@ void Document::connect_anchors(WireAnchor from,WireAnchor to,const std::vector<P
         // A branch on the same wire is redundant and must not split it twice.
         if(!from.wire.empty()&&from.wire==to.wire)throw Diagnostic("duplicate_connection",from.wire,"Already connected");
         auto a=attach(from),b=attach(to);
-        Wire wire{replace.empty()?new_uuid():replace,a,b,bends};validate_wire(p,wire);
+        Wire wire{replace.empty()?new_uuid():replace,a,b,bends};
+        wire.bends=clean_bends(endpoint_point(p,a),endpoint_point(p,b),wire.bends);
+        validate_wire(p,wire);
         if(replace_gate_driver) {
             auto input=port_type(p,a).direction==Direction::input?a:b;
             if(port_type(p,input).domain==Domain::gate && port_type(p,input).direction==Direction::input) {
@@ -184,6 +351,7 @@ Project Document::copy(const std::vector<std::string>& list) const {
     std::set<std::string> ids(list.begin(),list.end());Project result;result.id=new_uuid();result.name="Clipboard";result.profile=project().profile;result.wired=true;
     for(const auto& c:project().components)if(ids.count(c.id))result.components.push_back(c);
     for(const auto& n:project().nodes)if(ids.count(n.id))result.nodes.push_back(n);
+    for(const auto& t:project().tags)if(ids.count(t.id))result.tags.push_back(t);
     for(const auto& g:project().patterns)if(ids.count(g.id))result.patterns.push_back(g);
     for(const auto& g:project().plots)if(ids.count(g.id))result.plots.push_back(g);
     for(const auto& i:project().instances)if(ids.count(i.id))result.instances.push_back(i);
@@ -216,21 +384,39 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
     const auto original_nets=resolve_connections(fragment).nets;
     apply("Paste objects",[&](Project& p){
         std::map<std::string,std::string> definitions;
-        const bool conflict=std::any_of(fragment.definitions.begin(),fragment.definitions.end(),[&](const auto& d){return std::any_of(p.definitions.begin(),p.definitions.end(),[&](const auto& existing){return existing.id==d.id&&existing!=d;});});
-        for(const auto& d:fragment.definitions) {
-            definitions[d.id]=conflict?new_uuid():d.id;
-        }
-        for(auto d:fragment.definitions) {
-            d.id=definitions.at(d.id);
-            if(std::any_of(p.definitions.begin(),p.definitions.end(),[&](const auto& v){return v.id==d.id;}))continue;
-            for(auto& i:d.instances)i.definition=definitions.at(i.definition);
-            p.definitions.push_back(std::move(d));
-        }
-        for(auto& i:fragment.instances)i.definition=definitions.at(i.definition);
+        std::map<std::string,const Definition*> catalog;
+        for(const auto& d:fragment.definitions)catalog.emplace(d.id,&d);
+        std::set<std::string> remapping;
+        std::function<std::string(const std::string&)> remap_definition=[&](const std::string& old)->std::string{
+            if(auto found=definitions.find(old);found!=definitions.end())return found->second;
+            if(!remapping.insert(old).second)throw Diagnostic("recursive_hierarchy",old,"Recursive subcircuit definition");
+            auto source=catalog.find(old);
+            if(source==catalog.end())throw Diagnostic("missing_definition",old,"Clipboard subcircuit definition is missing");
+            auto copy=*source->second;
+            bool dependency_changed=false;
+            for(auto& child:copy.instances) {
+                const auto nested=remap_definition(child.definition);
+                dependency_changed|=nested!=child.definition;
+                child.definition=nested;
+            }
+            const auto existing=std::find_if(p.definitions.begin(),p.definitions.end(),[&](const auto& d){return d.id==old;});
+            const bool same=existing!=p.definitions.end()&&*existing==*source->second;
+            const bool collision=existing!=p.definitions.end()&&*existing!=*source->second;
+            const auto mapped=(collision||(same&&dependency_changed))?new_uuid():old;
+            definitions[old]=mapped;
+            if(!same||dependency_changed) {
+                copy.id=mapped;
+                p.definitions.push_back(std::move(copy));
+            }
+            remapping.erase(old);
+            return mapped;
+        };
+        for(auto& i:fragment.instances)i.definition=remap_definition(i.definition);
         std::map<std::string,std::string> ids;std::set<std::string> names;
         auto remember=[&](const auto& objects){for(const auto& o:objects)names.insert(o.name);};remember(p.components);remember(p.nodes);remember(p.patterns);remember(p.plots);remember(p.instances);
-        auto copy=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;auto base=object.name;unsigned suffix=2;while(names.count(object.name))object.name=base+" ("+std::to_string(suffix++)+")";names.insert(object.name);to.push_back(std::move(object));}};
-        copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
+        auto copy=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;object.name=next_name(object.name,names);names.insert(object.name);to.push_back(std::move(object));}};
+        auto copy_tags=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;to.push_back(std::move(object));}};
+        copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy_tags(fragment.tags,p.tags);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}
         for(auto event:fragment.events)if(ids.count(event.target)){event.target=ids.at(event.target);p.events.push_back(event);}
         if(!fragment.view_options.empty()) {
@@ -251,7 +437,9 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
                 const auto slash=endpoint.find('/');
                 const auto object=endpoint.substr(0,slash);
                 if(!channels.count(object))continue;
-                if(auto found=after.find(channels.at(object)+endpoint.substr(slash));found!=after.end())channels[net]=found->second;
+                auto mapped=channels.find(object);
+                if(mapped==channels.end())continue;
+                if(auto found=after.find(mapped->second+endpoint.substr(slash));found!=after.end())channels[net]=found->second;
             }
             for(auto options:fragment.view_options)if(channels.count(options.plot)) {
                 remap_view_options(options,channels);p.view_options.push_back(std::move(options));
@@ -265,7 +453,7 @@ void Document::transform(const std::vector<std::string>& list,int turns,bool mir
     apply("Transform objects",[&](Project& p){
         double cx=0,cy=0;size_t count=0;
         auto center=[&](const auto& objects){for(const auto& o:objects)if(ids.count(o.id)){cx+=o.x;cy+=o.y;++count;}};
-        center(p.components);center(p.nodes);center(p.patterns);center(p.plots);center(p.instances);
+        center(p.components);center(p.nodes);center(p.tags);center(p.patterns);center(p.plots);center(p.instances);
         if(count){cx=std::round(cx/count/20)*20;cy=std::round(cy/count/20)*20;}
         auto point=[&](double& x,double& y){x-=cx;y-=cy;if(mirror)x=-x;else {int n=(turns%4+4)%4;while(n--){double old=x;x=-y;y=old;}}x+=cx;y+=cy;};
         auto change=[&](auto& objects){for(auto& object:objects)if(ids.count(object.id)){
@@ -273,13 +461,13 @@ void Document::transform(const std::vector<std::string>& list,int turns,bool mir
             auto& o=object.orientation;if(mirror)o.mirrored=!o.mirrored;
             int amount=o.mirrored?-turns:turns;o.quarter_turns=static_cast<unsigned>((static_cast<int>(o.quarter_turns)+amount%4+4)%4);
         }};
-        change(p.components);change(p.nodes);change(p.patterns);change(p.plots);change(p.instances);
+        change(p.components);change(p.nodes);change(p.tags);change(p.patterns);change(p.plots);change(p.instances);
         if(count>1)for(auto& wire:p.wires)if(ids.count(wire.from.object)&&ids.count(wire.to.object))for(auto& b:wire.bends)point(b.x,b.y);
     });
 }
 void Document::arrange(const std::vector<std::string>& list,const std::string& mode){
     std::set<std::string> ids(list.begin(),list.end());
-    apply("Arrange objects",[&](Project& p){std::vector<std::pair<double*,double*>> points;auto add=[&](auto& objects){for(auto& o:objects)if(ids.count(o.id))points.push_back({&o.x,&o.y});};add(p.components);add(p.nodes);add(p.patterns);add(p.plots);add(p.instances);if(points.size()<2)return;
+    apply("Arrange objects",[&](Project& p){std::vector<std::pair<double*,double*>> points;auto add=[&](auto& objects){for(auto& o:objects)if(ids.count(o.id))points.push_back({&o.x,&o.y});};add(p.components);add(p.nodes);add(p.tags);add(p.patterns);add(p.plots);add(p.instances);if(points.size()<2)return;
         bool horizontal=mode=="left"||mode=="right"||mode=="horizontal";
         auto coordinate=[&](auto point)->double&{return horizontal?*point.first:*point.second;};
         std::sort(points.begin(),points.end(),[&](auto a,auto b){return coordinate(a)<coordinate(b);});double low=coordinate(points.front()),high=coordinate(points.back());
@@ -293,6 +481,7 @@ void Document::erase(const std::vector<std::string>& list) {
         std::erase_if(p.view_options,[&](const ViewOptions& o){return ids.count(o.plot);});
         std::erase_if(p.components,[&](const Component& c){return ids.count(c.id);});
         std::erase_if(p.nodes,[&](const Node& n){return ids.count(n.id);});
+        std::erase_if(p.tags,[&](const ConnectionTag& t){return ids.count(t.id);});
         std::erase_if(p.plots,[&](const PlotBlock& g){return ids.count(g.id);});
         std::erase_if(p.patterns,[&](const GatePattern& g){return ids.count(g.id);});
         std::erase_if(p.instances,[&](const Instance& i){return ids.count(i.id);});

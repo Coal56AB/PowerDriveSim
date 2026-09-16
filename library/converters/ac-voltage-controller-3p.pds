@@ -1,0 +1,64 @@
+PowerDriveSim 12
+project "3f4f79ae-d0c4-54c5-9ca5-a7f86d4f9a01" "Three-phase AC voltage controller"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "1ad1712e-34b4-5c83-a2d4-a7e2078170aa" "Three-phase AC voltage controller" "a4c4e197-11d8-5be1-9d41-71d772ca9ac1" 0 0 0
+definition "a4c4e197-11d8-5be1-9d41-71d772ca9ac1" "Three-phase AC voltage controller"
+public_port "b20116a3-76fd-5bf3-9e87-7b21dc32e801" "A" "f1a22e92-9245-5e78-a083-2d44f3390a01" "55b29433-2080-57b1-8830-217e488fc38a" 0 0
+public_port "0484fd0e-b72a-552b-a7d1-d60f60d6d902" "A'" "f1a22e92-9245-5e78-a083-2d44f3390a01" "ba9cd319-9d28-5b91-a149-b45ae03d51a5" 0 0
+public_port "e81191b5-c388-560d-84d7-11ba4a9f7703" "B" "46c93d85-f4b7-59e2-a74b-66c099b5ad02" "55b29433-2080-57b1-8830-217e488fc38a" 0 0
+public_port "9b13293a-b350-5f6c-a019-15793cf73004" "B'" "46c93d85-f4b7-59e2-a74b-66c099b5ad02" "ba9cd319-9d28-5b91-a149-b45ae03d51a5" 0 0
+public_port "c1a6af65-6956-5cf6-b3de-eaa47ee1e205" "C" "cfd69fa7-4d50-5d41-8d66-1bb5031d9505" "55b29433-2080-57b1-8830-217e488fc38a" 0 0
+public_port "92225e5a-b53a-58bc-8a86-9bd384e19706" "C'" "cfd69fa7-4d50-5d41-8d66-1bb5031d9505" "ba9cd319-9d28-5b91-a149-b45ae03d51a5" 0 0
+public_port "38d164ab-0176-5fce-83aa-67e9f39d2807" "gA+" "f1a22e92-9245-5e78-a083-2d44f3390a01" "1c88278d-6855-5ca8-b8c0-8bd670e38ae3" 1 1
+public_port "050b857d-359b-568f-97a2-f7bb7f8d4408" "gA-" "f1a22e92-9245-5e78-a083-2d44f3390a01" "9698c92b-9364-5536-923b-ac5c41f1a726" 1 1
+public_port "c72a4a6a-cee2-5034-9a9d-401f9d654a09" "gB+" "46c93d85-f4b7-59e2-a74b-66c099b5ad02" "1c88278d-6855-5ca8-b8c0-8bd670e38ae3" 1 1
+public_port "e9bc0252-144f-56a2-925d-1c63a1972d0a" "gB-" "46c93d85-f4b7-59e2-a74b-66c099b5ad02" "9698c92b-9364-5536-923b-ac5c41f1a726" 1 1
+public_port "fd183e9e-0775-519f-9dc1-ebdf3b90b70b" "gC+" "cfd69fa7-4d50-5d41-8d66-1bb5031d9505" "1c88278d-6855-5ca8-b8c0-8bd670e38ae3" 1 1
+public_port "7dbd391e-317f-580a-b16f-7b80fbfb8c0d" "gC-" "cfd69fa7-4d50-5d41-8d66-1bb5031d9505" "9698c92b-9364-5536-923b-ac5c41f1a726" 1 1
+body
+PowerDriveSim 12
+project "a4c4e197-11d8-5be1-9d41-71d772ca9ac1" "Three-phase AC voltage controller"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "f1a22e92-9245-5e78-a083-2d44f3390a01" "Phase A" "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" 0 -160 0
+instance "46c93d85-f4b7-59e2-a74b-66c099b5ad02" "Phase B" "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" 0 0 0
+instance "cfd69fa7-4d50-5d41-8d66-1bb5031d9505" "Phase C" "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" 0 160 0
+end_definition
+definition "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" "AC voltage controller"
+public_port "55b29433-2080-57b1-8830-217e488fc38a" "IN" "178540cd-5103-5083-9f95-a46e981a287d" "node" 0 0
+public_port "ba9cd319-9d28-5b91-a149-b45ae03d51a5" "OUT" "dab9f98e-3911-5244-939b-05cae467d33b" "node" 0 0
+public_port "1c88278d-6855-5ca8-b8c0-8bd670e38ae3" "g+" "4462fcda-3fde-532f-b501-f5d1de737ba3" "gate" 1 1
+public_port "9698c92b-9364-5536-923b-ac5c41f1a726" "g-" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "gate" 1 1
+public_parameter "b7e48c6a-f034-542c-a88c-4044d71eff2b" "Ron T+" "Ohm" "4462fcda-3fde-532f-b501-f5d1de737ba3" "ron" 0.01
+public_parameter "580edfcb-c736-555d-a593-51f67a791422" "Vf T+" "V" "4462fcda-3fde-532f-b501-f5d1de737ba3" "forward_voltage" 0.7
+public_parameter "b9f72500-318d-58d6-9507-7400d9bf9cbd" "Ron T-" "Ohm" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "ron" 0.01
+public_parameter "79e756ed-14c7-5ae3-8a31-9120b46fdc05" "Vf T-" "V" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "forward_voltage" 0.7
+body
+PowerDriveSim 12
+project "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" "AC voltage controller"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "178540cd-5103-5083-9f95-a46e981a287d" "IN" 0 -240 0
+node "dab9f98e-3911-5244-939b-05cae467d33b" "OUT" 0 240 0
+component "4462fcda-3fde-532f-b501-f5d1de737ba3" "T+" T "" "" 0 0 0 -100 0
+component "8aaf4546-53f6-5b3c-859f-1011eef110ce" "T-" T "" "" 0 0 0 100 0
+orientation "8aaf4546-53f6-5b3c-859f-1011eef110ce" 2 0
+wire "b232d1dd-9881-587f-9f7a-e990ad8771ad" "178540cd-5103-5083-9f95-a46e981a287d" "node" "4462fcda-3fde-532f-b501-f5d1de737ba3" "p" 1 -240 -100
+wire "a1cf0b2b-8307-5684-ba0b-0da85ea99891" "4462fcda-3fde-532f-b501-f5d1de737ba3" "n" "dab9f98e-3911-5244-939b-05cae467d33b" "node" 1 240 -100
+wire "444f234f-69e0-5b86-b835-46cddcbfeaec" "dab9f98e-3911-5244-939b-05cae467d33b" "node" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "p" 1 240 100
+wire "826b8e66-ed9a-5638-bab6-2c73c16379f8" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "n" "178540cd-5103-5083-9f95-a46e981a287d" "node" 1 -240 100
+semiconductor "4462fcda-3fde-532f-b501-f5d1de737ba3" 1 0.01 1000000 0.7
+x-label "4462fcda-3fde-532f-b501-f5d1de737ba3" "value" -50 0 0 0
+semiconductor "8aaf4546-53f6-5b3c-859f-1011eef110ce" 1 0.01 1000000 0.7
+x-label "8aaf4546-53f6-5b3c-859f-1011eef110ce" "value" -50 0 0 0
+end_definition

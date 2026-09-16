@@ -19,10 +19,31 @@
 #include <cmath>
 #include <sstream>
 namespace pds::desktop {
+namespace {
+bool same_field_contract(const QJsonObject &a, const QJsonObject &b) {
+    const QStringList keys{"key", "editor", "unit", "scale", "min", "max", "exclusiveMin", "options", "span"};
+    for (const auto &key : keys)
+        if (a.value(key) != b.value(key))
+            return false;
+    return true;
+}
+} // namespace
 bool property_visible(const Project &project, const std::string &id, const QJsonObject &field) {
     const auto conditions = field.value("when").toObject();
     for (auto condition = conditions.begin(); condition != conditions.end(); ++condition) {
-        const auto current = std::get<unsigned>(read_property(project, id, condition.key().toStdString()));
+        PropertyValue value;
+        try {
+            value = read_property(project, id, condition.key().toStdString());
+        } catch (const std::exception &) {
+            return false;
+        }
+        unsigned current = 0;
+        if (auto number = std::get_if<unsigned>(&value))
+            current = *number;
+        else if (auto flag = std::get_if<bool>(&value))
+            current = *flag ? 1u : 0u;
+        else
+            return false;
         if (!condition.value().toArray().contains(int(current)))
             return false;
     }
@@ -50,9 +71,20 @@ static QString field_text(QWidget *widget) {
     }
     return result;
 }
+static bool widget_changed(QWidget *widget) {
+    if (widget->property("draft").toBool())
+        return true;
+    if (auto *line = qobject_cast<QLineEdit *>(widget))
+        if (line->isModified())
+            return true;
+    return field_text(widget) != widget->property("loaded_text").toString();
+}
 static void set_field_text(QWidget *widget, const QString &text) {
     if (auto *combo = qobject_cast<QComboBox *>(widget)) {
-        combo->setCurrentIndex(combo->findData(text.toUInt()));
+        if (text.isEmpty())
+            combo->setCurrentIndex(-1);
+        else
+            combo->setCurrentIndex(combo->findData(text.toUInt()));
         return;
     }
     if (auto *line = qobject_cast<QLineEdit *>(widget)) {
@@ -109,7 +141,7 @@ static QString display_value(const PropertyValue &value, const QJsonObject &fiel
 }
 static PropertyValue parse_field(const QString &input, const QJsonObject &field) {
     const auto editor = field.value("editor").toString();
-    if (editor == "text")
+    if (editor == "text" || editor == "code")
         return input.toStdString();
     if (editor == "bool")
         return input == "1";
@@ -197,38 +229,94 @@ void EditorWindow::fill_inspector() {
         widget->hide();
         widget->setProperty("draft", false);
     }
-    bool valid = atoms_.count(selected_) || wires_.count(selected_);
+    auto targets = selected_ids();
+    std::erase_if(targets, [&](const std::string &id) { return !atoms_.count(id) && !wires_.count(id); });
+    if (targets.empty() && (atoms_.count(selected_) || wires_.count(selected_)))
+        targets.push_back(selected_);
+    bool valid = !targets.empty();
     inspector_hint_->setVisible(!valid);
     inspector_hint_->setText(text("inspector_empty"));
+    inspector_type_->setVisible(valid && targets.size() == 1);
     apply_button_->setVisible(valid);
     if (!valid)
         return;
-    const auto type = object_type(project(), selected_);
-    const auto &spec = component_specs_.at(type);
-    const bool external = external_gate(project(), selected_);
+    std::map<QString, QJsonObject> common;
+    std::vector<QString> field_order;
+    bool first = true;
+    for (const auto &target : targets) {
+        const auto type = object_type(project(), target);
+        const auto &spec = component_specs_.at(type);
+        std::map<QString, QJsonObject> visible;
+        for (auto value : spec.value("fields").toArray()) {
+            auto field = value.toObject();
+            if (field.value("condition") == "internal_gate" && external_gate(project(), target))
+                continue;
+            if (!property_visible(project(), target, field))
+                continue;
+            visible[field.value("key").toString()] = field;
+        }
+        if (first) {
+            common = visible;
+            for (auto value : spec.value("fields").toArray()) {
+                const auto key = value.toObject().value("key").toString();
+                if (visible.count(key))
+                    field_order.push_back(key);
+            }
+            first = false;
+        } else {
+            for (auto it = common.begin(); it != common.end();) {
+                const auto found = visible.find(it->first);
+                if (found == visible.end() || !same_field_contract(it->second, found->second))
+                    it = common.erase(it);
+                else
+                    ++it;
+            }
+        }
+    }
+    const bool external = targets.size() == 1 && external_gate(project(), targets.front());
     if (external) {
         QString source;
         for (const auto &wire : project().wires) {
             Endpoint endpoint;
-            if (wire.from == Endpoint{selected_, "gate"})
+            if (wire.from == Endpoint{targets.front(), "gate"})
                 endpoint = wire.to;
-            else if (wire.to == Endpoint{selected_, "gate"})
+            else if (wire.to == Endpoint{targets.front(), "gate"})
                 endpoint = wire.from;
             else
                 continue;
-            source = QString::fromStdString(
-                std::get<std::string>(read_property(project(), endpoint.object, "name")));
+            try {
+                source = QString::fromStdString(
+                    std::get<std::string>(read_property(project(), endpoint.object, "name")));
+            } catch (const std::exception &) {
+                source = QString();
+            }
         }
         inspector_hint_->setText(text("gate_connected_source").arg(source));
         inspector_hint_->show();
     }
-    int row = 1;
-    for (auto value : spec.value("fields").toArray()) {
-        auto field = value.toObject();
-        if (field.value("condition") == "internal_gate" && external)
+    if (targets.size() == 1) {
+        const auto type = object_type(project(), targets.front());
+        QString label = QString::fromStdString(type);
+        if (auto spec = component_specs_.find(type); spec != component_specs_.end()) {
+            const auto palette = spec->second.value("palette").toObject();
+            if (!palette.isEmpty())
+                label = text(palette.value("label").toString().toUtf8().constData());
+        } else if (type.rfind("instance:", 0) == 0) {
+            const auto definition_id = type.substr(9);
+            for (const auto &definition : project().definitions)
+                if (definition.id == definition_id) {
+                    label = QString::fromStdString(definition.name);
+                    break;
+                }
+        }
+        inspector_type_->setText(label);
+    }
+    int row = 2;
+    for (const auto &ordered_key : field_order) {
+        const auto found = common.find(ordered_key);
+        if (found == common.end())
             continue;
-        if (!property_visible(project(), selected_, field))
-            continue;
+        auto field = found->second;
         auto key = field.value("key").toString();
         auto *widget = property_editors_.at(key);
         if (auto *combo = qobject_cast<QComboBox *>(widget)) {
@@ -241,11 +329,23 @@ void EditorWindow::fill_inspector() {
         }
         if (auto *spin = qobject_cast<QSpinBox *>(widget))
             spin->setRange(field.value("min").toInt(0), field.value("max").toInt(2147483647));
-        auto contents = display_value(read_property(project(), selected_, key.toStdString()), field);
-        auto draft = drafts_.find(selected_);
+        QString contents;
+        bool mixed = false;
+        try {
+            contents = display_value(read_property(project(), targets.front(), key.toStdString()), field);
+            for (size_t i = 1; i < targets.size(); ++i)
+                mixed |= display_value(read_property(project(), targets[i], key.toStdString()), field) != contents;
+        } catch (const std::exception &e) {
+            property_error_->setText(QString::fromUtf8(e.what()));
+            continue;
+        }
+        if (mixed)
+            contents.clear();
+        auto draft = targets.size() == 1 ? drafts_.find(targets.front()) : drafts_.end();
         if (draft != drafts_.end() && draft->second.contains(key))
             contents = draft->second.value(key);
         set_field_text(widget, contents);
+        widget->setProperty("loaded_text", contents);
         widget->show();
         const auto label = field.contains("displayLabel")
                                ? field.value("displayLabel").toString()
@@ -266,6 +366,7 @@ void EditorWindow::fill_inspector() {
         }
         active_fields_.append(field);
     }
+    update_command_state();
 }
 void EditorWindow::import_samples(const QString &key) {
     if (!editing_allowed() || inspector_id_ != selected_ || selected_.empty())
@@ -310,15 +411,29 @@ void EditorWindow::apply_inspector() {
     QScopedValueRollback<bool> guard(applying_, true);
     remember_draft();
     try {
+        auto targets = selected_ids();
+        std::erase_if(targets, [&](const std::string &id) { return !atoms_.count(id) && !wires_.count(id); });
+        if (targets.empty() && (atoms_.count(selected_) || wires_.count(selected_)))
+            targets.push_back(selected_);
+        std::vector<QJsonObject> changed_fields;
+        for (auto entry : active_fields_) {
+            auto field = entry.toObject();
+            const auto key = field.value("key").toString();
+            if (widget_changed(property_editors_.at(key)))
+                changed_fields.push_back(field);
+        }
+        if (changed_fields.empty())
+            return;
         document_->apply("Edit properties", [&](Project &p) {
-            for (auto entry : active_fields_) {
-                auto field = entry.toObject();
-                auto key = field.value("key").toString();
-                write_property(p, selected_, key.toStdString(),
-                               parse_field(field_text(property_editors_.at(key)), field));
-            }
+            for (const auto &field : changed_fields)
+                for (const auto &target : targets) {
+                    auto key = field.value("key").toString();
+                    write_property(p, target, key.toStdString(),
+                                   parse_field(field_text(property_editors_.at(key)), field));
+                }
         });
-        drafts_.erase(selected_);
+        for (const auto &target : targets)
+            drafts_.erase(target);
         property_error_->clear();
         refresh();
     } catch (const std::exception &e) {

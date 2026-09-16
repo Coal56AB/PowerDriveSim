@@ -1,0 +1,46 @@
+PowerDriveSim 17
+project "7d6166da-d182-52d4-8b6b-6a4f1129a7e4" "Three-phase voltage source Delta"
+profile 0.02 1e-05 BackwardEuler
+nonlinear 64 1e-09 1e-12 1e-09
+initialization Specified 0
+stepping 0 1e-12 0.0001 1e-06 1e-08 1e-12
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "ff98873f-79c9-5d3f-83ac-e4a7415dfc4a" "Three-phase voltage source Delta" "eb613164-faf4-5b03-9014-806885fef344" 0 0 0 0
+definition "eb613164-faf4-5b03-9014-806885fef344" "Three-phase voltage source Delta"
+public_port "7a9797b8-e518-563d-bd77-e9397f612bb8" "A" "bb71fc42-15d7-5354-96a4-2912747ab480" "node" 0 0
+public_port "bd557034-90a0-5460-8f10-1fc9e34f3a11" "B" "d2e077f8-01b5-59ce-a1a8-023d99a0b01c" "node" 0 0
+public_port "d3935e0c-7922-56fa-b76a-1bec266f8bd9" "C" "9cc7645a-21d2-5484-82b2-a5c13d13d385" "node" 0 0
+public_port "3bd33951-270c-56a7-98cd-b2dc816b7b07" "N" "0f74afc2-4038-52bd-9292-98d771e2459c" "node" 0 0
+public_parameter "6c1aaf47-7a4f-5dac-ab25-cdd71f6816b3" "U line peak" "V" "*" "value" 537
+public_parameter "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b" "Voltage kind" "" "*" "source_voltage_kind" 1
+public_parameter "65d6eed8-69f4-5624-a2e0-d69ea6f29fc5" "Frequency" "Hz" "*" "source_frequency" 50
+public_parameter "38fa3978-5b47-5cb4-bb9d-3588319a76d4" "Phase offset" "rad" "*" "source_phase_offset" 0
+body
+PowerDriveSim 17
+project "eb613164-faf4-5b03-9014-806885fef344" "Three-phase voltage source Delta"
+profile 0.02 1e-05 BackwardEuler
+nonlinear 64 1e-09 1e-12 1e-09
+initialization Specified 0
+stepping 0 1e-12 0.0001 1e-06 1e-08 1e-12
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "bb71fc42-15d7-5354-96a4-2912747ab480" "A" 0 -240 -120
+node "d2e077f8-01b5-59ce-a1a8-023d99a0b01c" "B" 0 -240 0
+node "9cc7645a-21d2-5484-82b2-a5c13d13d385" "C" 0 -240 120
+node "0f74afc2-4038-52bd-9292-98d771e2459c" "N" 0 220 0
+component "e64d9779-63e7-5554-bacb-18522703f229" "VAB" V "" "" 537 0 -20 -120 0
+source "e64d9779-63e7-5554-bacb-18522703f229" 1 0 50 0 0 0.5 0
+component "0d328f8a-4a36-5f68-b62d-08d705380eee" "VBC" V "" "" 537 0 -20 0 0
+source "0d328f8a-4a36-5f68-b62d-08d705380eee" 1 0 50 -2.0943951023931953 0 0.5 0
+component "158cf373-a245-59e4-89cd-2941c3558c15" "VCA" V "" "" 537 0 -20 120 0
+source "158cf373-a245-59e4-89cd-2941c3558c15" 1 0 50 2.0943951023931953 0 0.5 0
+wire "b355ac1c-2f22-5a50-94e2-2d493fd9834a" "bb71fc42-15d7-5354-96a4-2912747ab480" "node" "e64d9779-63e7-5554-bacb-18522703f229" "p" 0
+wire "3e1f790d-7820-5ed9-b494-71bfd1c25261" "e64d9779-63e7-5554-bacb-18522703f229" "n" "d2e077f8-01b5-59ce-a1a8-023d99a0b01c" "node" 0
+wire "3aedc399-3469-5282-a954-6e3246f2e676" "d2e077f8-01b5-59ce-a1a8-023d99a0b01c" "node" "0d328f8a-4a36-5f68-b62d-08d705380eee" "p" 0
+wire "1b0aa889-3012-5faf-a5fc-2620e9d4da48" "0d328f8a-4a36-5f68-b62d-08d705380eee" "n" "9cc7645a-21d2-5484-82b2-a5c13d13d385" "node" 0
+wire "a472b55f-0d73-58de-8155-a2686566f6b1" "9cc7645a-21d2-5484-82b2-a5c13d13d385" "node" "158cf373-a245-59e4-89cd-2941c3558c15" "p" 0
+wire "397415f4-fdaf-57ba-bc8a-9b23a0c2d175" "158cf373-a245-59e4-89cd-2941c3558c15" "n" "bb71fc42-15d7-5354-96a4-2912747ab480" "node" 0
+end_definition

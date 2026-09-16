@@ -4,7 +4,7 @@
 #include <cmath>
 #include <limits>
 namespace pds::desktop {
-static QPainterPath clean_route(const std::vector<QPointF> &points) {
+static std::vector<QPointF> clean_points(const std::vector<QPointF> &points) {
     std::vector<QPointF> clean;
     for (auto point : points) {
         if (!clean.empty() && point == clean.back())
@@ -20,6 +20,10 @@ static QPainterPath clean_route(const std::vector<QPointF> &points) {
         if (clean.empty() || point != clean.back())
             clean.push_back(point);
     }
+    return clean;
+}
+static QPainterPath clean_route(const std::vector<QPointF> &points) {
+    const auto clean = clean_points(points);
     QPainterPath path;
     if (!clean.empty()) {
         path.moveTo(clean.front());
@@ -39,12 +43,20 @@ QPainterPath manual_route(QPointF a, QPointF b, const std::vector<Point> &bends)
     return clean_route(points);
 }
 std::vector<Point> route_bends(const QPainterPath &path) {
-    std::vector<Point> result;
-    for (int i = 1; i + 1 < path.elementCount(); ++i) {
+    std::vector<QPointF> points;
+    points.reserve(size_t(path.elementCount()));
+    for (int i = 0; i < path.elementCount(); ++i) {
         auto e = path.elementAt(i);
-        result.push_back({e.x, e.y});
+        points.push_back({e.x, e.y});
     }
+    points = clean_points(points);
+    std::vector<Point> result;
+    for (size_t i = 1; i + 1 < points.size(); ++i)
+        result.push_back({points[i].x(), points[i].y()});
     return result;
+}
+std::vector<Point> clean_route_bends(QPointF from, QPointF to, const std::vector<Point> &bends) {
+    return route_bends(manual_route(from, to, bends));
 }
 QPointF project_on_route(const QPainterPath &path, QPointF point, int *segment) {
     double best = std::numeric_limits<double>::infinity();

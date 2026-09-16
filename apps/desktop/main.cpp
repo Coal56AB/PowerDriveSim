@@ -2,8 +2,10 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QMessageBox>
+#include <QDebug>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <iostream>
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("PowerDriveSim");
@@ -33,6 +35,8 @@ int main(int argc, char **argv) {
         window.show();
         return app.exec();
     } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        qWarning().noquote() << QString::fromUtf8(e.what());
         if (!parser.isSet(smoke))
             QMessageBox::critical(nullptr, "PowerDriveSim", QString::fromUtf8(e.what()));
         return 1;

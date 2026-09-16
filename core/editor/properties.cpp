@@ -3,8 +3,89 @@
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 #include <optional>
 namespace pds {
+namespace {
+constexpr const char *kThreePhaseYDefinition = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
+constexpr const char *kThreePhaseDeltaDefinition = "eb613164-faf4-5b03-9014-806885fef344";
+constexpr const char *kThreePhaseVoltageParameter = "6c1aaf47-7a4f-5dac-ab25-cdd71f6816b3";
+constexpr const char *kThreePhaseVoltageKindParameter = "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b";
+constexpr const char *kThreePhaseSwitchRon = "f0d30ae4-bd4b-5ad7-84b1-467ff17c1000";
+constexpr const char *kThreePhaseSwitchRoff = "f34a470a-c84b-5d03-bbe3-437926541000";
+
+bool three_phase_source_definition(const std::string &id) {
+    return id == kThreePhaseYDefinition || id == kThreePhaseDeltaDefinition;
+}
+bool synthetic_instance_parameter(const std::string &parameter) {
+    return parameter == kThreePhaseSwitchRon || parameter == kThreePhaseSwitchRoff;
+}
+double instance_parameter_value(const Project &p, const Instance &i, const std::string &parameter) {
+    for (const auto &[key, value] : i.parameters)
+        if (key == parameter)
+            return value;
+    for (const auto &param : definition(p, i.definition).parameters)
+        if (param.id == parameter)
+            return param.value;
+    throw Diagnostic("unknown_property", i.id, "Unsupported property: parameter/" + parameter);
+}
+double instance_parameter_value_or(const Project &p, const Instance &i, const std::string &parameter, double fallback) {
+    try {
+        return instance_parameter_value(p, i, parameter);
+    } catch (const Diagnostic &) {
+        return fallback;
+    }
+}
+void set_instance_parameter(Instance &i, const std::string &parameter, double value) {
+    auto found = std::find_if(i.parameters.begin(), i.parameters.end(),
+                              [&](const auto &entry) { return entry.first == parameter; });
+    if (found == i.parameters.end())
+        i.parameters.emplace_back(parameter, value);
+    else
+        found->second = value;
+}
+double three_phase_display_voltage(const Project &p, const Instance &i) {
+    const bool delta = i.definition == kThreePhaseDeltaDefinition;
+    const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
+    const double internal = instance_parameter_value_or(p, i, kThreePhaseVoltageParameter, 310.0);
+    const double phase_peak = delta ? internal / std::sqrt(3.0) : internal;
+    const double line_peak = delta ? internal : internal * std::sqrt(3.0);
+    switch (kind) {
+    case 0:
+        return phase_peak / std::sqrt(2.0);
+    case 1:
+        return line_peak / std::sqrt(2.0);
+    case 2:
+        return phase_peak;
+    case 3:
+        return line_peak;
+    default:
+        return phase_peak / std::sqrt(2.0);
+    }
+}
+double three_phase_internal_voltage(unsigned kind, bool delta, double display) {
+    double phase_peak = display;
+    switch (kind) {
+    case 0:
+        phase_peak = display * std::sqrt(2.0);
+        break;
+    case 1:
+        phase_peak = display * std::sqrt(2.0) / std::sqrt(3.0);
+        break;
+    case 2:
+        phase_peak = display;
+        break;
+    case 3:
+        phase_peak = display / std::sqrt(3.0);
+        break;
+    default:
+        break;
+    }
+    return delta ? phase_peak * std::sqrt(3.0) : phase_peak;
+}
+} // namespace
+
 bool external_gate(const Project &p, const std::string &id) {
     return std::any_of(p.wires.begin(), p.wires.end(), [&](const Wire &w) {
         return w.from == Endpoint{id, "gate"} || w.to == Endpoint{id, "gate"};
@@ -17,9 +98,12 @@ std::string object_type(const Project &p, const std::string &id) {
     for (const auto &n : p.nodes)
         if (n.id == id)
             return n.ground ? "ground" : "node";
+    for (const auto &t : p.tags)
+        if (t.id == id)
+            return "tag";
     for (const auto &g : p.patterns)
         if (g.id == id)
-            return g.pwm ? "pwm" : "pattern";
+            return "pattern";
     for (const auto &g : p.plots)
         if (g.id == id)
             return "plot";
@@ -48,12 +132,28 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
     };
     for(const auto& i:p.instances)if(i.id==id) {
         if(auto v=common(i))return *v;
+        if (three_phase_source_definition(i.definition)) {
+            if (key == "three_phase_connection")
+                return unsigned(i.definition == kThreePhaseDeltaDefinition ? 1 : 0);
+            if (key == "three_phase_voltage_kind")
+                return unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
+            if (key == "three_phase_voltage")
+                return three_phase_display_voltage(p, i);
+        }
         if(key.rfind("parameter/",0)==0) {
             const auto parameter=key.substr(10);
+            if (three_phase_source_definition(i.definition)) {
+                if (parameter == kThreePhaseVoltageKindParameter)
+                    return unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
+                if (parameter == kThreePhaseVoltageParameter)
+                    return three_phase_display_voltage(p, i);
+            }
             for(const auto& param:definition(p,i.definition).parameters)if(param.id==parameter) {
                 for(const auto& override:i.parameters)if(override.first==parameter)return override.second;
                 return param.value;
             }
+            if (synthetic_instance_parameter(parameter))
+                throw Diagnostic("unknown_property", id, "Unsupported property: " + key);
         }
     }
     for (const auto &c : p.components)
@@ -64,6 +164,10 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return c.value;
             if (key == "initial")
                 return c.initial;
+            if (key == "parallel_resistance_enabled")
+                return c.parallel_resistance_enabled;
+            if (key == "parallel_resistance")
+                return c.parallel_resistance;
             if (key == "closed")
                 return c.closed;
             if(rectifying(c.kind)||gate_controlled(c.kind)) {
@@ -76,6 +180,7 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
             if(c.kind==Kind::voltage||c.kind==Kind::current) {
                 if(key=="source_mode")return unsigned(c.source.kind);
                 if(key=="source_points")return c.source.points;
+                if(key=="source_phase_deg")return c.source.phase*180.0/std::numbers::pi;
                 if(auto v=source_parameter(c.source,key))return *v;
             }
         }
@@ -83,10 +188,19 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
         if (n.id == id)
             if (auto v = common(n))
                 return *v;
+    for (const auto &t : p.tags)
+        if (t.id == id) {
+            if (auto v = common(t))
+                return *v;
+            if (key == "tag_domain")
+                return unsigned(t.domain);
+        }
     for (const auto &g : p.patterns)
         if (g.id == id) {
             if (auto v = common(g))
                 return *v;
+            if (key == "gate_mode")
+                return unsigned(g.script ? 2 : g.pwm ? 1 : 0);
             if (key == "closed")
                 return g.initial;
             if (key == "frequency")
@@ -95,6 +209,10 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return g.duty;
             if (key == "delay")
                 return g.delay;
+            if (key == "gate_code")
+                return g.code;
+            if (key == "script_step")
+                return g.script_step;
         }
     for (const auto &g : p.plots)
         if (g.id == id) {
@@ -114,8 +232,49 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
         if(key=="name"){i.name=std::get<std::string>(value);return;}
         if(key=="x"){i.x=std::get<double>(value);return;}
         if(key=="y"){i.y=std::get<double>(value);return;}
+        if (three_phase_source_definition(i.definition)) {
+            if (key == "three_phase_connection") {
+                const double display = three_phase_display_voltage(p, i);
+                const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
+                const bool delta = std::get<unsigned>(value) != 0;
+                i.definition = delta ? kThreePhaseDeltaDefinition : kThreePhaseYDefinition;
+                set_instance_parameter(i, kThreePhaseVoltageKindParameter, kind);
+                set_instance_parameter(i, kThreePhaseVoltageParameter,
+                                       three_phase_internal_voltage(kind, delta, display));
+                return;
+            }
+            if (key == "three_phase_voltage_kind") {
+                set_instance_parameter(i, kThreePhaseVoltageKindParameter, std::get<unsigned>(value));
+                return;
+            }
+            if (key == "three_phase_voltage") {
+                const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
+                const bool delta = i.definition == kThreePhaseDeltaDefinition;
+                set_instance_parameter(i, kThreePhaseVoltageParameter,
+                                       three_phase_internal_voltage(kind, delta, std::get<double>(value)));
+                return;
+            }
+        }
         if(key.rfind("parameter/",0)==0) {
-            const auto parameter=key.substr(10);auto v=std::find_if(i.parameters.begin(),i.parameters.end(),[&](const auto& v){return v.first==parameter;});
+            const auto parameter=key.substr(10);
+            if (three_phase_source_definition(i.definition)) {
+                if (parameter == kThreePhaseVoltageKindParameter) {
+                    set_instance_parameter(i, kThreePhaseVoltageKindParameter,
+                                           std::holds_alternative<unsigned>(value)
+                                               ? double(std::get<unsigned>(value))
+                                               : std::get<double>(value));
+                    return;
+                }
+                if (parameter == kThreePhaseVoltageParameter) {
+                    const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
+                    const bool delta = i.definition == kThreePhaseDeltaDefinition;
+                    set_instance_parameter(i, kThreePhaseVoltageParameter,
+                                           three_phase_internal_voltage(kind, delta, std::get<double>(value)));
+                    return;
+                }
+            }
+            (void)definition(p,i.definition);
+            auto v=std::find_if(i.parameters.begin(),i.parameters.end(),[&](const auto& v){return v.first==parameter;});
             if(v==i.parameters.end())i.parameters.emplace_back(parameter,std::get<double>(value));else v->second=std::get<double>(value);
             return;
         }
@@ -151,6 +310,10 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 c.value = std::get<double>(value);
             if (key == "initial")
                 c.initial = std::get<double>(value);
+            if (key == "parallel_resistance_enabled")
+                c.parallel_resistance_enabled = std::get<bool>(value);
+            if (key == "parallel_resistance")
+                c.parallel_resistance = std::get<double>(value);
             if (key == "closed")
                 c.closed = std::get<bool>(value);
             if(key=="initial_latched")c.semiconductor.initial_latched=std::get<bool>(value);
@@ -167,6 +330,10 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                     c.source.points={{0,0},{.01,c.value}};
             }
             if(key=="source_points")c.source.points=std::get<std::vector<Point>>(value);
+            if(key=="source_phase_deg") {
+                c.source.phase=std::get<double>(value)*std::numbers::pi/180.0;
+                return;
+            }
             if(auto v=source_parameter(c.source,key))*v=std::get<double>(value);
             return;
         }
@@ -175,10 +342,32 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
             common(n);
             return;
         }
+    for (auto &t : p.tags)
+        if (t.id == id) {
+            if (common(t))
+                return;
+            if (key == "tag_domain")
+                t.domain = Domain(std::get<unsigned>(value));
+            return;
+        }
     for (auto &g : p.patterns)
         if (g.id == id) {
             if (common(g))
                 return;
+            if (key == "gate_mode") {
+                const auto mode = std::get<unsigned>(value);
+                if (mode > 2)
+                    throw Diagnostic("invalid_gate_mode", id, "Unknown gate mode");
+                g.pwm = mode == 1;
+                g.script = mode == 2;
+                if (g.pwm && g.frequency <= 0)
+                    g.frequency = 1000;
+                if (g.script && g.code.empty())
+                    g.code = "pwm(1000, 0.5, 0)";
+                if (g.pwm || g.script)
+                    std::erase_if(p.events, [&](const GateEvent &e) { return e.target == id; });
+                return;
+            }
             if (key == "closed")
                 g.initial = std::get<bool>(value);
             if (key == "frequency")
@@ -187,6 +376,10 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 g.duty = std::get<double>(value);
             if (key == "delay")
                 g.delay = std::get<double>(value);
+            if (key == "gate_code")
+                g.code = std::get<std::string>(value);
+            if (key == "script_step")
+                g.script_step = std::get<double>(value);
             return;
         }
     for (auto &g : p.plots)

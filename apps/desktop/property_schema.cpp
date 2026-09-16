@@ -3,17 +3,23 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCompleter>
 #include <QDir>
 #include <QFile>
 #include <QFormLayout>
+#include <QFontDatabase>
 #include <QHeaderView>
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QScrollBar>
 #include <QSpinBox>
 #include <QStyledItemDelegate>
+#include <QSyntaxHighlighter>
 #include <QTableWidget>
+#include <QTextCharFormat>
 namespace pds::desktop {
 namespace {
 class EventTimeDelegate final : public QStyledItemDelegate {
@@ -25,6 +31,111 @@ class EventTimeDelegate final : public QStyledItemDelegate {
         if (auto *line = qobject_cast<QLineEdit *>(editor))
             normalize_decimal_point(line);
         return editor;
+    }
+};
+class GateCodeHighlighter final : public QSyntaxHighlighter {
+  public:
+    explicit GateCodeHighlighter(QTextDocument *document) : QSyntaxHighlighter(document) {
+        keyword_.setForeground(QColor("#7aa2f7"));
+        keyword_.setFontWeight(QFont::DemiBold);
+        function_.setForeground(QColor("#73daca"));
+        number_.setForeground(QColor("#ff9e64"));
+        comment_.setForeground(QColor("#6b7280"));
+        variable_.setForeground(QColor("#c0caf5"));
+        assign_.setForeground(QColor("#bb9af7"));
+    }
+
+  protected:
+    void highlightBlock(const QString &text) override {
+        apply(R"(\b(auto|bool|double|float|int|return|true|false)\b)", keyword_);
+        apply(R"(\b(pwm|phasepwm|square|ramp)\s*(?=\())", function_);
+        apply(R"((?<![A-Za-z_])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?)", number_);
+        apply(R"(\b[A-Za-z_][A-Za-z0-9_]*(?=\s*=))", variable_);
+        apply(R"([=;,()])", assign_);
+        if (const auto start = text.indexOf("//"); start >= 0)
+            setFormat(start, text.size() - start, comment_);
+    }
+
+  private:
+    QTextCharFormat keyword_, function_, number_, comment_, variable_, assign_;
+    void apply(const QString &pattern, const QTextCharFormat &format) {
+        QRegularExpression re(pattern);
+        auto it = re.globalMatch(currentBlock().text());
+        while (it.hasNext()) {
+            const auto match = it.next();
+            setFormat(match.capturedStart(), match.capturedLength(), format);
+        }
+    }
+};
+class GateCodeEdit final : public QPlainTextEdit {
+  public:
+    explicit GateCodeEdit(QWidget *parent = nullptr) : QPlainTextEdit(parent) {
+        completer_ = new QCompleter(QStringList{
+                                        "phasepwm(frequency, duty, delay)",
+                                        "pwm(frequency, duty, delay)",
+                                        "square(frequency, duty, delay)",
+                                        "ramp(t0, t1, value0, value1)",
+                                        "curr_ramp",
+                                        "t",
+                                        "true",
+                                        "false",
+                                    },
+                                    this);
+        completer_->setWidget(this);
+        completer_->setCompletionMode(QCompleter::PopupCompletion);
+        completer_->setCaseSensitivity(Qt::CaseInsensitive);
+        completer_->setFilterMode(Qt::MatchStartsWith);
+        connect(completer_, QOverload<const QString &>::of(&QCompleter::activated), this,
+                [this](const QString &completion) { insert_completion(completion); });
+    }
+
+  protected:
+    void keyPressEvent(QKeyEvent *event) override {
+        if (completer_->popup()->isVisible()) {
+            switch (event->key()) {
+            case Qt::Key_Enter:
+            case Qt::Key_Return:
+            case Qt::Key_Escape:
+            case Qt::Key_Tab:
+            case Qt::Key_Backtab:
+                event->ignore();
+                return;
+            default:
+                break;
+            }
+        }
+        const bool explicit_request =
+            event->key() == Qt::Key_Space && (event->modifiers() & Qt::ControlModifier);
+        if (!explicit_request)
+            QPlainTextEdit::keyPressEvent(event);
+        const auto prefix = completion_prefix();
+        if (!explicit_request && prefix.size() < 1) {
+            completer_->popup()->hide();
+            return;
+        }
+        completer_->setCompletionPrefix(prefix);
+        if (completer_->completionCount() == 0) {
+            completer_->popup()->hide();
+            return;
+        }
+        auto rect = cursorRect();
+        rect.setWidth(completer_->popup()->sizeHintForColumn(0) +
+                      completer_->popup()->verticalScrollBar()->sizeHint().width() + 18);
+        completer_->complete(rect);
+    }
+
+  private:
+    QCompleter *completer_ = nullptr;
+    QString completion_prefix() const {
+        auto cursor = textCursor();
+        cursor.select(QTextCursor::WordUnderCursor);
+        return cursor.selectedText();
+    }
+    void insert_completion(const QString &completion) {
+        auto cursor = textCursor();
+        cursor.select(QTextCursor::WordUnderCursor);
+        cursor.insertText(completion);
+        setTextCursor(cursor);
     }
 };
 } // namespace
@@ -54,7 +165,7 @@ void EditorWindow::load_component_specs() {
             if (editor == "enum" && field.value("options").toArray().isEmpty())
                 throw std::runtime_error(("Empty choices in " + file.fileName()).toStdString());
             if (key.isEmpty() || !keys.insert(key).second ||
-                !QStringList{"text", "number", "bool", "integer", "enum", "events", "points", "samples"}
+                !QStringList{"text", "number", "bool", "integer", "enum", "events", "points", "samples", "code"}
                      .contains(editor) ||
                 field.value("scale").toDouble(1) <= 0)
                 throw std::runtime_error(("Invalid property in " + file.fileName()).toStdString());
@@ -93,7 +204,10 @@ void EditorWindow::build_property_editors() {
             } else if (kind == "bool") {
                 auto *check = new QCheckBox;
                 widget = check;
-                connect(check, &QCheckBox::clicked, this, [this] { apply_inspector(); });
+                connect(check, &QCheckBox::clicked, this, [this, check] {
+                    check->setProperty("draft", true);
+                    apply_inspector();
+                });
             } else if (kind == "integer") {
                 auto *spin = new QSpinBox;
                 widget = spin;
@@ -131,10 +245,24 @@ void EditorWindow::build_property_editors() {
                     connect(button, &QPushButton::clicked, this, [this, key] { import_samples(key); });
                 }
             } else {
-                auto *edit = new QPlainTextEdit;
+                auto *edit = kind == "code" ? static_cast<QPlainTextEdit *>(new GateCodeEdit)
+                                            : new QPlainTextEdit;
                 widget = edit;
-                edit->setMaximumHeight(100);
-                edit->setPlaceholderText("x y");
+                edit->setMaximumHeight(kind == "code" ? 150 : 100);
+                if (kind == "code") {
+                    edit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+                    edit->setTabStopDistance(QFontMetricsF(edit->font()).horizontalAdvance(' ') * 4);
+                    edit->setPlaceholderText(
+                        "curr_ramp = ramp(0, 10, 0.008333333, 0.001111111);\n"
+                        "phasepwm(50, 0.02, curr_ramp);");
+                    edit->setStyleSheet(
+                        "QPlainTextEdit{background:#111827;color:#d8dee9;border:1px solid #334155;"
+                        "border-radius:6px;padding:8px;selection-background-color:#2563eb;"
+                        "selection-color:#f8fafc;}");
+                    new GateCodeHighlighter(edit->document());
+                } else {
+                    edit->setPlaceholderText("x y");
+                }
                 connect(edit, &QPlainTextEdit::textChanged, this, [this, edit] {
                     if (!inspector_loading_) {
                         edit->setProperty("draft", true);

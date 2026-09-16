@@ -5,13 +5,19 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 15;
+inline constexpr unsigned project_schema = 17;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
-struct Orientation { unsigned quarter_turns=0; bool mirrored=false; bool operator==(const Orientation&) const = default; };
+struct Orientation {
+    unsigned quarter_turns = 0;
+    bool mirrored = false;
+    double scale = 1.0;
+    double scale_x = 1.0, scale_y = 1.0;
+    bool operator==(const Orientation &) const = default;
+};
 struct Node { std::string id, name; bool ground = false; double x=0, y=0; Orientation orientation; bool operator==(const Node&) const = default; };
 struct Point { double x=0,y=0; bool operator==(const Point&) const = default; };
 enum class Waveform { dc, sine, pulse, piecewise_linear };
@@ -37,6 +43,8 @@ struct Component {
     std::string positive, negative;
     double value = 1.0, initial = 0.0, x = 0.0, y = 0.0;
     bool closed = false;
+    bool parallel_resistance_enabled = false;
+    double parallel_resistance = 1e12;
     Orientation orientation;
     SourceWaveform source;
     Semiconductor semiconductor;
@@ -71,10 +79,22 @@ struct Endpoint {
     std::string object, port;
     bool operator==(const Endpoint&) const = default;
 };
-struct Wire { std::string id; Endpoint from,to; std::vector<Point> bends; bool operator==(const Wire&) const = default; };
-struct GatePattern { std::string id,name; double x=0,y=0; bool initial=false; Orientation orientation; bool pwm=false; double frequency=1000,duty=.5,delay=0; bool operator==(const GatePattern&) const = default; };
 enum class Domain { electrical, gate, signal };
 enum class Direction { conserving, input, output };
+struct Wire { std::string id; Endpoint from,to; std::vector<Point> bends; bool operator==(const Wire&) const = default; };
+struct ConnectionTag {
+    std::string id,name;
+    double x=0,y=0;
+    Domain domain=Domain::electrical;
+    Orientation orientation;
+    bool operator==(const ConnectionTag&) const = default;
+};
+struct GatePattern {
+    std::string id,name; double x=0,y=0; bool initial=false; Orientation orientation;
+    bool pwm=false; double frequency=1000,duty=.5,delay=0;
+    bool script=false; std::string code; double script_step=1e-6;
+    bool operator==(const GatePattern&) const = default;
+};
 struct PortType { Domain domain; Direction direction; };
 struct PlotBlock {
     std::string id,name; double x=0,y=0; unsigned inputs=2;
@@ -109,6 +129,7 @@ struct ViewOptions {
     std::vector<std::string> hidden_channels;
     std::vector<CurveStyle> curve_styles;
     std::vector<std::pair<std::string, std::string>> curve_names;
+    std::vector<std::pair<std::string, double>> curve_multipliers;
     std::vector<LegendPosition> legend_positions;
     std::string plot, cursor_channel_a, cursor_channel_b;
     double y_low=-1,y_high=1,cursor_y_a=0,cursor_y_b=0,time_span=0,line_width=1.8;
@@ -123,6 +144,7 @@ struct Instance {
     double x=0,y=0;
     Orientation orientation;
     std::vector<std::pair<std::string,double>> parameters;
+    bool locked=false;
     bool operator==(const Instance&) const = default;
 };
 struct PublicPort {
@@ -144,6 +166,7 @@ struct Schematic {
     std::vector<std::string> extensions;
     bool wired=false;
     std::vector<Wire> wires;
+    std::vector<ConnectionTag> tags;
     std::vector<GatePattern> patterns;
     std::vector<PlotBlock> plots;
     std::vector<LabelLayout> labels;

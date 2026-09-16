@@ -41,6 +41,6 @@
     "category": "signals",
     "short": "PWM",
     "fixed": false,
-    "hidden": false
+    "hidden": true
   }
 }

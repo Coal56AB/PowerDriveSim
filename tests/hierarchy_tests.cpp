@@ -270,6 +270,9 @@ int main() try {
                         .definition;
     require(imported != id(10) && definition(destination.project(), imported).components[1].value == 1e-6,
             "Clipboard catalog conflicts preserve imported nested definition");
+    auto inserted_again = destination.paste(fragment, 300, 400);
+    require(inserted_again.size() == 1 && inserted_again.front() != inserted.front(),
+            "Repeated paste of a grouped instance assigns fresh object ids");
     auto gated = fixture();
     auto &cell = gated.definitions[0];
     cell.components.push_back({id(50), "Switch", Kind::ideal_switch, "", "", 0});

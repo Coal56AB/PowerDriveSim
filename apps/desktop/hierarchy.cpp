@@ -27,6 +27,17 @@
 #include <algorithm>
 #include <set>
 namespace pds::desktop {
+namespace {
+constexpr const char *kThreePhaseYDefinition = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
+constexpr const char *kThreePhaseDeltaDefinition = "eb613164-faf4-5b03-9014-806885fef344";
+constexpr const char *kThreePhaseVoltageParameter = "6c1aaf47-7a4f-5dac-ab25-cdd71f6816b3";
+constexpr const char *kThreePhaseVoltageKindParameter = "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b";
+
+bool three_phase_source_definition(const std::string &id) {
+    return id == kThreePhaseYDefinition || id == kThreePhaseDeltaDefinition;
+}
+} // namespace
+
 void EditorWindow::update_instance_specs() {
     bool changed = false;
     std::function<QJsonObject(const Definition &, const PublicParameter &)> binding_field;
@@ -44,7 +55,7 @@ void EditorWindow::update_instance_specs() {
                 type = kind_name(c.kind);
         for (const auto &g : d.patterns)
             if (g.id == p.object)
-                type = g.pwm ? "pwm" : "pattern";
+                type = "pattern";
         if (component_specs_.count(type))
             for (const auto &entry : component_specs_.at(type).value("fields").toArray())
                 if (entry.toObject().value("key").toString() == QString::fromStdString(p.field))
@@ -54,7 +65,31 @@ void EditorWindow::update_instance_specs() {
     for (const auto &d : root_project().definitions) {
         QJsonArray fields{
             QJsonObject{{"key", "name"}, {"editor", "text"}, {"label", "name"}, {"inline", "name"}}};
+        if (three_phase_source_definition(d.id)) {
+            fields.append(QJsonObject{
+                {"key", "three_phase_connection"},
+                {"editor", "enum"},
+                {"label", "three_phase_connection"},
+                {"options", QJsonArray{QJsonObject{{"value", 0}, {"label", "three_phase_connection_y"}},
+                                       QJsonObject{{"value", 1}, {"label", "three_phase_connection_delta"}}}}});
+            fields.append(QJsonObject{
+                {"key", "three_phase_voltage_kind"},
+                {"editor", "enum"},
+                {"label", "three_phase_voltage_kind"},
+                {"options", QJsonArray{QJsonObject{{"value", 0}, {"label", "voltage_phase_rms"}},
+                                       QJsonObject{{"value", 1}, {"label", "voltage_line_rms"}},
+                                       QJsonObject{{"value", 2}, {"label", "voltage_phase_peak"}},
+                                       QJsonObject{{"value", 3}, {"label", "voltage_line_peak"}}}}});
+            fields.append(QJsonObject{{"key", "three_phase_voltage"},
+                                      {"editor", "number"},
+                                      {"label", "three_phase_voltage"},
+                                      {"unit", "V"},
+                                      {"min", 0}});
+        }
         for (const auto &p : d.parameters) {
+            if (three_phase_source_definition(d.id) &&
+                (p.id == kThreePhaseVoltageParameter || p.id == kThreePhaseVoltageKindParameter))
+                continue;
             QJsonObject field = binding_field(d, p);
             field.remove("inline");
             field.remove("inlinePart");
@@ -95,6 +130,22 @@ void EditorWindow::open_subcircuit(const std::string &id) {
     auto path = hierarchy_path();
     path.push_back(id);
     navigate_hierarchy(path);
+}
+bool EditorWindow::current_hierarchy_locked() const {
+    if (hierarchy_path().empty())
+        return false;
+    const Schematic *level = &root_project();
+    for (size_t depth = 0; depth < hierarchy_path().size(); ++depth) {
+        const auto &step = hierarchy_path()[depth];
+        auto instance = std::find_if(level->instances.begin(), level->instances.end(),
+                                     [&](const auto &i) { return i.id == step; });
+        if (instance == level->instances.end())
+            return true;
+        if (depth + 1 == hierarchy_path().size())
+            return instance->locked;
+        level = &definition(root_project(), instance->definition);
+    }
+    return true;
 }
 std::string EditorWindow::group_selection(const QString &name) {
     if (!editing_allowed())
@@ -167,12 +218,13 @@ void EditorWindow::build_hierarchy_actions(QMenu *menu) {
                         [&](const auto &i) { return i.id == selected_; }))
             open_subcircuit(selected_);
         if (!hierarchy_path().empty()) {
-            hierarchy_edit_enabled_ = true;
+            hierarchy_edit_enabled_ = !hierarchy_edit_enabled_;
             refresh_hierarchy();
             update_command_state();
-            banner_->setText(text("editing_shared_definition"));
+            banner_->setText(hierarchy_edit_enabled_ ? text("editing_shared_definition") : text("definition_readonly"));
         }
     });
+    commands_.at("edit_definition")->setCheckable(true);
     add("detach_subcircuit", {}, [this] { detach_selected(); });
     add("expand_subcircuit", {}, [this] { expand_selected(); });
     add("public_interface", {}, [this] {
@@ -216,10 +268,23 @@ void EditorWindow::refresh_hierarchy() {
     const auto &root = root_project();
     auto *layout = static_cast<QHBoxLayout *>(breadcrumbs_->layout());
     while (auto *item = layout->takeAt(0)) {
-        if (item->widget()) item->widget()->deleteLater();
+        if (item->widget()) {
+            if (item->widget() == definition_button_)
+                item->widget()->setParent(nullptr);
+            else
+                item->widget()->deleteLater();
+        }
         delete item;
     }
+    auto add_separator = [&] {
+        auto *label = new QLabel(">");
+        label->setObjectName("hierarchy_separator");
+        label->setStyleSheet("color:palette(placeholder-text);padding:0 2px;font-weight:600;");
+        layout->addWidget(label);
+    };
     auto add_level = [&](const std::string &name, size_t depth) {
+        if (depth)
+            add_separator();
         auto *button = new QToolButton;
         button->setObjectName("hierarchy_level_" + QString::number(depth));
         const auto title = name.empty() ? text("untitled") : QString::fromStdString(name);
@@ -245,17 +310,46 @@ void EditorWindow::refresh_hierarchy() {
         add_level(i->name, ++depth);
         level = &definition(root, i->definition);
     }
+    if (!definition_button_) {
+        definition_button_ = new QToolButton;
+        definition_button_->setObjectName("edit_definition_button");
+        definition_button_->setDefaultAction(commands_.at("edit_definition"));
+        definition_button_->setToolTip(text("editing_shared_definition"));
+    } else {
+        definition_button_->setParent(nullptr);
+    }
+    const bool locked = current_hierarchy_locked();
+    definition_button_->setVisible(depth != 0 && locked);
+    definition_button_->setCheckable(true);
+    definition_button_->setChecked(hierarchy_edit_enabled_);
+    commands_.at("edit_definition")->setText(text("edit_definition"));
+    commands_.at("edit_definition")->setChecked(hierarchy_edit_enabled_);
+    if (depth != 0 && locked)
+        layout->addWidget(definition_button_);
     layout->addStretch();
-    definition_button_->setVisible(depth != 0);
     std::map<std::string, QString> exposed;
     if (depth)
         for (const auto &port : definition(root, document_->current_definition()).ports)
             exposed[endpoint_key(port.terminal)] += QString::fromStdString(port.name) + " ";
+    auto display_port_label = [&](const std::string &object, const QString &, QString label) {
+        label = label.trimmed();
+        if (label != "p" && label != "n")
+            return label;
+        auto component = std::find_if(project().components.begin(), project().components.end(),
+                                      [&](const auto &c) { return c.id == object; });
+        if (component == project().components.end())
+            return label;
+        if (component->kind == Kind::resistor || component->kind == Kind::inductor ||
+            component->kind == Kind::ideal_switch)
+            return QString();
+        return label == "p" ? QString("+") : QString("-");
+    };
     for (auto &[id, atom] : atoms_)
         for (auto *dot : atom->childItems())
             if (dot->data(1).toString() == "port") {
-                const auto label =
-                    exposed[endpoint_key({id, dot->data(2).toString().toStdString()})].trimmed();
+                const auto port = dot->data(2).toString();
+                const auto label = display_port_label(
+                    id, port, exposed[endpoint_key({id, port.toStdString()})]);
                 if (dot->data(7).toString() == label) {
                     for (auto *child : dot->childItems())
                         if (auto *note = dynamic_cast<QGraphicsSimpleTextItem *>(child)) {
@@ -337,7 +431,9 @@ void EditorWindow::refresh_hierarchy() {
     commands_.at("group_subcircuit")->setEnabled(editing_allowed() && !selected_ids().empty());
     commands_.at("open_internals")->setEnabled(!running() && instance);
     commands_.at("hierarchy_up")->setEnabled(!running() && !hierarchy_path().empty());
-    commands_.at("edit_definition")->setEnabled(!running() && (instance || !hierarchy_path().empty()));
+    const bool selected_locked = std::any_of(project().instances.begin(), project().instances.end(),
+                                             [&](const auto &i) { return i.id == selected_ && i.locked; });
+    commands_.at("edit_definition")->setEnabled(!running() && ((instance && selected_locked) || (!hierarchy_path().empty() && locked)));
     commands_.at("detach_subcircuit")->setEnabled(editing_allowed() && instance);
     commands_.at("expand_subcircuit")->setEnabled(editing_allowed() && instance);
     commands_.at("public_interface")

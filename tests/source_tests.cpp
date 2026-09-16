@@ -115,6 +115,14 @@ int main(int argc, char **argv) try {
         }
         roundtrip(p);
     }
+    {
+        auto p = fixture();
+        p.components[0].source.kind = Waveform::sine;
+        write_property(p, p.components[0].id, "source_phase_deg", 90.0);
+        near(p.components[0].source.phase, std::numbers::pi / 2, 1e-12, "Sine phase can be edited in degrees");
+        near(std::get<double>(read_property(p, p.components[0].id, "source_phase_deg")), 90.0, 1e-12,
+             "Sine phase degrees read back from radians");
+    }
     for (auto method : {Method::backward_euler, Method::trapezoidal}) {
         auto p = fixture();
         p.profile.method = method;

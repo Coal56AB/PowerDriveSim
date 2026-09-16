@@ -1,0 +1,13 @@
+{
+  "type": "library:three-phase-source-y",
+  "fields": [],
+  "template": "sources/three-phase-source-y.pds",
+  "palette": {
+    "id": 280,
+    "label": "three_phase_source",
+    "category": "sources",
+    "short": "3~",
+    "fixed": false,
+    "hidden": false
+  }
+}

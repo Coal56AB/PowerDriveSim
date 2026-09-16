@@ -27,6 +27,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::map<std::string,Orientation> orientations;
     std::map<std::string,SourceWaveform> sources;
     std::map<std::string,Semiconductor> semiconductors;
+    std::map<std::string,std::pair<bool,double>> parallel_resistances;
     struct ChargeData { bool enabled; double transit, lifetime, initial; };
     std::map<std::string,ChargeData> charges;
     std::map<std::string,std::pair<double,bool>> thyristors;
@@ -120,6 +121,15 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 if(row.fail()||(viewport!=0&&viewport!=1)||!std::isfinite(v.begin)||!std::isfinite(v.end)||!std::isfinite(v.cursor_a)||!std::isfinite(v.cursor_b)||(viewport&&v.end!=-1&&v.end<=v.begin))throw Diagnostic("parse_error",std::to_string(number),"Invalid plot viewport");
                 v.viewport=viewport==1;parsed=!row.fail();row>>std::ws;
             }
+            if(parsed&&!row.eof()) {
+                size_t count=0;row>>count;
+                if(row.fail()||count>10000)throw Diagnostic("parse_error",std::to_string(number),"Invalid curve multipliers");
+                for(size_t i=0;i<count;++i){std::string channel;double multiplier=1;row>>std::quoted(channel)>>multiplier;
+                    if(row.fail()||channel.empty()||!std::isfinite(multiplier)||std::any_of(v.curve_multipliers.begin(),v.curve_multipliers.end(),[&](const auto& entry){return entry.first==channel;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid curve multiplier");
+                    if(std::abs(multiplier-1.0)>1e-15)v.curve_multipliers.emplace_back(channel,multiplier);
+                }
+                parsed=!row.fail();row>>std::ws;
+            }
             if(!parsed||!row.eof()||!std::isfinite(v.y_low)||!std::isfinite(v.y_high)||v.y_low>=v.y_high||!std::isfinite(v.time_span)||v.time_span<0||!std::isfinite(v.line_width)||v.line_width<=0||v.line_width>10||!std::isfinite(v.cursor_y_a)||!std::isfinite(v.cursor_y_b)||manual<0||manual>1||free<0||free>1||separate<0||separate>1||grid<0||grid>1||legend<0||legend>1||std::any_of(p.view_options.begin(),p.view_options.end(),[&](const ViewOptions& o){return o.plot==v.plot;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid view settings");
             v.manual_y=manual;v.free_cursors=free;v.separate_axes=separate;v.grid=grid;v.legend=legend;p.view_options.push_back(v);continue;
         }
@@ -172,6 +182,14 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             row>>std::quoted(instance.id)>>std::quoted(instance.name)>>std::quoted(instance.definition)>>instance.x>>instance.y>>count;
             if(count>10000)throw Diagnostic("parse_error",instance.id,"Too many instance parameters");
             for(size_t i=0;i<count;++i){std::string key;double value=0;row>>std::quoted(key)>>value;instance.parameters.emplace_back(key,value);}
+            if(p.schema>=16) {
+                row>>std::ws;
+                if(!row.eof()) {
+                    int locked=-1;row>>locked;
+                    if(locked!=0&&locked!=1)row.setstate(std::ios::failbit);
+                    instance.locked=locked==1;
+                }
+            }
             p.instances.push_back(std::move(instance));
         } else if(tag=="wire" && p.schema>=4) {
             Wire wire; size_t count=0;
@@ -180,6 +198,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if(count>10000) throw Diagnostic("parse_error",wire.id,"Too many wire routing points");
             for(size_t i=0;i<count;++i) { Point point; row >> point.x >> point.y; wire.bends.push_back(point); }
             p.wires.push_back(wire);
+        } else if(tag=="tag" && p.schema>=16) {
+            ConnectionTag t;unsigned domain=0;
+            row>>std::quoted(t.id)>>std::quoted(t.name)>>t.x>>t.y>>domain;
+            if(domain>unsigned(Domain::signal))row.setstate(std::ios::failbit);
+            t.domain=Domain(domain);p.tags.push_back(t);
         } else if(tag=="pattern" && p.schema>=4) {
             GatePattern pattern; int initial=-1;
             row >> std::quoted(pattern.id) >> std::quoted(pattern.name) >> pattern.x >> pattern.y >> initial;
@@ -187,9 +210,34 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             pattern.initial=initial==1; p.patterns.push_back(pattern);
         } else if(tag=="pwm" && p.schema>=6){
             GatePattern g;g.pwm=true;row>>std::quoted(g.id)>>std::quoted(g.name)>>g.x>>g.y>>g.frequency>>g.duty>>g.delay;p.patterns.push_back(g);
+        } else if(tag=="gate_script" && p.schema>=16){
+            GatePattern g;g.script=true;row>>std::quoted(g.id)>>std::quoted(g.name)>>g.x>>g.y>>g.initial>>g.script_step>>std::quoted(g.code);p.patterns.push_back(g);
         } else if(tag=="orientation" && p.schema>=6){
             std::string id;Orientation orientation;int mirror=-1;row>>std::quoted(id)>>orientation.quarter_turns>>mirror;
-            if(orientation.quarter_turns>3||(mirror!=0&&mirror!=1)||orientations.count(id))row.setstate(std::ios::failbit);
+            std::vector<double> values;
+            std::string rest;
+            std::getline(row, rest);
+            if (row.fail() && row.eof())
+                row.clear();
+            std::istringstream tail(rest);
+            for (double value = 0; tail >> value;)
+                values.push_back(value);
+            if (tail.fail() && !tail.eof())
+                row.setstate(std::ios::failbit);
+            if (p.schema >= 17 || !values.empty()) {
+                if (values.size() == 1) {
+                    orientation.scale = values[0];
+                } else if (values.size() == 3) {
+                    orientation.scale = values[0];
+                    orientation.scale_x = values[1];
+                    orientation.scale_y = values[2];
+                } else if (!values.empty()) {
+                    row.setstate(std::ios::failbit);
+                }
+            }
+            if(orientation.quarter_turns>3||(mirror!=0&&mirror!=1)||!std::isfinite(orientation.scale)||orientation.scale<=0||
+               !std::isfinite(orientation.scale_x)||orientation.scale_x<=0||!std::isfinite(orientation.scale_y)||orientation.scale_y<=0||
+               orientations.count(id))row.setstate(std::ios::failbit);
             orientation.mirrored=mirror==1;orientations[id]=orientation;
         } else if(tag=="plot" && p.schema>=5){
             PlotBlock plot;row>>std::quoted(plot.id)>>std::quoted(plot.name)>>plot.x>>plot.y>>plot.inputs>>plot.begin>>plot.end>>plot.cursor_a>>plot.cursor_b;p.plots.push_back(plot);
@@ -218,6 +266,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if(c.kind==Kind::igbt && p.schema<12)throw Diagnostic("schema_version",c.id,"IGBT requires schema 12");
             if(c.kind==Kind::thyristor && p.schema<11)throw Diagnostic("schema_version",c.id,"Thyristors require schema 11");
             p.components.push_back(c);
+        } else if(tag=="parallel_resistance" && p.schema>=17) {
+            std::string id;int enabled=-1;double resistance=0;
+            row>>std::quoted(id)>>enabled>>resistance;
+            if((enabled!=0&&enabled!=1)||!std::isfinite(resistance)||resistance<=0||parallel_resistances.count(id))
+                throw Diagnostic("parse_error",id,"Invalid or duplicate parallel resistance");
+            parallel_resistances.emplace(id,std::make_pair(enabled==1,resistance));
         } else if(tag=="thyristor" && p.schema>=11) {
             std::string id;double holding=0;int latched=-1;
             row>>std::quoted(id)>>holding>>latched;
@@ -253,7 +307,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     if(!identity || !profile || (p.schema>=3 && !nonlinear) || (p.schema>=4 && !wiring) || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
     // v1 -> v2: default Backward Euler; v2 -> v3: explicit default nonlinear profile.
     for(const auto& [id,orientation]:orientations){
-        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.patterns);apply(p.plots);apply(p.instances);
+        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.tags);apply(p.patterns);apply(p.plots);apply(p.instances);
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
     for(const auto& [id,source]:sources) {
@@ -265,6 +319,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
         if(c==p.components.end())throw Diagnostic("missing_semiconductor_target",id,"Semiconductor component does not exist");
         c->semiconductor=model;validate_semiconductor(*c);
+    }
+    for(const auto& [id,data]:parallel_resistances) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
+        if(c==p.components.end()||c->kind!=Kind::inductor)
+            throw Diagnostic("invalid_parameter",id,"Parallel resistance target must be an inductor");
+        c->parallel_resistance_enabled=data.first;c->parallel_resistance=data.second;
     }
     for(const auto& [id,data]:charges) {
         auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
@@ -280,7 +340,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         validate_semiconductor(*c);
     }
     p.schema=project_schema;
-    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
+    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.tags);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
 Project read_project(std::istream& in) {
@@ -316,11 +376,12 @@ void write_project(const Project& p, std::ostream& out) {
         check_text(wire.id,wire.id); check_text(wire.from.object,wire.id); check_text(wire.from.port,wire.id);
         check_text(wire.to.object,wire.id); check_text(wire.to.port,wire.id);
     }
+    for(const auto& tag:p.tags) { check_text(tag.id,tag.id); check_text(tag.name,tag.id); }
     for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
     for(const auto& plot:p.plots){check_text(plot.id,plot.id);check_text(plot.name,plot.id);}
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
-    for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);}
+    for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);for(const auto& multiplier:v.curve_multipliers)check_text(multiplier.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
     out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim " << project_schema << "\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
@@ -330,11 +391,11 @@ void write_project(const Project& p, std::ostream& out) {
     const auto &control = p.profile.step_control;
     out << "stepping " << control.adaptive << ' ' << control.minimum_step << ' ' << control.relative_tolerance
         << ' ' << control.voltage_tolerance << ' ' << control.current_tolerance << ' ' << control.charge_tolerance << '\n';
-    auto write_orientation=[&](const auto& object){if(object.orientation.quarter_turns>3)throw Diagnostic("invalid_orientation",object.id,"Rotation must contain 0..3 quarter turns");if(object.orientation.quarter_turns||object.orientation.mirrored)out<<"orientation "<<std::quoted(object.id)<<' '<<object.orientation.quarter_turns<<' '<<object.orientation.mirrored<<'\n';};
+    auto write_orientation=[&](const auto& object){const auto& o=object.orientation;if(o.quarter_turns>3||!std::isfinite(o.scale)||o.scale<=0||!std::isfinite(o.scale_x)||o.scale_x<=0||!std::isfinite(o.scale_y)||o.scale_y<=0)throw Diagnostic("invalid_orientation",object.id,"Invalid orientation");if(o.quarter_turns||o.mirrored||std::abs(o.scale-1)>1e-12||std::abs(o.scale_x-1)>1e-12||std::abs(o.scale_y-1)>1e-12)out<<"orientation "<<std::quoted(object.id)<<' '<<o.quarter_turns<<' '<<o.mirrored<<' '<<o.scale<<' '<<o.scale_x<<' '<<o.scale_y<<'\n';};
     for(const auto& experiment:p.experiments) { out<<"experiment ";write_experiment(out,experiment);out<<'\n'; }
-    for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
+    for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& t:p.tags)write_orientation(t);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
     for(const auto& i:p.instances)write_orientation(i);
-    for(const auto& i:p.instances){out<<"instance "<<std::quoted(i.id)<<' '<<std::quoted(i.name)<<' '<<std::quoted(i.definition)<<' '<<i.x<<' '<<i.y<<' '<<i.parameters.size();for(const auto& [key,value]:i.parameters)out<<' '<<std::quoted(key)<<' '<<value;out<<'\n';}
+    for(const auto& i:p.instances){out<<"instance "<<std::quoted(i.id)<<' '<<std::quoted(i.name)<<' '<<std::quoted(i.definition)<<' '<<i.x<<' '<<i.y<<' '<<i.parameters.size();for(const auto& [key,value]:i.parameters)out<<' '<<std::quoted(key)<<' '<<value;out<<' '<<i.locked<<'\n';}
     out << "wiring " << (p.wired?"wires":"nets") << '\n';
     for(const auto& wire:p.wires) {
         out << "wire " << std::quoted(wire.id) << ' ' << std::quoted(wire.from.object) << ' ' << std::quoted(wire.from.port)
@@ -342,7 +403,8 @@ void write_project(const Project& p, std::ostream& out) {
         for(const auto& point:wire.bends) out << ' ' << point.x << ' ' << point.y;
         out << '\n';
     }
-    for(const auto& g:p.patterns) if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
+    for(const auto& tag:p.tags)out<<"tag "<<std::quoted(tag.id)<<' '<<std::quoted(tag.name)<<' '<<tag.x<<' '<<tag.y<<' '<<unsigned(tag.domain)<<'\n';
+    for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(g.code)<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
     for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<'\n';
     out<<"scope_enabled "<<p.scope_enabled<<'\n';
     out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';
@@ -351,6 +413,8 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& c:p.components) out << "component " << std::quoted(c.id) << ' ' << std::quoted(c.name) << ' '
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
+    for(const auto& c:p.components)if(c.kind==Kind::inductor&&(c.parallel_resistance_enabled||std::abs(c.parallel_resistance-1e12)>1e-9))
+        out<<"parallel_resistance "<<std::quoted(c.id)<<' '<<c.parallel_resistance_enabled<<' '<<c.parallel_resistance<<'\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';
     for(const auto& c:p.components)if(c.semiconductor!=Semiconductor{}) {
         validate_semiconductor(c);const auto& s=c.semiconductor;
@@ -368,7 +432,7 @@ void write_project(const Project& p, std::ostream& out) {
         out<<'\n';
     }
     for(const auto& l:p.labels)out<<"x-label "<<std::quoted(l.object)<<' '<<std::quoted(l.role)<<' '<<l.x<<' '<<l.y<<' '<<l.orientation.quarter_turns<<' '<<(l.orientation.mirrored?1:0)<<'\n';
-    for(const auto& v:p.view_options){out<<"x-view "<<std::quoted(v.plot)<<' '<<v.y_low<<' '<<v.y_high<<' '<<v.manual_y<<' '<<v.free_cursors<<' '<<v.separate_axes<<' '<<v.grid<<' '<<v.legend<<' '<<v.line_width<<' '<<v.time_span<<' '<<std::quoted(v.cursor_channel_a)<<' '<<std::quoted(v.cursor_channel_b)<<' '<<v.cursor_y_a<<' '<<v.cursor_y_b<<' '<<v.display_columns<<' '<<v.signal_displays.size();for(const auto& binding:v.signal_displays)out<<' '<<std::quoted(binding.first)<<' '<<binding.second;out<<' '<<v.hidden_channels.size();for(const auto& channel:v.hidden_channels)out<<' '<<std::quoted(channel);out<<' '<<v.curve_styles.size();for(const auto& style:v.curve_styles)out<<' '<<std::quoted(style.channel)<<' '<<unsigned(style.line)<<' '<<style.width<<' '<<unsigned(style.marker)<<' '<<style.marker_size;out<<' '<<v.legend_positions.size();for(const auto& pos:v.legend_positions)out<<' '<<pos.display<<' '<<pos.x<<' '<<pos.y;out<<' '<<v.curve_names.size();for(const auto& name:v.curve_names)out<<' '<<std::quoted(name.first)<<' '<<std::quoted(name.second);out<<' '<<v.viewport<<' '<<v.begin<<' '<<v.end<<' '<<v.cursor_a<<' '<<v.cursor_b<<'\n';}
+    for(const auto& v:p.view_options){out<<"x-view "<<std::quoted(v.plot)<<' '<<v.y_low<<' '<<v.y_high<<' '<<v.manual_y<<' '<<v.free_cursors<<' '<<v.separate_axes<<' '<<v.grid<<' '<<v.legend<<' '<<v.line_width<<' '<<v.time_span<<' '<<std::quoted(v.cursor_channel_a)<<' '<<std::quoted(v.cursor_channel_b)<<' '<<v.cursor_y_a<<' '<<v.cursor_y_b<<' '<<v.display_columns<<' '<<v.signal_displays.size();for(const auto& binding:v.signal_displays)out<<' '<<std::quoted(binding.first)<<' '<<binding.second;out<<' '<<v.hidden_channels.size();for(const auto& channel:v.hidden_channels)out<<' '<<std::quoted(channel);out<<' '<<v.curve_styles.size();for(const auto& style:v.curve_styles)out<<' '<<std::quoted(style.channel)<<' '<<unsigned(style.line)<<' '<<style.width<<' '<<unsigned(style.marker)<<' '<<style.marker_size;out<<' '<<v.legend_positions.size();for(const auto& pos:v.legend_positions)out<<' '<<pos.display<<' '<<pos.x<<' '<<pos.y;out<<' '<<v.curve_names.size();for(const auto& name:v.curve_names)out<<' '<<std::quoted(name.first)<<' '<<std::quoted(name.second);out<<' '<<v.viewport<<' '<<v.begin<<' '<<v.end<<' '<<v.cursor_a<<' '<<v.cursor_b<<' '<<v.curve_multipliers.size();for(const auto& multiplier:v.curve_multipliers)out<<' '<<std::quoted(multiplier.first)<<' '<<multiplier.second;out<<'\n';}
     for(const auto& e:p.extensions) {
         if(e.rfind("x-",0)!=0 || e.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("extension_error",p.id,"Extensions must be single x- records");

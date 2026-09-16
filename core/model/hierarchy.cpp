@@ -20,6 +20,10 @@ void remap_view_options(ViewOptions &view, const std::map<std::string, std::stri
         remap(key);
     for (auto &style : view.curve_styles)
         remap(style.channel);
+    for (auto &[key, multiplier] : view.curve_multipliers) {
+        (void)multiplier;
+        remap(key);
+    }
     for (auto &[key, display] : view.signal_displays) {
         (void)display;
         remap(key);
@@ -58,6 +62,35 @@ namespace {
 void parameter_value(Schematic &s, const Project &catalog, const PublicParameter &p, double value) {
     if (!std::isfinite(value))
         throw Diagnostic("invalid_parameter", p.id, "Public parameter must be finite");
+    if (p.object == "*") {
+        if (p.field == "source_voltage_kind")
+            return;
+        bool applied = false;
+        for (auto &c : s.components) {
+            if (p.field == "value" && (c.kind == Kind::voltage || c.kind == Kind::current)) {
+                c.value = value;
+                applied = true;
+            } else if (p.field == "three_phase_switch_ron" && c.kind == Kind::ideal_switch) {
+                c.semiconductor.model = SemiconductorModel::piecewise_linear;
+                c.semiconductor.ron = value;
+                applied = true;
+            } else if (p.field == "three_phase_switch_roff" && c.kind == Kind::ideal_switch) {
+                c.semiconductor.model = SemiconductorModel::piecewise_linear;
+                c.semiconductor.roff = value;
+                applied = true;
+            } else if (c.kind == Kind::voltage || c.kind == Kind::current) {
+                if (p.field == "source_phase_offset") {
+                    c.source.phase += value;
+                    applied = true;
+                } else if (auto target = source_parameter(c.source, p.field)) {
+                    *target = value;
+                    applied = true;
+                }
+            }
+        }
+        if (applied)
+            return;
+    }
     for (auto &c : s.components)
         if (c.id == p.object) {
             if (p.field == "value") {
@@ -115,14 +148,21 @@ void validate_schematic(const Project &p) {
     auto objects = [&](const auto &list) {
         for (const auto &o : list) {
             uuid(o.id);
-            if (!std::isfinite(o.x) || !std::isfinite(o.y) || o.orientation.quarter_turns > 3)
+            if (!std::isfinite(o.x) || !std::isfinite(o.y) || o.orientation.quarter_turns > 3 ||
+                !std::isfinite(o.orientation.scale) || o.orientation.scale <= 0 ||
+                !std::isfinite(o.orientation.scale_x) || o.orientation.scale_x <= 0 ||
+                !std::isfinite(o.orientation.scale_y) || o.orientation.scale_y <= 0)
                 throw Diagnostic("invalid_geometry", o.id, "Invalid object geometry");
         }
     };
     objects(p.components);
     for(const auto& c:p.components)validate_waveform(c);
     for(const auto& c:p.components)validate_semiconductor(c);
+    for(const auto& c:p.components)
+        if(c.parallel_resistance_enabled&&(c.kind!=Kind::inductor||!std::isfinite(c.parallel_resistance)||c.parallel_resistance<=0))
+            throw Diagnostic("invalid_parameter",c.id,"Parallel resistance must be a positive inductor parameter");
     objects(p.nodes);
+    objects(p.tags);
     objects(p.patterns);
     objects(p.plots);
     objects(p.instances);
@@ -145,6 +185,8 @@ void validate_schematic(const Project &p) {
     }
 }
 Point transform(Point p, Point offset, Orientation o) {
+    p.x *= o.scale * o.scale_x;
+    p.y *= o.scale * o.scale_y;
     for (unsigned n = 0; n < o.quarter_turns; ++n)
         p = {-p.y, p.x};
     if (o.mirrored)
@@ -154,7 +196,8 @@ Point transform(Point p, Point offset, Orientation o) {
 Orientation compose(Orientation parent, Orientation child) {
     int turns =
         int(child.quarter_turns) + (child.mirrored ? -int(parent.quarter_turns) : int(parent.quarter_turns));
-    return {unsigned((turns + 4) % 4), parent.mirrored != child.mirrored};
+    return {unsigned((turns + 4) % 4), parent.mirrored != child.mirrored, parent.scale * child.scale,
+            parent.scale_x * child.scale_x, parent.scale_y * child.scale_y};
 }
 } // namespace
 void validate_hierarchy(const Project &p) {
@@ -220,6 +263,7 @@ FlattenedProject flatten(const Project &source) {
         };
         remember(source.nodes);
         remember(source.components);
+        remember(source.tags);
         remember(source.patterns);
         remember(source.plots);
         remember(source.wires);
@@ -261,6 +305,7 @@ FlattenedProject flatten(const Project &source) {
         auto &flat = result.project;
         objects(s.nodes, flat.nodes);
         objects(s.components, flat.components);
+        objects(s.tags, flat.tags);
         objects(s.patterns, flat.patterns);
         objects(s.plots, flat.plots);
         auto add = [&](const std::string &object, const std::string &port) {
@@ -278,6 +323,8 @@ FlattenedProject flatten(const Project &source) {
         }
         for (const auto &g : s.patterns)
             add(g.id, "out");
+        for (const auto &t : s.tags)
+            add(t.id, "io");
         for (const auto &p : s.plots)
             for (unsigned n = 1; n <= p.inputs; ++n)
                 add(p.id, "in" + std::to_string(n));

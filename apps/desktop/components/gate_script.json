@@ -1,0 +1,33 @@
+{
+  "type": "gate_script",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "gate_code",
+      "editor": "code",
+      "label": "gate_code",
+      "span": true
+    },
+    {
+      "key": "script_step",
+      "editor": "number",
+      "label": "script_step",
+      "unit": "s",
+      "min": 0,
+      "exclusiveMin": true
+    }
+  ],
+  "palette": {
+    "id": 105,
+    "label": "gate_script",
+    "category": "signals",
+    "short": "Code",
+    "fixed": false,
+    "hidden": true
+  }
+}

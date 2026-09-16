@@ -9,9 +9,7 @@
 #include "formats/project/project.hpp"
 #include "results/csv.hpp"
 #include <QApplication>
-#include <QBuffer>
 #include <QGraphicsSceneHoverEvent>
-#include <QToolTip>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -29,6 +27,7 @@
 #include <QGraphicsSimpleTextItem>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -38,7 +37,9 @@
 #include <QPainterPath>
 #include <QPainterPathStroker>
 #include <QPlainTextEdit>
+#include <QProgressBar>
 #include <QPushButton>
+#include <QDebug>
 #include <QSaveFile>
 #include <QSettings>
 #include <QSignalBlocker>
@@ -57,6 +58,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <iostream>
 #include <sstream>
 namespace pds::desktop {
 static QString q(const std::string &s) {
@@ -77,8 +79,16 @@ static std::string serialized(const Project &p) {
     write_project(p, out);
     return out.str();
 }
-static QPointF snapped(QPointF p) {
-    return {std::round(p.x() / 20) * 20, std::round(p.y() / 20) * 20};
+static QTransform orientation_transform(Orientation o) {
+    int c[] = {1, 0, -1, 0}, sn[] = {0, 1, 0, -1};
+    const unsigned t = o.quarter_turns % 4;
+    const double sign = o.mirrored ? -1 : 1;
+    QTransform transform;
+    transform.scale(o.scale * o.scale_x, o.scale * o.scale_y);
+    if (o.mirrored)
+        transform.scale(-1, 1);
+    transform.rotate(int(t) * 90);
+    return transform;
 }
 class PortDot final : public QGraphicsItem {
     QColor color_;
@@ -101,7 +111,9 @@ class PortDot final : public QGraphicsItem {
             painter->setBrush(halo);
             painter->drawEllipse(QPointF(), 6, 6);
         }
-        painter->setPen(QPen(themed_signal(color_), 1.2));
+        auto pen = QPen(themed_signal(color_), 1.2);
+        pen.setCosmetic(true);
+        painter->setPen(pen);
         painter->setBrush(theme_colors().surface);
         painter->drawEllipse(QPointF(), hovered_ ? 2.8 : 2.0, hovered_ ? 2.8 : 2.0);
     }
@@ -162,35 +174,10 @@ class Atom final : public QGraphicsItem {
     Atom(std::string uuid, QString label, QString mark, int category)
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
         setData(0, q(id));
+        setData(1, "atom");
         setFlags(ItemIsSelectable | ItemSendsGeometryChanges);
         setZValue(2);
         setAcceptHoverEvents(true);
-    }
-    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override {
-        int icon_id = library_icon_id;
-        if (type == 3) icon_id = 103;
-        if (type == 2) icon_id = symbol == "PWM" ? 104 : 102;
-        if (type == 1 && ground) icon_id = 100;
-        if (type == 0) {
-            const QStringList symbols{"R", "C", "L", "V", "I", "S", "D", "VP", "IP", "T", "IGBT"};
-            icon_id = int(symbols.indexOf(symbol));
-        }
-        QString content = name.toHtmlEscaped();
-        if (icon_id >= 0) {
-            QByteArray bytes;
-            QBuffer buffer(&bytes);
-            buffer.open(QIODevice::WriteOnly);
-            component_icon(icon_id).pixmap(48, 48).save(&buffer, "PNG");
-            content = "<table><tr><td><img width='48' height='48' src='data:image/png;base64," +
-                      QString::fromLatin1(bytes.toBase64()) + "'></td><td>" + content + "</td></tr></table>";
-        }
-        setToolTip(content);
-        QToolTip::showText(event->screenPos() + QPoint(12, 12), content);
-        QGraphicsItem::hoverEnterEvent(event);
-    }
-    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override {
-        QToolTip::hideText();
-        QGraphicsItem::hoverLeaveEvent(event);
     }
     void prepareGeometryChangeForInputs(unsigned count) {
         prepareGeometryChange();
@@ -206,16 +193,30 @@ class Atom final : public QGraphicsItem {
         for (auto *child : childItems())
             delete child;
         std::vector<const PublicPort *> left, right;
-        unsigned electrical = 0;
-        for (const auto &port : definition.ports) {
-            bool on_right = port.direction == Direction::output ||
-                            (port.direction == Direction::conserving && electrical++ % 2);
-            (on_right ? right : left).push_back(&port);
+        const bool three_phase_source =
+            definition.id == "1a963f2c-ceb8-5cce-b927-44d735ec9e80" ||
+            definition.id == "eb613164-faf4-5b03-9014-806885fef344";
+        if (three_phase_source) {
+            for (const auto &port : definition.ports) {
+                if (port.name == "N")
+                    left.push_back(&port);
+                else
+                    right.push_back(&port);
+            }
+        } else {
+            unsigned electrical = 0;
+            for (const auto &port : definition.ports) {
+                bool on_right = port.direction == Direction::output ||
+                                (port.direction == Direction::conserving && electrical++ % 2);
+                (on_right ? right : left).push_back(&port);
+            }
         }
         input_count = unsigned(std::max(left.size(), right.size()));
+        const double spacing = port_spacing();
         auto side = [&](const auto &group, double x) {
             for (size_t n = 0; n < group.size(); ++n) {
-                QPointF pt(x, (double(n) - (group.size() - 1) / 2.) * 26);
+                const double y = (double(n) - double(group.size() - 1) / 2.0) * spacing;
+                QPointF pt(x, y);
                 const auto &external = *group[n];
                 public_ports.push_back({q(external.name), pt});
                 port(q(external.id), pt,
@@ -224,32 +225,47 @@ class Atom final : public QGraphicsItem {
                                                                 : "#146cca"));
             }
         };
-        side(left, -108);
-        side(right, 108);
+        side(left, -100);
+        side(right, 100);
         for (auto *child : childItems())
             for (const auto &port : definition.ports)
                 if (child->data(2).toString() == q(port.id))
                     child->setToolTip(q(port.name));
     }
+    double port_spacing() const {
+        return input_count > 18 ? 8.0 : input_count > 12 ? 10.0 : input_count > 8 ? 12.0 : 20.0;
+    }
+    double body_half_height() const {
+        if (type == 4)
+            return std::max(42.0, (std::max(1u, input_count) - 1) * port_spacing() / 2.0 + 24.0);
+        if (type == 3)
+            return std::max(40.0, input_count * 20.0);
+        return 40.0;
+    }
     QRectF boundingRect() const override {
         if (type == 4) {
-            double h = std::max(36., input_count * 14.);
+            double h = body_half_height();
             return {-110, -h - 8, 220, 2 * h + 40};
         }
         if (type == 3) {
-            double h = std::max(36.0, input_count * 12.0);
+            double h = std::max(40.0, input_count * 20.0);
             return {-80, -h - 14, 160, 2 * h + 52};
         }
+        if (type == 5)
+            return {-34, -18, 108, 36};
         return type == 1 ? QRectF(-46, -12, 92, 68) : QRectF(-78, -53, 156, 104);
     }
     QPainterPath shape() const override {
         QPainterPath path;
         if (type == 4) {
-            double h = std::max(36., input_count * 14.);
+            double h = body_half_height();
             path.addRect(QRectF(-90, -h, 180, 2 * h));
             return path;
         }
-        if (type == 1) {
+        if (type == 5) {
+            path.addRoundedRect(QRectF(-30, -14, 60, 28), 4, 4);
+            path.addRect(QRectF(30, -10, 42, 20));
+        } else if (type == 1) {
             if (ground)
                 path.addRect(QRectF(-18, -5, 36, 34));
             else
@@ -257,7 +273,7 @@ class Atom final : public QGraphicsItem {
             if (!separate_labels && !name.isEmpty())
                 path.addRect(QRectF(-45, 31, 90, 20));
         } else if (type == 3) {
-            double h = std::max(36.0, input_count * 12.0);
+            double h = std::max(40.0, input_count * 20.0);
             path.addRect(QRectF(-46, -h, 104, 2 * h));
             if (!separate_labels)
                 path.addRect(QRectF(-78, h + 7, 156, 24));
@@ -278,6 +294,21 @@ class Atom final : public QGraphicsItem {
         item->setData(2, port_name);
         item->setToolTip(port_name);
     }
+    void snap_ports_to_grid(double grid) {
+        auto snap = [&](QPointF point) {
+            return QPointF(std::round(point.x() / grid) * grid, std::round(point.y() / grid) * grid);
+        };
+        int index = 0;
+        for (auto *child : childItems()) {
+            if (child->data(1).toString() != "port")
+                continue;
+            const QPointF local = mapFromScene(snap(child->scenePos()));
+            child->setPos(local);
+            if (index < int(public_ports.size()))
+                public_ports[size_t(index)].second = local;
+            ++index;
+        }
+    }
     QVariant itemChange(GraphicsItemChange change, const QVariant &proposed) override {
 
         return QGraphicsItem::itemChange(change, proposed);
@@ -295,13 +326,15 @@ class Atom final : public QGraphicsItem {
     }
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
         const bool channel_highlight = data(channel_highlight_role).toBool();
-        p->setPen(QPen(channel_highlight ? QColor("#b34cce")
-                       : isSelected()    ? QColor("#e88b22")
-                                         : theme_colors().text,
-                       channel_highlight ? 3 : 2));
+        auto main_pen = QPen(channel_highlight ? QColor("#b34cce")
+                             : isSelected()    ? QColor("#e88b22")
+                                               : theme_colors().text,
+                             channel_highlight ? 3 : 2);
+        main_pen.setCosmetic(true);
+        p->setPen(main_pen);
         p->setBrush(theme_colors().surface);
         if (type == 4) {
-            double h = std::max(36., input_count * 14.);
+            double h = body_half_height();
             p->setBrush(theme_colors().canvas);
             p->drawRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
             auto font = p->font();
@@ -314,7 +347,8 @@ class Atom final : public QGraphicsItem {
                       QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 65));
             }
             if (library_icon_id >= 0) {
-                component_icon(library_icon_id).paint(p, QRect(-28, -28, 56, 56));
+                const int icon_h = int(std::min(96.0, std::max(50.0, 2.0 * h - 22.0)));
+                component_icon(library_icon_id).paint(p, QRect(-64, -icon_h / 2, 128, icon_h));
             } else {
                 font.setPointSize(11);
                 font.setBold(true);
@@ -324,9 +358,11 @@ class Atom final : public QGraphicsItem {
             return;
         }
         if (type == 3) {
-            double h = std::max(36.0, input_count * 12.0);
+            double h = std::max(40.0, input_count * 20.0);
             p->setBrush(theme_colors().surface);
-            p->setPen(QPen(isSelected() ? QColor("#3a7fe0") : theme_colors().border, 1.5));
+            auto box_pen = QPen(isSelected() ? QColor("#3a7fe0") : theme_colors().border, 1.5);
+            box_pen.setCosmetic(true);
+            p->setPen(box_pen);
             p->drawRoundedRect(QRectF(-46, -h, 104, 2 * h), 7, 7);
             p->setPen(QPen(theme_colors().grid, 1));
             p->drawLine(-24, 17, -24, -17);
@@ -338,14 +374,39 @@ class Atom final : public QGraphicsItem {
             curve.cubicTo(25, -8, 20, 7, 36, -4);
             p->drawPath(curve);
             for (unsigned i = 1; i <= input_count; ++i) {
-                double y = (static_cast<double>(i) - (input_count + 1) / 2.0) * 22;
+                double y = (static_cast<double>(i) - 1.0) * 20.0;
                 p->setPen(QPen(theme_colors().signal, 1.4));
-                p->drawLine(QPointF(-70, y), QPointF(-46, y));
+                p->drawLine(QPointF(-60, y), QPointF(-46, y));
                 label(p, QRectF(-43, y - 9, 16, 18), Qt::AlignCenter, QString::number(i));
             }
             p->setPen(theme_colors().text);
             if (!separate_labels)
                 label(p, QRectF(-78, h + 7, 156, 24), Qt::AlignCenter, name);
+            return;
+        }
+        if (type == 5) {
+            const bool gate = symbol == "G";
+            const QColor color = themed_signal(gate ? QColor("#17866d") : QColor("#146cca"));
+            p->setBrush(theme_colors().canvas);
+            p->setPen(QPen(color, isSelected() ? 2.4 : 1.6));
+            QPainterPath tag;
+            tag.moveTo(-28, -14);
+            tag.lineTo(20, -14);
+            tag.lineTo(32, 0);
+            tag.lineTo(20, 14);
+            tag.lineTo(-28, 14);
+            tag.closeSubpath();
+            p->drawPath(tag);
+            p->drawLine(-42, 0, -28, 0);
+            p->setPen(theme_colors().text);
+            auto font = p->font();
+            font.setBold(true);
+            p->setFont(font);
+            label(p, QRectF(-26, -11, 50, 22), Qt::AlignCenter, symbol);
+            font.setBold(false);
+            p->setFont(font);
+            label(p, QRectF(36, -10, 64, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                  QFontMetricsF(font).elidedText(name, Qt::ElideRight, 60));
             return;
         }
         if (type == 1) {
@@ -379,8 +440,12 @@ class Atom final : public QGraphicsItem {
             auto port_font = p->font();
             port_font.setPointSize(8);
             p->setFont(port_font);
-            label(p, QRectF(-61, 4, 18, 16), Qt::AlignLeft, "p");
-            label(p, QRectF(44, 4, 18, 16), Qt::AlignRight, "n");
+            if (symbol != "R" && symbol != "L" && symbol != "C" && symbol != "S") {
+                const auto left = symbol == "V" || symbol == "I" ? QString("+") : QString("p");
+                const auto right = symbol == "V" || symbol == "I" ? QString("-") : QString("n");
+                label(p, QRectF(-61, 4, 18, 16), Qt::AlignLeft, left);
+                label(p, QRectF(44, 4, 18, 16), Qt::AlignRight, right);
+            }
             p->restore();
             if (symbol == "R")
                 p->drawRect(QRectF(-27, -12, 54, 24));
@@ -394,14 +459,15 @@ class Atom final : public QGraphicsItem {
                     p->drawArc(QRectF(-28 + i * 14, -14, 14, 28), 0, 180 * 16);
             } else if (symbol == "IGBT") {
                 p->drawLine(-27, 0, -16, 0);
-                p->drawLine(-16, 0, -16, -12);
-                p->drawLine(16, -12, 16, 0);
+                p->drawLine(-16, -18, -16, 18);
+                p->drawLine(16, -16, 16, 16);
                 p->drawLine(16, 0, 27, 0);
-                p->drawLine(-22, -12, 22, -12);
-                p->drawLine(-22, -20, 22, -20);
-                p->drawLine(0, -40, 0, -20);
-                p->drawLine(8, -7, 16, 0);
-                p->drawLine(16, 0, 8, 0);
+                p->drawLine(-22, -18, 22, -18);
+                p->drawLine(-22, -24, 22, -24);
+                p->drawLine(0, -40, 0, -24);
+                QPolygonF arrow;
+                arrow << QPointF(4, -4) << QPointF(14, -10) << QPointF(12, 2);
+                p->drawPolygon(arrow);
             } else if (symbol == "S") {
                 p->drawLine(-27, 0, 20, -18);
                 p->drawLine(0, -40, 0, -26);
@@ -469,6 +535,8 @@ void EditorWindow::update_labels() {
     for (const auto &[id, item] : atoms_) {
         auto *atom = static_cast<Atom *>(item);
         for (const QString role : {QString("name"), QString("value")}) {
+            if (atom->type == 1 && !atom->ground)
+                continue;
             const auto contents = role == "name" ? atom->name : atom->value;
             if (contents.isEmpty())
                 continue;
@@ -486,8 +554,8 @@ void EditorWindow::update_labels() {
             label->setToolTip(text("label_hint"));
             const QPointF anchor = role == "value"   ? QPointF(0, -41)
                                    : atom->type == 1 ? QPointF(0, 41)
-                                   : atom->type == 3 ? QPointF(0, std::max(36., atom->input_count * 12.) + 19)
-                                   : atom->type == 4 ? QPointF(0, std::max(36., atom->input_count * 14.) + 19)
+                                   : atom->type == 3 ? QPointF(0, std::max(40., atom->input_count * 20.) + 20)
+                                   : atom->type == 4 ? QPointF(0, atom->body_half_height() + 20)
                                                      : QPointF(0, 39);
             label->setData(5, anchor);
             if (canvas_->editing_gesture() && label->isSelected() && !atom->isSelected())
@@ -524,9 +592,12 @@ void EditorWindow::update_labels() {
 bool EditorWindow::commit_label_positions() {
     std::vector<LabelLayout> changed;
     for (const auto &[key, item] : labels_)
-        if (item->isSelected() && !atoms_.at(item->data(0).toString().toStdString())->isSelected()) {
+        if (item->isSelected()) {
             const auto id = item->data(0).toString().toStdString();
-            auto pos = atoms_.at(id)->mapFromScene(item->pos()) - item->data(5).toPointF();
+            auto atom = atoms_.find(id);
+            if (atom == atoms_.end() || atom->second->isSelected())
+                continue;
+            auto pos = atom->second->mapFromScene(item->pos()) - item->data(5).toPointF();
             auto t = item->transform();
             LabelLayout layout{
                 id,
@@ -563,7 +634,11 @@ bool EditorWindow::commit_label_positions() {
 bool EditorWindow::transform_labels(int turns, bool mirror) {
     bool found = false;
     for (const auto &[key, item] : labels_)
-        if (item->isSelected() && !atoms_.at(item->data(0).toString().toStdString())->isSelected()) {
+        if (item->isSelected()) {
+            const auto id = item->data(0).toString().toStdString();
+            auto atom = atoms_.find(id);
+            if (atom == atoms_.end() || atom->second->isSelected())
+                continue;
             auto transform = item->transform();
             if (mirror)
                 transform.scale(-1, 1);
@@ -582,10 +657,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         auto *a = new Atom(o.id, q(o.name), symbol, type);
         a->value = value;
         a->setPos(o.x, o.y);
-        int c[] = {1, 0, -1, 0}, sn[] = {0, 1, 0, -1};
-        auto t = o.orientation.quarter_turns % 4;
-        double sign = o.orientation.mirrored ? -1 : 1;
-        a->setTransform(QTransform(sign * c[t], sn[t], -sign * sn[t], c[t], 0, 0));
+        a->setTransform(orientation_transform(o.orientation));
         group->addToGroup(a);
         return a;
     };
@@ -599,40 +671,50 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
             a->port("out", {0, -40}, QColor("#8c67c8"));
     }
     for (const auto &n : fragment.nodes) {
-        auto *a = add(n, 1, {}, {});
+        auto copy = n;
+        if (!copy.ground)
+            copy.name.clear();
+        auto *a = add(copy, 1, {}, {});
         a->ground = n.ground;
         a->port("node", {0, 0}, QColor("#146cca"));
     }
+    for (const auto &t : fragment.tags) {
+        auto *a = add(t, 5, t.domain == Domain::gate ? QString("G") : QString("N"), {});
+        a->port("io", {0, 0}, t.domain == Domain::gate ? QColor("#17866d") : QColor("#146cca"));
+    }
     for (const auto &g : fragment.patterns) {
-        auto *a = add(g, 2, g.pwm ? QString("PWM") : QString(),
-                      g.pwm ? QString::number(g.frequency) + " Hz · " + QString::number(g.duty * 100) + " %"
-                            : QString());
+        auto *a = add(g, 2, g.script ? QString("Code") : g.pwm ? QString("PWM") : QString(),
+                      g.script ? QString()
+                               : g.pwm ? QString::number(g.frequency) + " Hz · " + QString::number(g.duty * 100) + " %"
+                                       : QString());
         a->port("out", {60, 0}, QColor("#17866d"));
     }
     for (const auto &g : fragment.plots) {
         auto *a = add(g, 3, {}, {});
         a->input_count = g.inputs;
         for (unsigned i = 1; i <= g.inputs; ++i)
-            a->port("in" + QString::number(i), {-70, (static_cast<double>(i) - (g.inputs + 1) / 2.0) * 22},
+            a->port("in" + QString::number(i), {-60, (static_cast<double>(i) - 1.0) * 20.0},
                     QColor("#8c67c8"));
     }
     for (const auto &instance : fragment.instances)
         add(instance, 4, {}, {})->set_definition(definition(fragment, instance.definition));
-    auto position = [&](const Endpoint &endpoint) {
+    auto position = [&](const Endpoint &endpoint) -> std::optional<QPointF> {
         for (auto *child : group->childItems())
             if (auto *a = dynamic_cast<Atom *>(child); a && a->id == endpoint.object)
                 for (auto *port : a->childItems())
                     if (port->data(2).toString() == q(endpoint.port))
                         return port->mapToItem(group, QPointF());
-        return QPointF();
+        return {};
     };
     std::vector<QRectF> obstacles;
     for (auto *child : group->childItems())
         obstacles.push_back(child->mapRectToParent(QRectF(-38, -28, 76, 56)));
     for (const auto &wire : fragment.wires) {
         auto a = position(wire.from), b = position(wire.to);
+        if (!a || !b)
+            continue;
         auto path =
-            wire.bends.empty() ? orthogonal_route(a, a, b, b, obstacles) : manual_route(a, b, wire.bends);
+            wire.bends.empty() ? orthogonal_route(*a, *a, *b, *b, obstacles) : manual_route(*a, *b, wire.bends);
         auto *item = new QGraphicsPathItem(path);
         item->setPen(QPen(QColor("#146cca"), 2));
         item->setZValue(-2);
@@ -648,8 +730,8 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
                     continue;
                 QPointF anchor(0, role == "value" ? -41
                                   : a->type == 1  ? 41
-                                  : a->type == 3  ? std::max(36., a->input_count * 12.) + 19
-                                  : a->type == 4  ? std::max(36., a->input_count * 14.) + 19
+                                  : a->type == 3  ? std::max(40., a->input_count * 20.) + 20
+                                  : a->type == 4  ? a->body_half_height() + 20
                                                   : 39);
                 LabelLayout layout;
                 for (const auto &stored : fragment.labels)
@@ -676,14 +758,22 @@ void EditorWindow::set_placement_preview() {
         Document fragment(empty);
         if (placing_ < 100)
             fragment.add_component(static_cast<Kind>(placing_), 0, 0);
-        else if (placing_ == 102 || placing_ == 104) {
+        else if (placing_ == 102 || placing_ == 104 || placing_ == 105) {
             fragment.add_pattern(0, 0);
             if (placing_ == 104)
                 fragment.apply("PWM", [](Project &p) {
                     p.patterns[0].pwm = true;
                     p.patterns[0].name = "PWM";
                 });
-        } else if (placing_ == 103)
+            if (placing_ == 105)
+                fragment.apply("Gate script", [](Project &p) {
+                    p.patterns[0].script = true;
+                    p.patterns[0].name = "Gate script";
+                    p.patterns[0].code = "pwm(1000, 0.5, 0)";
+                });
+        } else if (placing_ == 106)
+            fragment.apply("Tag", [](Project &p) { p.tags.push_back({new_uuid(), "TAG", 0, 0, Domain::gate}); });
+        else if (placing_ == 103)
             fragment.add_plot(0, 0, text("plot").toStdString());
         else
             fragment.add_node(placing_ == 100, 0, 0);
@@ -709,6 +799,7 @@ void EditorWindow::place_at(QPointF point) {
         canvas_->scene()->clearSelection();
         selected_ = ids.empty() ? "" : ids.front();
         refresh();
+        auto_connect_nearby_pins();
         for (const auto &id : ids)
             if (atoms_.count(id))
                 atoms_.at(id)->setSelected(true);
@@ -730,15 +821,29 @@ EditorWindow::EditorWindow(const QString &language, const QString &recovery_dir)
     QSettings appearance(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
     apply_theme(appearance.value("dark_theme", false).toBool());
     build_ui();
+    canvas_->set_grid_size(appearance.value("grid_size", 20).toDouble());
     connect(&watcher_, &QFutureWatcher<Outcome>::finished, this, [this] { finish_simulation(); });
-    auto *timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this] { autosave(); });
-    timer->start(15000);
+    autosave_timer_ = new QTimer(this);
+    connect(autosave_timer_, &QTimer::timeout, this, [this] { autosave(); });
+    update_autosave_timer();
     auto *progress_timer = new QTimer(this);
     connect(progress_timer, &QTimer::timeout, this, [this] {
         if (running())
             drain_simulation_stream();
-        if (running() && !cancel_.load())
+        if (running() && !cancel_.load()) {
+            if (simulation_progress_) {
+                simulation_progress_->setVisible(true);
+                if (preparing_.load()) {
+                    simulation_progress_->setRange(0, 0);
+                    simulation_progress_->setFormat(text("preparing"));
+                } else {
+                    simulation_progress_->setRange(0, 1000);
+                    const double stop = std::max(project().profile.stop, 1e-30);
+                    const double progress = std::clamp(simulated_time_.load(std::memory_order_relaxed) / stop, 0.0, 1.0);
+                    simulation_progress_->setValue(int(std::lround(progress * 1000.0)));
+                    simulation_progress_->setFormat(QString::number(progress * 100.0, 'f', 1) + "%");
+                }
+            }
             banner_->setText(
                 text(paused_.load()      ? "paused"
                      : preparing_.load() ? "preparing"
@@ -746,6 +851,7 @@ EditorWindow::EditorWindow(const QString &language, const QString &recovery_dir)
                 "  t = " + QString::number(simulated_time_.load(std::memory_order_relaxed), 'g', 6) + " / " +
                 QString::number(project().profile.stop, 'g', 6) + " s · " +
                 text("elapsed").arg(simulation_timer_.elapsed() / 1000., 0, 'f', 2));
+        }
     });
     progress_timer->start(100);
     new_file();
@@ -789,7 +895,9 @@ void EditorWindow::build_ui() {
     action(file_menu, "open", QKeySequence::Open, [this] {
         if (running() || !confirm_discard())
             return;
-        auto f = QFileDialog::getOpenFileName(this, text("open"), {}, text("project_filter"));
+        QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+        auto f = QFileDialog::getOpenFileName(this, text("open"), settings.value("last_project_dir").toString(),
+                                              text("project_filter"));
         if (!f.isEmpty())
             open_project(f);
     });
@@ -801,6 +909,7 @@ void EditorWindow::build_ui() {
             save_project(f);
     });
     file_menu->addSeparator();
+    action(file_menu, "autosave_settings", {}, [this] { configure_autosave(); });
     action(file_menu, "recover", {}, [this] {
         if (running() || !confirm_discard())
             return;
@@ -815,6 +924,9 @@ void EditorWindow::build_ui() {
     action(edit_menu, "rotate", QKeySequence("Space"), [this] { transform_selection(1, false); });
     action(edit_menu, "rotate_back", QKeySequence("Shift+Space"), [this] { transform_selection(-1, false); });
     action(edit_menu, "mirror", QKeySequence("Ctrl+M"), [this] { transform_selection(0, true); });
+    action(edit_menu, "scale_up", QKeySequence("Ctrl++"), [this] { scale_selection(1.15); });
+    action(edit_menu, "scale_down", QKeySequence("Ctrl+-"), [this] { scale_selection(1.0 / 1.15); });
+    action(edit_menu, "scale_reset", {}, [this] { scale_selection(0); });
     action(edit_menu, "copy", QKeySequence::Copy, [this] { copy_selection(false); });
     action(edit_menu, "cut", QKeySequence::Cut, [this] { copy_selection(true); });
     action(edit_menu, "paste", QKeySequence::Paste, [this] { paste_selection(); });
@@ -832,16 +944,22 @@ void EditorWindow::build_ui() {
     });
     for (const char *mode : {"left", "right", "top", "bottom", "horizontal", "vertical"})
         action(nullptr, mode, {}, [this, mode] { arrange_selection(mode); });
+    action(edit_menu, "grid_settings", {}, [this] { configure_grid(); });
     action(edit_menu, "shortcuts", {}, [this] { show_shortcuts(); });
     auto *search_action = action(edit_menu, "command_search", QKeySequence("Ctrl+Shift+P"), [this] { show_command_search(); });
+    auto *search_button = new QToolButton;
+    search_button->setDefaultAction(search_action);
+    search_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    search_button->setAutoRaise(true);
+    search_button->setObjectName("command_search_button");
+    menuBar()->setCornerWidget(search_button, Qt::TopRightCorner);
     build_hierarchy_actions(edit_menu->addMenu(text("hierarchy")));
     auto *wire_action = action(edit_menu, "connect_tool", QKeySequence("Ctrl+W"), [this] {
         if (running())
             return;
-        canvas_->cancel_gesture();
-        placing_ = 101;
-        set_placement_preview();
-        banner_->setText(text("junction_hint"));
+        cancel_placement();
+        canvas_->start_connect_mode();
+        banner_->setText(text("wire_hint"));
     });
     auto *fit_action = action(view_menu, "fit", QKeySequence("F"), [this] {
         canvas_->fitInView(canvas_->scene()->itemsBoundingRect().adjusted(-90, -90, 90, 90),
@@ -980,12 +1098,7 @@ void EditorWindow::build_ui() {
     breadcrumb_layout->setSpacing(4);
     layout->addWidget(title);
     tools_layout->addStretch();
-    definition_button_ = new QToolButton;
-    definition_button_->setObjectName("edit_definition_button");
-    definition_button_->setDefaultAction(commands_.at("edit_definition"));
-    definition_button_->setToolTip(text("editing_shared_definition"));
-    tools_layout->addWidget(definition_button_);
-    for (auto *a : {search_action, wire_action, undo_, redo_, fit_action}) {
+    for (auto *a : {wire_action, undo_, redo_, fit_action}) {
         auto *button = new QToolButton;
         button->setDefaultAction(a);
         tools_layout->addWidget(button);
@@ -999,6 +1112,13 @@ void EditorWindow::build_ui() {
         "palette(mid);");
     banner_->setWordWrap(true);
     layout->addWidget(banner_);
+    simulation_progress_ = new QProgressBar;
+    simulation_progress_->setObjectName("simulation_progress");
+    simulation_progress_->setTextVisible(true);
+    simulation_progress_->setMinimumHeight(18);
+    simulation_progress_->setMaximumHeight(18);
+    simulation_progress_->setVisible(false);
+    layout->addWidget(simulation_progress_);
     setCentralWidget(center);
     auto dock = [&](const char *key, QWidget *widget, Qt::DockWidgetArea area) {
         auto *d = new QDockWidget(text(key), this);
@@ -1019,7 +1139,10 @@ void EditorWindow::build_ui() {
     ll->addWidget(search);
     library_ = new QTreeWidget;
     library_->setObjectName("library");
+    library_->setColumnCount(1);
     library_->setHeaderHidden(true);
+    library_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    library_->setIconSize({28, 28});
     library_->setIndentation(16);
     library_->setRootIsDecorated(true);
     library_->setUniformRowHeights(true);
@@ -1053,6 +1176,10 @@ void EditorWindow::build_ui() {
     inspector_hint_->setWordWrap(true);
     inspector_hint_->setStyleSheet("color:palette(placeholder-text);padding:18px 0;");
     properties_->addRow(inspector_hint_);
+    inspector_type_ = new QLabel;
+    inspector_type_->setObjectName("property_native_type");
+    inspector_type_->setStyleSheet("color:palette(placeholder-text);");
+    properties_->addRow(text("native_type"), inspector_type_);
     properties_->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     build_property_editors();
     auto *apply = new QPushButton(text("apply"));
@@ -1131,12 +1258,14 @@ void EditorWindow::build_ui() {
     connect(scope_export_, &QPushButton::clicked, this, [this] { export_csv(project().scope_channels); });
     auto *bottom_dock = dock("results", bottom_, Qt::BottomDockWidgetArea);
     bottom_dock->setTitleBarWidget(new QWidget);
-    bottom_dock->setMinimumHeight(140);
+    bottom_dock->setMinimumHeight(96);
+    bottom_->setMinimumHeight(80);
+    scope_page_->setMinimumHeight(0);
     resizeDocks({bottom_dock}, {180}, Qt::Vertical);
     connect(bottom_, &QTabWidget::currentChanged, this, [this, bottom_dock](int tab) {
-        bottom_dock->setMinimumHeight(tab == 1 ? 320 : 140);
+        bottom_dock->setMinimumHeight(96);
         if (!bottom_dock->isFloating())
-            resizeDocks({bottom_dock}, {tab == 1 ? 360 : 180}, Qt::Vertical);
+            resizeDocks({bottom_dock}, {tab == 1 ? 240 : 160}, Qt::Vertical);
     });
     auto *expand_scope = new QToolButton;
     expand_scope->setIcon(ui_icon(UiIcon::undock));
@@ -1162,6 +1291,7 @@ void EditorWindow::build_ui() {
     canvas_->quick_insert = [this](QPointF point) { quick_insert(point); };
     canvas_->connect_wire = [this](WireAnchor from, WireAnchor to, std::vector<Point> bends,
                                    std::string replace) {
+        bends = clean_route_bends(QPointF(from.point.x, from.point.y), QPointF(to.point.x, to.point.y), bends);
         connect_gesture(from, to, std::move(bends), replace);
     };
     canvas_->route_preview = [this](Endpoint a, std::optional<Endpoint> b, QPointF start, QPointF end) {
@@ -1177,15 +1307,27 @@ void EditorWindow::build_ui() {
         if (running())
             return;
         try {
+            for (auto &point : bends) {
+                auto snapped = canvas_->snap_point({point.x, point.y});
+                point = {snapped.x(), snapped.y()};
+            }
+            Endpoint from, to;
+            for (const auto &wire : project().wires)
+                if (wire.id == id) {
+                    from = wire.from;
+                    to = wire.to;
+                    break;
+                }
+            bends = clean_route_bends(port_position(from), port_position(to), bends);
             document_->apply("Edit route", [&](Project &p) {
                 for (auto &w : p.wires)
                     if (w.id == id)
                         w.bends = bends;
             });
-            refresh(false);
+            refresh_canvas(false, false);
         } catch (const std::exception &e) {
             show_error(e);
-            refresh(false);
+            refresh_canvas(false, false);
         }
     };
     canvas_->compatible = [this](const Endpoint &a, const Endpoint &b) {
@@ -1301,7 +1443,11 @@ bool EditorWindow::open_project(const QString &path) {
         }
         set_project(std::move(opened));
         if (example) example_origin_ = path;
-        else path_ = path;
+        else {
+            path_ = path;
+            QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+            settings.setValue("last_project_dir", QFileInfo(path).absolutePath());
+        }
         update_title();
         banner_->setText(text("hint"));
         return true;
@@ -1326,6 +1472,8 @@ bool EditorWindow::save_project(const QString &path) {
             !file.commit())
             throw std::runtime_error(file.errorString().toStdString());
         path_ = path;
+        QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+        settings.setValue("last_project_dir", QFileInfo(path).absolutePath());
         saved_state_ = bytes;
         update_title();
         banner_->setText(text("saved"));
@@ -1347,6 +1495,40 @@ bool EditorWindow::autosave() {
     return file.open(QIODevice::WriteOnly) &&
            file.write(bytes.data(), static_cast<qint64>(bytes.size())) == static_cast<qint64>(bytes.size()) &&
            file.commit();
+}
+void EditorWindow::update_autosave_timer() {
+    if (!autosave_timer_)
+        return;
+    QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+    const int seconds = settings.value("autosave_interval_seconds", 15).toInt();
+    autosave_timer_->stop();
+    if (seconds > 0)
+        autosave_timer_->start(std::clamp(seconds, 1, 3600) * 1000);
+}
+void EditorWindow::configure_autosave() {
+    QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+    bool ok = false;
+    const int current = settings.value("autosave_interval_seconds", 15).toInt();
+    const int seconds = QInputDialog::getInt(this, text("autosave_settings"), text("autosave_interval"),
+                                             current, 0, 3600, 5, &ok);
+    if (!ok)
+        return;
+    settings.setValue("autosave_interval_seconds", seconds);
+    settings.sync();
+    update_autosave_timer();
+    banner_->setText(seconds > 0 ? text("autosave_updated").arg(seconds) : text("autosave_disabled"));
+}
+void EditorWindow::configure_grid() {
+    QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+    bool ok = false;
+    const int current = int(std::lround(canvas_->grid_size()));
+    const int size = QInputDialog::getInt(this, text("grid_settings"), text("grid_size"), current, 5, 100, 5, &ok);
+    if (!ok)
+        return;
+    settings.setValue("grid_size", size);
+    settings.sync();
+    canvas_->set_grid_size(size);
+    banner_->setText(text("grid_updated").arg(size));
 }
 bool EditorWindow::recover(const QString &path) {
     if (!open_project(path))
@@ -1387,6 +1569,7 @@ void EditorWindow::refresh(bool invalidate) {
         };
         collect(p.nodes);
         collect(p.components);
+        collect(p.tags);
         collect(p.patterns);
         collect(p.plots);
         collect(p.instances);
@@ -1414,6 +1597,8 @@ void EditorWindow::refresh(bool invalidate) {
         item(c.id, c.name);
     for (const auto &n : project().nodes)
         item(n.id, n.name);
+    for (const auto &t : project().tags)
+        item(t.id, t.name);
     for (const auto &g : project().patterns)
         item(g.id, g.name);
     for (const auto &g : project().plots)
@@ -1450,6 +1635,28 @@ void EditorWindow::refresh(bool invalidate) {
     rebuilding_ = false;
     fill_inspector();
     refresh_hierarchy();
+    update_command_state();
+    update_title();
+}
+void EditorWindow::refresh_canvas(bool invalidate, bool topology) {
+    if (scene_path_ != hierarchy_path()) {
+        refresh(invalidate);
+        return;
+    }
+    topology_dirty_ = topology_dirty_ || topology;
+    if (invalidate && result_ && result_project_ && !same_simulation(*result_project_, root_project())) {
+        auto previous = *result_project_;
+        previous.profile.stop = root_project().profile.stop;
+        if (!same_simulation(previous, root_project()))
+            continuation_.reset();
+        result_project_.reset();
+        banner_->setText(text("result_outdated"));
+    }
+    rebuilding_ = true;
+    rebuild_scene();
+    scene_project_ = project();
+    rebuilding_ = false;
+    fill_inspector();
     update_command_state();
     update_title();
 }
@@ -1494,7 +1701,7 @@ void EditorWindow::rebuild_scene() {
         ports(a, list, QColor("#146cca"));
     }
     for (const auto &n : project().nodes) {
-        auto *a = atom(n.id, n.name, {}, 1);
+        auto *a = atom(n.id, n.ground ? n.name : std::string(), {}, 1);
         a->ground = n.ground;
         int degree = 0;
         for (const auto &w : project().wires)
@@ -1503,10 +1710,16 @@ void EditorWindow::rebuild_scene() {
         a->setToolTip(text(n.ground ? "ground" : degree >= 3 ? "junction_branch" : "junction_pass"));
         ports(a, {{"node", {0, 0}}}, QColor("#146cca"));
     }
+    for (const auto &t : project().tags) {
+        auto *a = atom(t.id, t.name, t.domain == Domain::gate ? QString("G") : QString("N"), 5);
+        a->value.clear();
+        ports(a, {{"io", {0, 0}}}, t.domain == Domain::gate ? QColor("#17866d") : QColor("#146cca"));
+    }
     for (const auto &g : project().patterns) {
-        auto *a = atom(g.id, g.name, g.pwm ? QString("PWM") : QString(), 2);
-        a->value = g.pwm ? QString::number(g.frequency) + " Hz · " + QString::number(g.duty * 100) + " %"
-                         : QString();
+        auto *a = atom(g.id, g.name, g.script ? QString("Code") : g.pwm ? QString("PWM") : QString(), 2);
+        a->value = g.script ? QString()
+                  : g.pwm   ? QString::number(g.frequency) + " Hz · " + QString::number(g.duty * 100) + " %"
+                            : QString();
         ports(a, {{"out", {60, 0}}}, QColor("#17866d"));
     }
     for (const auto &g : project().plots) {
@@ -1517,7 +1730,7 @@ void EditorWindow::rebuild_scene() {
         std::vector<std::pair<QString, QPointF>> list;
         for (unsigned i = 1; i <= g.inputs; ++i)
             list.push_back(
-                {"in" + QString::number(i), {-70, (static_cast<double>(i) - (g.inputs + 1) / 2.0) * 22}});
+                {"in" + QString::number(i), {-60, (static_cast<double>(i) - 1.0) * 20.0}});
         ports(a, list, QColor("#8c67c8"));
     }
     for (const auto &i : project().instances) {
@@ -1533,18 +1746,20 @@ void EditorWindow::rebuild_scene() {
         for (const auto &o : objects) {
             auto *a = atoms_.at(o.id);
             a->setPos(o.x, o.y);
-            int c[] = {1, 0, -1, 0}, sn[] = {0, 1, 0, -1};
-            unsigned t = o.orientation.quarter_turns % 4;
-            double sign = o.orientation.mirrored ? -1 : 1;
-            a->setTransform(QTransform(sign * c[t], sn[t], -sign * sn[t], c[t], 0, 0));
+            a->setTransform(orientation_transform(o.orientation));
             a->update();
         }
     };
     geometry(project().components);
     geometry(project().nodes);
+    geometry(project().tags);
     geometry(project().patterns);
     geometry(project().plots);
     geometry(project().instances);
+    for (auto &[id, item] : atoms_) {
+        (void)id;
+        static_cast<Atom *>(item)->snap_ports_to_grid(canvas_->grid_size());
+    }
     update_labels();
     present.clear();
     for (const auto &w : project().wires) {
@@ -1605,7 +1820,9 @@ QPainterPath EditorWindow::preview_route(Endpoint from, std::optional<Endpoint> 
     std::vector<QRectF> obstacles;
     for (const auto &[id, box] : obstacle_cache_)
         obstacles.push_back(box);
-    return orthogonal_route(a, port_stub(from, a), to ? port_stub(*to, b) : b, b, obstacles);
+    auto snap = [this](QPointF point) { return canvas_->snap_point(point); };
+    return orthogonal_route(snap(a), snap(port_stub(from, a)), to ? snap(port_stub(*to, b)) : snap(b), snap(b),
+                            obstacles);
 }
 void EditorWindow::update_wires() {
     if (!document_)
@@ -1648,10 +1865,10 @@ void EditorWindow::update_wires() {
         auto *atom = static_cast<Atom *>(item);
         if (atom->type == 1)
             continue;
-        double h = std::max(36.0, atom->input_count * 12.0);
+        double h = atom->body_half_height();
         auto box =
-            atom->mapRectToScene(atom->type == 4   ? QRectF(-90, -std::max(36., atom->input_count * 14.), 180,
-                                                            2 * std::max(36., atom->input_count * 14.))
+            atom->mapRectToScene(atom->type == 4   ? QRectF(-90, -atom->body_half_height(), 180,
+                                                            2 * atom->body_half_height())
                                  : atom->type == 3 ? QRectF(-46, -h, 104, 2 * h)
                                                    : QRectF(-38, -28, 76, 56));
         obstacles.push_back(box);
@@ -1703,9 +1920,22 @@ void EditorWindow::update_wires() {
     if (scene_project_)
         for (const auto &w : scene_project_->wires)
             previous[w.id] = &w;
+    auto port_domain = [&](const Endpoint &endpoint) -> std::optional<Domain> {
+        const auto found = port_types_.find(endpoint_key(endpoint));
+        if (found == port_types_.end())
+            return {};
+        return found->second.domain;
+    };
     for (const auto &w : project().wires) {
         auto *item = wires_.at(w.id);
-        auto a = port_position(w.from), b = port_position(w.to);
+        if (auto *wire_item = dynamic_cast<WireItem *>(item))
+            wire_item->junctions.clear();
+        const auto from_domain_opt = port_domain(w.from), to_domain_opt = port_domain(w.to);
+        if (!from_domain_opt || !to_domain_opt) {
+            item->setPath({});
+            continue;
+        }
+        auto a = canvas_->snap_point(port_position(w.from)), b = canvas_->snap_point(port_position(w.to));
         bool dirty = all || item->path().isEmpty() || route_positions_[endpoint_key(w.from)] != a ||
                      route_positions_[endpoint_key(w.to)] != b;
         auto old = previous.find(w.id);
@@ -1722,17 +1952,23 @@ void EditorWindow::update_wires() {
             if (auto network = net_cache_.find(endpoint_key(w.from)); network != net_cache_.end())
                 changed_networks.insert(network->second);
             auto bends = w.bends;
-            if (canvas_->editing_gesture())
-                for (auto &point : bends) {
-                    point = canvas_->moving_point(w.from.object, w.to.object, point);
-                }
+            if (canvas_->editing_gesture()) {
+                const bool from_moving = atoms_.count(w.from.object) && atoms_.at(w.from.object)->isSelected();
+                const bool to_moving = atoms_.count(w.to.object) && atoms_.at(w.to.object)->isSelected();
+                if (from_moving != to_moving)
+                    bends.clear();
+                else
+                    for (auto &point : bends)
+                        point = canvas_->moving_point(w.from.object, w.to.object, point);
+            }
             base_wire_routes_[w.id] =
-                bends.empty() ? orthogonal_route(a, port_stub(w.from, a), port_stub(w.to, b), b, obstacles)
+                bends.empty() ? orthogonal_route(a, canvas_->snap_point(port_stub(w.from, a)),
+                                                 canvas_->snap_point(port_stub(w.to, b)), b, obstacles)
                               : manual_route(a, b, bends);
             item->setPath(base_wire_routes_[w.id]);
         }
-        const auto from_domain=port_types_.at(endpoint_key(w.from)).domain;
-        const auto to_domain=port_types_.at(endpoint_key(w.to)).domain;
+        const auto from_domain=*from_domain_opt;
+        const auto to_domain=*to_domain_opt;
         const auto domain=from_domain==Domain::electrical&&to_domain==Domain::electrical?Domain::electrical:
             (from_domain==Domain::gate||to_domain==Domain::gate?Domain::gate:Domain::signal);
         auto net = net_cache_.find(endpoint_key(to_domain==Domain::electrical?w.to:w.from));
@@ -1752,16 +1988,22 @@ void EditorWindow::update_wires() {
                           active || channel_active ? 3 : 2,
                           domain == Domain::gate ? Qt::DashLine : Qt::SolidLine));
     }
-    if (routes_changed)
-        share_wire_trunks(obstacles, changed_networks);
+    (void)routes_changed;
+    (void)changed_networks;
     for (const auto &w : project().wires) {
-        route_positions_[endpoint_key(w.from)] = port_position(w.from);
-        route_positions_[endpoint_key(w.to)] = port_position(w.to);
+        route_positions_[endpoint_key(w.from)] = canvas_->snap_point(port_position(w.from));
+        route_positions_[endpoint_key(w.to)] = canvas_->snap_point(port_position(w.to));
     }
 }
 void EditorWindow::share_wire_trunks(const std::vector<QRectF> &obstacles,
                                      const std::set<std::string> &networks) {
     std::vector<const Wire *> ordered;
+    auto port_domain = [&](const Endpoint &endpoint) -> std::optional<Domain> {
+        const auto found = port_types_.find(endpoint_key(endpoint));
+        if (found == port_types_.end())
+            return {};
+        return found->second.domain;
+    };
     for (const auto &wire : project().wires) {
         const auto network = net_cache_.find(endpoint_key(wire.from));
         if (network == net_cache_.end() || !networks.contains(network->second))
@@ -1770,8 +2012,9 @@ void EditorWindow::share_wire_trunks(const std::vector<QRectF> &obstacles,
         item->junctions.clear();
         if (auto found = base_wire_routes_.find(wire.id); found != base_wire_routes_.end())
             item->setPath(found->second);
-        if (port_types_.at(endpoint_key(wire.from)).domain == Domain::electrical &&
-            port_types_.at(endpoint_key(wire.to)).domain == Domain::electrical)
+        const auto from_domain = port_domain(wire.from), to_domain = port_domain(wire.to);
+        if (from_domain && to_domain && *from_domain == Domain::electrical && *to_domain == Domain::electrical &&
+            wire.bends.empty())
             ordered.push_back(&wire);
     }
     auto rank = [&](const Wire *wire) {
@@ -1791,6 +2034,7 @@ void EditorWindow::share_wire_trunks(const std::vector<QRectF> &obstacles,
         auto *item = static_cast<WireItem *>(wires_.at(wire->id));
         if (wire->bends.empty()) {
             double best_added = item->path().length();
+            const double min_saving = std::max(40.0, best_added * 0.25);
             std::optional<std::pair<QPainterPath, QPointF>> best;
             for (bool reverse : {false, true}) {
                 const auto root = endpoint_key(reverse ? wire->from : wire->to);
@@ -1821,7 +2065,7 @@ void EditorWindow::share_wire_trunks(const std::vector<QRectF> &obstacles,
                             if (QPointF(b.x, b.y) == joined->second)
                                 break;
                         }
-                        if (added < best_added - 1e-6) {
+                        if (added < best_added - min_saving) {
                             best_added = added;
                             if (reverse)
                                 joined->first = joined->first.toReversed();
@@ -1845,9 +2089,10 @@ std::string EditorWindow::add_component(Kind kind, QPointF point) {
     if (running())
         return {};
     try {
-        point = snapped(point);
+        point = canvas_->snap_point(point);
         selected_ = document_->add_component(kind, point.x(), point.y());
-        refresh();
+        refresh_canvas(true, false);
+        auto_connect_nearby_pins();
         return selected_;
     } catch (const std::exception &e) {
         show_error(e);
@@ -1858,9 +2103,10 @@ std::string EditorWindow::add_node(bool ground, QPointF point) {
     if (running())
         return {};
     try {
-        point = snapped(point);
+        point = canvas_->snap_point(point);
         selected_ = document_->add_node(ground, point.x(), point.y());
-        refresh();
+        refresh_canvas(true, false);
+        auto_connect_nearby_pins();
         return selected_;
     } catch (const std::exception &e) {
         show_error(e);
@@ -1871,9 +2117,10 @@ std::string EditorWindow::add_pattern(QPointF point) {
     if (running())
         return {};
     try {
-        point = snapped(point);
+        point = canvas_->snap_point(point);
         selected_ = document_->add_pattern(point.x(), point.y());
-        refresh();
+        refresh_canvas(true, false);
+        auto_connect_nearby_pins();
         return selected_;
     } catch (const std::exception &e) {
         show_error(e);
@@ -1883,17 +2130,90 @@ std::string EditorWindow::add_pattern(QPointF point) {
 std::string EditorWindow::add_plot(QPointF point) {
     if (running())
         return {};
-    point = snapped(point);
+    point = canvas_->snap_point(point);
     selected_ = document_->add_plot(point.x(), point.y(), text("plot").toStdString());
-    refresh();
+    refresh_canvas(true, false);
+    auto_connect_nearby_pins();
     return selected_;
+}
+bool EditorWindow::auto_connect_nearby_pins() {
+    if (running() || rebuilding_)
+        return false;
+    struct Port {
+        Endpoint endpoint;
+        QPointF point;
+        bool active = false;
+    };
+    std::set<std::string> active_objects;
+    for (auto *item : canvas_->scene()->selectedItems()) {
+        if (item->data(1).toString() == "wire" || item->data(1).toString() == "label")
+            continue;
+        const auto id = item->data(0).toString().toStdString();
+        if (!id.empty())
+            active_objects.insert(id);
+    }
+    if (!selected_.empty())
+        active_objects.insert(selected_);
+    std::vector<Port> ports;
+    for (const auto &[id, atom] : atoms_)
+        for (auto *child : atom->childItems())
+            if (child->data(1).toString() == "port")
+                ports.push_back({{child->data(0).toString().toStdString(),
+                                  child->data(2).toString().toStdString()},
+                                 child->scenePos(),
+                                 active_objects.contains(child->data(0).toString().toStdString())});
+    const bool has_active = std::any_of(ports.begin(), ports.end(), [](const Port &port) { return port.active; });
+    std::vector<Wire> additions;
+    const double threshold = std::max(3.0, canvas_->grid_size() * 0.35);
+    auto exists = [&](const Endpoint &a, const Endpoint &b) {
+        return std::any_of(project().wires.begin(), project().wires.end(), [&](const Wire &w) {
+            return (w.from == a && w.to == b) || (w.from == b && w.to == a);
+        });
+    };
+    for (size_t i = 0; i < ports.size(); ++i)
+        for (size_t j = i + 1; j < ports.size(); ++j) {
+            if (has_active && !ports[i].active && !ports[j].active)
+                continue;
+            if (ports[i].endpoint.object == ports[j].endpoint.object || exists(ports[i].endpoint, ports[j].endpoint))
+                continue;
+            if (QLineF(ports[i].point, ports[j].point).length() > threshold)
+                continue;
+            try {
+                Wire wire{new_uuid(), ports[i].endpoint, ports[j].endpoint, {}};
+                validate_wire(project(), wire);
+                additions.push_back(std::move(wire));
+            } catch (...) {
+            }
+        }
+    if (additions.empty())
+        return false;
+    try {
+        document_->apply("Auto-connect pins", [&](Project &p) {
+            for (auto wire : additions) {
+                try {
+                    validate_wire(p, wire);
+                } catch (...) {
+                    continue;
+                }
+                if (std::none_of(p.wires.begin(), p.wires.end(), [&](const Wire &w) {
+                        return (w.from == wire.from && w.to == wire.to) || (w.from == wire.to && w.to == wire.from);
+                    }))
+                    p.wires.push_back(std::move(wire));
+            }
+        });
+        refresh_canvas();
+        return true;
+    } catch (const std::exception &e) {
+        show_error(e);
+        return false;
+    }
 }
 bool EditorWindow::connect_ports(Endpoint from, Endpoint to) {
     if (running())
         return false;
     try {
         document_->connect(std::move(from), std::move(to));
-        refresh();
+        refresh_canvas();
         return true;
     } catch (const std::exception &e) {
         show_error(e);
@@ -1910,6 +2230,9 @@ void EditorWindow::commit_positions() {
         const auto t = item->transform();
         Orientation o;
         o.mirrored = t.determinant() < 0;
+        o.scale = 1.0;
+        o.scale_x = std::hypot(t.m11(), t.m12());
+        o.scale_y = std::hypot(t.m21(), t.m22());
         o.quarter_turns =
             (static_cast<int>(std::lround(std::atan2(t.m12(), t.m22()) / (std::acos(-1.0) / 2))) + 4) % 4;
         return o;
@@ -1922,6 +2245,8 @@ void EditorWindow::commit_positions() {
         check(c);
     for (const auto &n : project().nodes)
         check(n);
+    for (const auto &t : project().tags)
+        check(t);
     for (const auto &g : project().patterns)
         check(g);
     for (const auto &g : project().plots)
@@ -1931,9 +2256,97 @@ void EditorWindow::commit_positions() {
     if (!moved)
         return;
     document_->apply("Move objects", [&](Project &p) {
-        for (auto &w : p.wires)
-            for (auto &b : w.bends)
-                b = canvas_->moving_point(w.from.object, w.to.object, b);
+        std::set<std::string> moved_ids;
+        for (auto *item : canvas_->scene()->selectedItems()) {
+            if (item->data(1).toString() == "wire" || item->data(1).toString() == "label")
+                continue;
+            const auto id = item->data(0).toString().toStdString();
+            if (!id.empty())
+                moved_ids.insert(id);
+        }
+        auto live_position = [&](const Endpoint &endpoint) {
+            return canvas_->snap_point(port_position(endpoint));
+        };
+        auto generated_node = [](const Node &node) {
+            if (node.ground)
+                return false;
+            if (node.name.empty())
+                return true;
+            if (node.name[0] != 'N')
+                return false;
+            return std::all_of(node.name.begin() + 1, node.name.end(),
+                               [](unsigned char c) { return std::isdigit(c); });
+        };
+        auto other_endpoint = [](const Wire &wire, const std::string &node) {
+            return wire.from.object == node ? wire.to : wire.from;
+        };
+        auto move_branch_nodes = [&] {
+            for (auto &node : p.nodes) {
+                if (!generated_node(node))
+                    continue;
+                std::vector<Wire *> incident;
+                for (auto &wire : p.wires)
+                    if (wire.from.object == node.id || wire.to.object == node.id)
+                        incident.push_back(&wire);
+                if (incident.size() < 3)
+                    continue;
+                Wire *branch = nullptr;
+                Endpoint moved_endpoint;
+                for (auto *wire : incident) {
+                    const bool from_node = wire->from.object == node.id;
+                    const Endpoint other = from_node ? wire->to : wire->from;
+                    if (moved_ids.contains(other.object)) {
+                        branch = wire;
+                        moved_endpoint = other;
+                        break;
+                    }
+                }
+                if (!branch)
+                    continue;
+                std::vector<QPointF> trunk;
+                for (auto *wire : incident) {
+                    if (wire == branch)
+                        continue;
+                    trunk.push_back(live_position(other_endpoint(*wire, node.id)));
+                }
+                if (trunk.size() < 2)
+                    continue;
+                const QPointF moved = live_position(moved_endpoint);
+                auto range_contains = [](double value, double a, double b) {
+                    return value >= std::min(a, b) - 1e-6 && value <= std::max(a, b) + 1e-6;
+                };
+                std::optional<QPointF> target;
+                for (size_t i = 0; i < trunk.size() && !target; ++i)
+                    for (size_t j = i + 1; j < trunk.size() && !target; ++j) {
+                        if (std::abs(trunk[i].y() - trunk[j].y()) < 1e-6 &&
+                            range_contains(moved.x(), trunk[i].x(), trunk[j].x()))
+                            target = QPointF(moved.x(), trunk[i].y());
+                        else if (std::abs(trunk[i].x() - trunk[j].x()) < 1e-6 &&
+                                 range_contains(moved.y(), trunk[i].y(), trunk[j].y()))
+                            target = QPointF(trunk[i].x(), moved.y());
+                    }
+                if (!target)
+                    continue;
+                target = canvas_->snap_point(*target);
+                if (QLineF(QPointF(node.x, node.y), *target).length() < 1e-6)
+                    continue;
+                node.x = target->x();
+                node.y = target->y();
+                for (auto *wire : incident)
+                    wire->bends.clear();
+            }
+        };
+        for (auto &w : p.wires) {
+            const bool from_moved = moved_ids.contains(w.from.object);
+            const bool to_moved = moved_ids.contains(w.to.object);
+            if (from_moved && to_moved) {
+                for (auto &b : w.bends)
+                    b = canvas_->moving_point(w.from.object, w.to.object, b);
+                w.bends = clean_route_bends(port_position(w.from), port_position(w.to), w.bends);
+            } else if (from_moved || to_moved) {
+                w.bends.clear();
+            }
+        }
         auto move = [&](auto &a) {
             auto pos = atoms_.at(a.id)->pos();
             a.x = pos.x();
@@ -1944,22 +2357,78 @@ void EditorWindow::commit_positions() {
             move(c);
         for (auto &n : p.nodes)
             move(n);
+        for (auto &t : p.tags)
+            move(t);
         for (auto &g : p.patterns)
             move(g);
         for (auto &g : p.plots)
             move(g);
         for (auto &i : p.instances)
             move(i);
+        move_branch_nodes();
     });
-    refresh();
+    refresh_canvas(true, false);
+    auto_connect_nearby_pins();
 }
 void EditorWindow::delete_selected() {
     canvas_->cancel_gesture();
     if (running())
         return;
+    const auto selection = canvas_->scene()->selectedItems();
+    for (auto *item : selection)
+        if (item->data(1).toString() == "wire" && item->data(wire_segment_role).toInt() > 0) {
+            if (selection.size() != 1)
+                break;
+            const auto id = item->data(0).toString().toStdString();
+            const int segment = item->data(wire_segment_role).toInt();
+            auto wire = std::find_if(project().wires.begin(), project().wires.end(),
+                                     [&](const Wire &w) { return w.id == id; });
+            if (wire == project().wires.end())
+                continue;
+            std::vector<Point> points;
+            auto path = static_cast<QGraphicsPathItem *>(item)->path();
+            for (int i = 0; i < path.elementCount(); ++i) {
+                auto e = path.elementAt(i);
+                points.push_back({e.x, e.y});
+            }
+            if (segment <= 0 || segment >= static_cast<int>(points.size()))
+                continue;
+            try {
+                const auto cut_a = points[size_t(segment - 1)], cut_b = points[size_t(segment)];
+                document_->apply("Delete wire segment", [&](Project &p) {
+                    auto current =
+                        std::find_if(p.wires.begin(), p.wires.end(), [&](const Wire &w) { return w.id == id; });
+                    if (current == p.wires.end())
+                        return;
+                    const auto original = *current;
+                    p.wires.erase(current);
+                    auto make_node = [&](Point point) {
+                        const auto node = new_uuid();
+                        p.nodes.push_back({node, "N", false, point.x, point.y});
+                        return node;
+                    };
+                    const auto node_a = make_node(cut_a), node_b = make_node(cut_b);
+                    if (segment > 1) {
+                        Wire left{new_uuid(), original.from, {node_a, "node"}, {}};
+                        left.bends.assign(points.begin() + 1, points.begin() + segment - 1);
+                        p.wires.push_back(std::move(left));
+                    }
+                    if (segment + 1 < static_cast<int>(points.size())) {
+                        Wire right{new_uuid(), {node_b, "node"}, original.to, {}};
+                        right.bends.assign(points.begin() + segment + 1, points.end() - 1);
+                        p.wires.push_back(std::move(right));
+                    }
+                });
+                selected_.clear();
+                refresh_canvas();
+            } catch (const std::exception &e) {
+                show_error(e);
+            }
+            return;
+    }
     std::vector<std::string> ids;
-    for (auto *item : canvas_->scene()->selectedItems())
-        if (item->data(1).toString() != "label")
+    for (auto *item : selection)
+        if (item->data(1).toString() == "atom" || item->data(1).toString() == "wire")
             ids.push_back(item->data(0).toString().toStdString());
     if (ids.empty())
         return;
@@ -1981,7 +2450,7 @@ void EditorWindow::delete_selected() {
                     try {
                         document_->remove_junction(node.id, routes[0], routes[1]);
                         selected_.clear();
-                        refresh();
+                        refresh_canvas();
                     } catch (const std::exception &e) {
                         show_error(e);
                     }
@@ -1991,7 +2460,7 @@ void EditorWindow::delete_selected() {
     try {
         document_->erase(ids);
         selected_.clear();
-        refresh();
+        refresh_canvas();
     } catch (const std::exception &e) {
         show_error(e);
     }
@@ -2048,6 +2517,8 @@ void EditorWindow::show_error(const std::exception &e) {
     auto *d = dynamic_cast<const Diagnostic *>(&e);
     if (d)
         message = q(d->code) + ": " + message;
+    std::cerr << message.toStdString() << std::endl;
+    qWarning().noquote() << message;
     auto *item = new QListWidgetItem(message, errors_);
     if (d)
         item->setData(Qt::UserRole, q(d->object));
@@ -2134,6 +2605,12 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
         undo_->setEnabled(false);
         redo_->setEnabled(false);
         banner_->setText(text("preparing") + " · " + text("elapsed").arg(0., 0, 'f', 2));
+        if (simulation_progress_) {
+            simulation_progress_->setRange(0, 0);
+            simulation_progress_->setValue(0);
+            simulation_progress_->setFormat(text("preparing"));
+            simulation_progress_->show();
+        }
         busy_ = true;
         update_run_button();
         update_command_state();
@@ -2199,6 +2676,15 @@ void EditorWindow::finish_simulation() {
     drain_simulation_stream();
     busy_ = false;
     paused_ = false;
+    if (simulation_progress_) {
+        simulation_progress_->setRange(0, 1000);
+        simulation_progress_->setValue(outcome.error.isEmpty() && outcome.result ? int(std::lround(std::clamp(
+                                           outcome.result->last_time / std::max(outcome.result->profile.stop, 1e-30),
+                                           0.0, 1.0) *
+                                       1000.0))
+                                     : 0);
+        simulation_progress_->hide();
+    }
     update_run_button();
     update_command_state();
     canvas_->set_editable(editing_allowed());

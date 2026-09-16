@@ -49,7 +49,7 @@ QString engineering_value(double value, const std::string &unit) {
 }
 Scope::Scope(QWidget *parent, Domain domain) : QWidget(parent), domain_(domain) {
     setMouseTracking(true);
-    setMinimumHeight(240);
+    setMinimumHeight(80);
     setFocusPolicy(Qt::StrongFocus);
     setObjectName("scope");
 }
@@ -150,7 +150,8 @@ void Scope::fit_y() {
     y_high = range.second;
 }
 double Scope::sample_value(size_t sample, int channel) const {
-    return channel_value(*result_, sample, channel);
+    const auto key = result_channel(*result_, channel).object;
+    return channel_value(*result_, sample, channel) * curve_multiplier(key);
 }
 std::pair<size_t, size_t> Scope::sample_extrema(int channel, size_t from, size_t to) {
     auto value = [&](size_t i) { return sample_value(i, channel); };

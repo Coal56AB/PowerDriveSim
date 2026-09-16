@@ -1,0 +1,29 @@
+PowerDriveSim 16
+project "3a64b1d5-8f77-58da-98e5-781df605f72a" "Programmable gate PWM with tags"
+profile 0.02 0.00005 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+initialization Zero 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+component "6ca72a7f-b3c2-559f-97d8-f7101e9316d0" "DC supply" V "" "" 12 0 -320 40 0
+orientation "6ca72a7f-b3c2-559f-97d8-f7101e9316d0" 1 0
+component "71b29e0f-1221-50f8-ac58-10a10c18c998" "Switch" S "" "" 0 0 -40 40 0
+component "3b5529fb-c47d-5086-b55d-37e664b1687e" "Load" R "" "" 20 0 220 40 0
+orientation "3b5529fb-c47d-5086-b55d-37e664b1687e" 1 0
+node "540cdb0b-b975-574b-b60b-e8ca05d84056" "COM" 1 -40 220
+node "f35d1262-2b98-5d4d-b091-428955a5dd22" "Uout" 0 90 40
+gate_script "851a60fa-1cf3-5f50-b971-61ab9de5b7fd" "Script PWM" -320 -140 0 1e-05 "pwm(1000, 0.35, 0)"
+tag "f0b590e6-a617-56df-8c0f-2ca4580d89f2" "G_LOAD" -200 -140 1
+tag "832c0de1-1d3d-5411-9084-04e43dcbf5f4" "G_LOAD" -40 -40 1
+wire "fb388ef9-0ad3-52aa-8eb4-6911096b9f27" "6ca72a7f-b3c2-559f-97d8-f7101e9316d0" "p" "71b29e0f-1221-50f8-ac58-10a10c18c998" "p" 0
+wire "2f7a8348-a79f-5a30-bf73-8612df3d8b5b" "71b29e0f-1221-50f8-ac58-10a10c18c998" "n" "f35d1262-2b98-5d4d-b091-428955a5dd22" "node" 0
+wire "99a74fde-a631-5cf5-a11d-909822465a1e" "f35d1262-2b98-5d4d-b091-428955a5dd22" "node" "3b5529fb-c47d-5086-b55d-37e664b1687e" "p" 0
+wire "9ae97170-09a1-5fa8-9c82-ef932206a3d6" "3b5529fb-c47d-5086-b55d-37e664b1687e" "n" "540cdb0b-b975-574b-b60b-e8ca05d84056" "node" 0
+wire "ad2abb5a-3297-5d64-a17a-9392970c24fe" "6ca72a7f-b3c2-559f-97d8-f7101e9316d0" "n" "540cdb0b-b975-574b-b60b-e8ca05d84056" "node" 0
+wire "eec6cb44-b764-50e2-b511-7946216d187e" "851a60fa-1cf3-5f50-b971-61ab9de5b7fd" "out" "f0b590e6-a617-56df-8c0f-2ca4580d89f2" "io" 0
+wire "cb76b9d4-a175-5271-a868-6c30f82ed650" "832c0de1-1d3d-5411-9084-04e43dcbf5f4" "io" "71b29e0f-1221-50f8-ac58-10a10c18c998" "gate" 0
+plot "64fc7e1f-223a-5cb6-8946-9e73ddce1e2c" "Output voltage and gate" 470 0 2 0 -1 -1 -1
+wire "26f17c0b-313e-5084-a1fc-d52c82c63ed5" "f35d1262-2b98-5d4d-b091-428955a5dd22" "node" "64fc7e1f-223a-5cb6-8946-9e73ddce1e2c" "in1" 1 360 40
+wire "3be10371-450b-50ac-a858-177598e243d8" "851a60fa-1cf3-5f50-b971-61ab9de5b7fd" "out" "64fc7e1f-223a-5cb6-8946-9e73ddce1e2c" "in2" 2 -120 -140 360 22

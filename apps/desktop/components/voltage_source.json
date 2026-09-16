@@ -82,6 +82,17 @@
       }
     },
     {
+      "key": "source_phase_deg",
+      "editor": "number",
+      "label": "source_phase_deg",
+      "unit": "",
+      "when": {
+        "source_mode": [
+          1
+        ]
+      }
+    },
+    {
       "key": "source_delay",
       "editor": "number",
       "label": "delay",

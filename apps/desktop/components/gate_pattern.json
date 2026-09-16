@@ -8,14 +8,109 @@
       "inline": "name"
     },
     {
+      "key": "gate_mode",
+      "editor": "enum",
+      "label": "gate_mode",
+      "options": [
+        {
+          "value": 0,
+          "label": "gate_mode_timing"
+        },
+        {
+          "value": 1,
+          "label": "gate_mode_pwm"
+        },
+        {
+          "value": 2,
+          "label": "gate_mode_script"
+        }
+      ]
+    },
+    {
       "key": "closed",
       "editor": "bool",
-      "label": "closed"
+      "label": "closed",
+      "when": {
+        "gate_mode": [
+          0
+        ]
+      }
     },
     {
       "key": "events",
       "editor": "events",
-      "label": "events"
+      "label": "events",
+      "when": {
+        "gate_mode": [
+          0
+        ]
+      }
+    },
+    {
+      "key": "frequency",
+      "editor": "number",
+      "label": "frequency",
+      "unit": "Hz",
+      "min": 0,
+      "exclusiveMin": true,
+      "inline": "value",
+      "inlinePart": 0,
+      "when": {
+        "gate_mode": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "duty",
+      "editor": "number",
+      "label": "duty",
+      "scale": 100,
+      "min": 0,
+      "max": 100,
+      "inline": "value",
+      "inlinePart": 1,
+      "when": {
+        "gate_mode": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "delay",
+      "editor": "number",
+      "label": "delay",
+      "unit": "s",
+      "min": 0,
+      "when": {
+        "gate_mode": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "gate_code",
+      "editor": "code",
+      "label": "gate_code",
+      "span": true,
+      "when": {
+        "gate_mode": [
+          2
+        ]
+      }
+    },
+    {
+      "key": "script_step",
+      "editor": "number",
+      "label": "script_step",
+      "unit": "s",
+      "min": 0,
+      "exclusiveMin": true,
+      "when": {
+        "gate_mode": [
+          2
+        ]
+      }
     }
   ],
   "palette": {

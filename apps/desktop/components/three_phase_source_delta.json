@@ -1,0 +1,13 @@
+{
+  "type": "library:three-phase-source-delta",
+  "fields": [],
+  "template": "sources/three-phase-source-delta.pds",
+  "palette": {
+    "id": 281,
+    "label": "three_phase_source_delta",
+    "category": "sources",
+    "short": "3~D",
+    "fixed": false,
+    "hidden": true
+  }
+}

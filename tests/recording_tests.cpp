@@ -1,4 +1,5 @@
 #include "core/editor/document.hpp"
+#include "core/editor/properties.hpp"
 #include "core/solver/reference/reference.hpp"
 #include "formats/project/project.hpp"
 #include "results/measurements.hpp"
@@ -118,6 +119,30 @@ int main(int argc, char **argv) {
         auto fragment=doc.copy({pwm});auto pasted=doc.paste(fragment,40,40);
         check(pasted.size()==1&&pasted[0]!=pwm&&doc.project().patterns.back().pwm,"Copy preserves PWM and assigns independent UUID");
         doc.undo();check(doc.project().patterns.back().id==pwm,"Paste undo");
+        auto script=doc.add_pattern(180,100);
+        doc.apply("Gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;g.name="Script";g.code="pwm(1000, 0.25, 0.0001)";g.script_step=1e-5;});
+        check(std::get<unsigned>(read_property(doc.project(),script,"gate_mode"))==2,"Script is exposed as one Gate mode");
+        Recording scripted;scripted.all=false;scripted.channels={"gate/"+script};
+        auto script_result=execute(compile(doc.project()),nullptr,nullptr,&scripted);
+        bool script_rise=false,script_fall=false,previous_script=false;
+        for(const auto& sample:script_result.samples){
+            const bool gate=sample.gates[0];
+            if(!previous_script&&gate&&std::abs(sample.time-.0001)<1e-9)script_rise=true;
+            if(previous_script&&!gate&&std::abs(sample.time-(.0001+.25/1000))<1e-9)script_fall=true;
+            previous_script=gate;
+        }
+        check(script_rise&&script_fall,"Gate script schedules reproducible PWM edges");
+        std::ostringstream scripted_roundtrip;write_project(doc.project(),scripted_roundtrip);std::istringstream scripted_reload(scripted_roundtrip.str());auto scripted_restored=read_project(scripted_reload);
+        check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("pwm(")==0,"Gate script roundtrip");
+        doc.apply("Gate timing mode",[&](Project& p){write_property(p,script,"gate_mode",unsigned(0));});
+        check(!doc.project().patterns.back().pwm&&!doc.project().patterns.back().script,"Gate can switch back to timing mode");
+        doc.apply("Dynamic gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;g.code="pwm(1000,0.25,ramp(0,0.001,0.0004,0))";g.script_step=1e-5;});
+        Recording dynamic;dynamic.all=false;dynamic.channels={"gate/"+script};
+        auto dynamic_result=execute(compile(doc.project()),nullptr,nullptr,&dynamic);
+        bool dynamic_edge=false;
+        for(const auto& sample:dynamic_result.samples)
+            dynamic_edge|=sample.time>0&&sample.gates[0];
+        check(dynamic_edge,"Gate script PWM can use ramped parameters based on simulation time");
         std::cout << "PASS plots, schema5, selective recording, no-history execution, signal edges and "
                      "export subsets\n";
         return 0;

@@ -1,0 +1,53 @@
+PowerDriveSim 17
+project "a8b71a3b-d8ff-5c08-9dd2-fb87ec1e1000" "Three-phase switch"
+profile 0.02 1e-05 BackwardEuler
+nonlinear 64 1e-09 1e-12 1e-09
+initialization Specified 0
+stepping 0 1e-12 0.0001 1e-06 1e-08 1e-12
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "064f60db-77db-5a81-88db-52ec9f5f1000" "Three-phase switch" "74a617da-88f1-5a89-bec5-a6a7f92b1000" 0 0 0 0
+definition "74a617da-88f1-5a89-bec5-a6a7f92b1000" "Three-phase switch"
+public_port "b32a49f7-b3bb-5c3c-94d7-583eab3d1000" "A" "2882b6f6-45fe-5e6b-b29f-a12b8ca01000" "node" 0 0
+public_port "57066c92-5d0f-5460-9f4c-2b5e98871000" "B" "8cfd79dd-0b21-5a70-af4e-798bc4081000" "node" 0 0
+public_port "a3bf3de6-7d67-5d96-89d4-e81420ad1000" "C" "25c33bfb-06f7-5ce0-8c0f-470814021000" "node" 0 0
+public_port "36a9c2e0-f37a-566e-9b03-bd894fea1000" "A1" "f6971b36-2d94-5cfa-9e69-81bbaf981000" "node" 0 0
+public_port "5099d64a-b3a0-5319-b015-9539ad791000" "B1" "7bb05a6f-b048-5bc7-b64b-44e071611000" "node" 0 0
+public_port "405f36f6-d5d7-59a2-a06d-76d22ee81000" "C1" "cb65fda7-2d56-5156-b60f-57519ec01000" "node" 0 0
+public_port "e8beb782-2923-5ee9-94d0-8611297d1000" "g" "263223f9-8ac7-52e7-a934-f5b1f3321000" "io" 1 0
+public_parameter "f0d30ae4-bd4b-5ad7-84b1-467ff17c1000" "Ron" "Ohm" "*" "three_phase_switch_ron" 0.01
+public_parameter "f34a470a-c84b-5d03-bbe3-437926541000" "Roff" "Ohm" "*" "three_phase_switch_roff" 1000000
+body
+PowerDriveSim 17
+project "74a617da-88f1-5a89-bec5-a6a7f92b1000" "Three-phase switch"
+profile 0.02 1e-05 BackwardEuler
+nonlinear 64 1e-09 1e-12 1e-09
+initialization Specified 0
+stepping 0 1e-12 0.0001 1e-06 1e-08 1e-12
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "2882b6f6-45fe-5e6b-b29f-a12b8ca01000" "A" 0 -240 -120
+node "8cfd79dd-0b21-5a70-af4e-798bc4081000" "B" 0 -240 0
+node "25c33bfb-06f7-5ce0-8c0f-470814021000" "C" 0 -240 120
+node "f6971b36-2d94-5cfa-9e69-81bbaf981000" "A1" 0 240 -120
+node "7bb05a6f-b048-5bc7-b64b-44e071611000" "B1" 0 240 0
+node "cb65fda7-2d56-5156-b60f-57519ec01000" "C1" 0 240 120
+component "02aa4772-e301-5c61-8967-8c4c8e031000" "SA" S "" "" 0 0 0 -120 0
+component "50c45a4c-daa4-542a-a2cd-9903f4b41000" "SB" S "" "" 0 0 0 0 0
+component "071b3b01-f7a7-5f55-9acb-756f72421000" "SC" S "" "" 0 0 0 120 0
+tag "263223f9-8ac7-52e7-a934-f5b1f3321000" "g" 0 220 1
+wire "edda5373-e471-58da-b613-6f8fd6111000" "2882b6f6-45fe-5e6b-b29f-a12b8ca01000" "node" "02aa4772-e301-5c61-8967-8c4c8e031000" "p" 0
+wire "ebd8d75f-0237-5b4e-bac9-f31400931000" "02aa4772-e301-5c61-8967-8c4c8e031000" "n" "f6971b36-2d94-5cfa-9e69-81bbaf981000" "node" 0
+wire "6393248e-21e0-501c-b4bf-bb313cc01000" "8cfd79dd-0b21-5a70-af4e-798bc4081000" "node" "50c45a4c-daa4-542a-a2cd-9903f4b41000" "p" 0
+wire "1d7e76b4-b7d5-5637-a47a-8a5452fb1000" "50c45a4c-daa4-542a-a2cd-9903f4b41000" "n" "7bb05a6f-b048-5bc7-b64b-44e071611000" "node" 0
+wire "ef036544-b38f-5a68-a605-6d0775221000" "25c33bfb-06f7-5ce0-8c0f-470814021000" "node" "071b3b01-f7a7-5f55-9acb-756f72421000" "p" 0
+wire "f65fc6bb-4d3b-5fd3-8b49-f4a4e2331000" "071b3b01-f7a7-5f55-9acb-756f72421000" "n" "cb65fda7-2d56-5156-b60f-57519ec01000" "node" 0
+wire "dd921c66-7403-55de-92f1-11f9cffb1000" "263223f9-8ac7-52e7-a934-f5b1f3321000" "io" "02aa4772-e301-5c61-8967-8c4c8e031000" "gate" 1 0 -60
+wire "6327617c-7e40-56aa-8be3-2a02d5e91000" "263223f9-8ac7-52e7-a934-f5b1f3321000" "io" "50c45a4c-daa4-542a-a2cd-9903f4b41000" "gate" 0
+wire "559331f9-58e9-55a0-8897-7655d2381000" "263223f9-8ac7-52e7-a934-f5b1f3321000" "io" "071b3b01-f7a7-5f55-9acb-756f72421000" "gate" 1 0 60
+semiconductor "02aa4772-e301-5c61-8967-8c4c8e031000" 1 0.01 1000000 0.7
+semiconductor "50c45a4c-daa4-542a-a2cd-9903f4b41000" 1 0.01 1000000 0.7
+semiconductor "071b3b01-f7a7-5f55-9acb-756f72421000" 1 0.01 1000000 0.7
+end_definition
