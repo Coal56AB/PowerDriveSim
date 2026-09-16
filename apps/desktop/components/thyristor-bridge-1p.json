@@ -1,0 +1,13 @@
+{
+  "type": "library:thyristor-bridge-1p",
+  "fields": [],
+  "template": "converters/thyristor-bridge-1p.pds",
+  "palette": {
+    "id": 212,
+    "label": "thyristor_bridge_1p",
+    "category": "converters",
+    "short": "T 1~",
+    "fixed": false,
+    "hidden": false
+  }
+}

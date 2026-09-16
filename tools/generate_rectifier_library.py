@@ -4,19 +4,26 @@ from generate_converter_examples import Diagram, quoted
 import math
 
 
-def bridge(three_phase):
-    key = "diode-bridge-3p" if three_phase else "diode-bridge-1p"
-    body = Diagram("library/" + key, "Three-phase diode bridge" if three_phase else "Diode bridge")
+def bridge(three_phase, controlled=False):
+    key = ("thyristor" if controlled else "diode") + ("-bridge-3p" if three_phase else "-bridge-1p")
+    body = Diagram("library/" + key, "Thyristor bridge" if controlled else
+                   "Three-phase diode bridge" if three_phase else "Diode bridge")
     body.schema = 12
     phases = "ABC" if three_phase else "AB"
     positive = body.node("DC+", -360, -240)
     negative = body.node("DC-", -360, 240)
-    terminals = []
+    terminals, gates = [], []
     for index, phase in enumerate(phases):
         x = (index - (len(phases) - 1) / 2) * 280
         ac = body.node(phase, x, 0)
-        upper = body.component("D" + phase + "+", "D", 0, x, -120, turns=3)
-        lower = body.component("D" + phase + "-", "D", 0, x, 120, turns=3)
+        kind = "T" if controlled else "D"
+        upper = body.component(kind + phase + "+", kind, 0, x, -120, turns=3)
+        lower = body.component(kind + phase + "-", kind, 0, x, 120, turns=3)
+        if controlled:
+            for sign, device in [("+", upper), ("-", lower)]:
+                body.lines.append('semiconductor {} 1 0.01 1000000 0.7'.format(quoted(device["p"][0])))
+                body.lines.append('x-label {} "value" -45 0 0 0'.format(quoted(device["p"][0])))
+                gates.append(("g" + phase + sign, device["gate"]))
         body.wire(ac, upper["p"])
         body.wire(upper["n"], positive, [(x, -240)])
         body.wire(negative, lower["p"], [(x, 240)])
@@ -29,19 +36,21 @@ def bridge(three_phase):
     body.port("DC-", negative)
     if three_phase:
         body.port("C", terminals[2])
+    for name, terminal in gates:
+        body.port(name, terminal, gate=True)
     return key, body
 
 
-def fragment(three_phase):
-    key, body = bridge(three_phase)
+def fragment(three_phase, controlled=False):
+    key, body = bridge(three_phase, controlled)
     root = Diagram("library/" + key + "/fragment", body.name)
     root.schema = 12
     root.instance(body.name, body, 0, 0)
     return "\n".join(root.body() + body.definition()) + "\n"
 
 
-def example(three_phase):
-    key, body = bridge(three_phase)
+def example(three_phase, controlled=False):
+    key, body = bridge(three_phase, controlled)
     p = Diagram(key + "/example", body.name)
     p.schema = 12
     p.profile = "0.04 0.00001 Trapezoidal"
@@ -57,6 +66,15 @@ def example(three_phase):
         p.wire(source["n"], ground, [(x, 400)])
     if not three_phase:
         p.wire(ground, block["B"], [(20, 400)])
+    if controlled:
+        for label, delay, y, names in [("Positive firing", .0025, -300, ["gA+", "gB-"]),
+                                       ("Negative firing", .0125, -200, ["gB+", "gA-"])]:
+            gate = p.uuid(label)
+            p.lines.append('pwm {} {} -180 {} 50 0.05 {}'.format(quoted(gate), quoted(label), y, delay))
+            trunk_x = -80 if delay == .0025 else -40
+            for name in names:
+                port_y = {"gA+": -13, "gA-": 13, "gB+": 39, "gB-": 65}[name]
+                p.wire((gate, "out"), block[name], [(trunk_x, y), (trunk_x, port_y)])
     load = p.component("Load", "R", 10, 660, 120, turns=1)
     voltage = p.component("Udc", "VP", 0, 460, 120, turns=1)
     current = p.component("Idc", "IP", 0, 580, -100)
@@ -78,7 +96,7 @@ def example(three_phase):
 if __name__ == "__main__":
     folder = Path(__file__).resolve().parents[1] / "library" / "converters"
     folder.mkdir(parents=True, exist_ok=True)
-    for three_phase in [False, True]:
-        key, _ = bridge(three_phase)
-        (folder / (key + ".pds")).write_text(fragment(three_phase), encoding="utf-8")
-        (folder.parents[1] / "examples" / (key + ".pds")).write_text(example(three_phase), encoding="utf-8")
+    for three_phase, controlled in [(False, False), (True, False), (False, True)]:
+        key, _ = bridge(three_phase, controlled)
+        (folder / (key + ".pds")).write_text(fragment(three_phase, controlled), encoding="utf-8")
+        (folder.parents[1] / "examples" / (key + ".pds")).write_text(example(three_phase, controlled), encoding="utf-8")

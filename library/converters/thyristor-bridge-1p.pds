@@ -1,0 +1,54 @@
+PowerDriveSim 12
+project "36dc9759-81c9-562f-bc69-3a81b05f7654" "Thyristor bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "2b7d4b75-182c-5cab-bbae-6fd75564723e" "Thyristor bridge" "d65ba802-befb-5e92-bce5-6ee995e26c8f" 0 0 0
+definition "d65ba802-befb-5e92-bce5-6ee995e26c8f" "Thyristor bridge"
+public_port "7112c096-9de0-5e87-84c9-a7d46a6a606d" "A" "e7558894-82f6-53ad-bfc6-399aafce5277" "node" 0 0
+public_port "51ed3911-7cd6-5149-aae3-2f828aaeda39" "DC+" "4bc533dd-7481-5a15-82cb-061f4867710e" "node" 0 0
+public_port "b7c682d4-4a6b-58cc-b756-e81ed956007d" "B" "7fc79f67-2cb3-594c-92f5-c5892b9a4d1a" "node" 0 0
+public_port "5d757844-508f-55b7-ad69-05c4c6426b87" "DC-" "5433b4f4-abc4-5ffb-b8bc-f2136dfe5b55" "node" 0 0
+public_port "326d5b52-4798-5854-a8a1-23425f5d39c9" "gA+" "318c499d-54a1-51e6-8d92-abd1ecbbda0e" "gate" 1 1
+public_port "8544390c-4e55-5e47-a6fb-39d5e906beab" "gA-" "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" "gate" 1 1
+public_port "757ffec1-2f22-5773-93bf-3654008294aa" "gB+" "1c07a348-070d-5e9a-ba0d-0b1cd2610421" "gate" 1 1
+public_port "40cd76a0-dc98-529b-94d8-53a043a18d91" "gB-" "bfd7568f-9570-5785-b457-7d3ee1e71d0f" "gate" 1 1
+body
+PowerDriveSim 12
+project "d65ba802-befb-5e92-bce5-6ee995e26c8f" "Thyristor bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "4bc533dd-7481-5a15-82cb-061f4867710e" "DC+" 0 -360 -240
+node "5433b4f4-abc4-5ffb-b8bc-f2136dfe5b55" "DC-" 0 -360 240
+node "e7558894-82f6-53ad-bfc6-399aafce5277" "A" 0 -140.0 0
+component "318c499d-54a1-51e6-8d92-abd1ecbbda0e" "TA+" T "" "" 0 0 -140.0 -120 0
+orientation "318c499d-54a1-51e6-8d92-abd1ecbbda0e" 3 0
+component "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" "TA-" T "" "" 0 0 -140.0 120 0
+orientation "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" 3 0
+semiconductor "318c499d-54a1-51e6-8d92-abd1ecbbda0e" 1 0.01 1000000 0.7
+x-label "318c499d-54a1-51e6-8d92-abd1ecbbda0e" "value" -45 0 0 0
+semiconductor "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" 1 0.01 1000000 0.7
+x-label "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" "value" -45 0 0 0
+wire "085c44c2-bc7a-5122-a6c3-5d3b73eb22db" "e7558894-82f6-53ad-bfc6-399aafce5277" "node" "318c499d-54a1-51e6-8d92-abd1ecbbda0e" "p" 0
+wire "388a1362-9b31-5851-a657-1d6956beaa78" "318c499d-54a1-51e6-8d92-abd1ecbbda0e" "n" "4bc533dd-7481-5a15-82cb-061f4867710e" "node" 1 -140.0 -240
+wire "beff6bc1-150a-57ba-b455-78d6eb45d64f" "5433b4f4-abc4-5ffb-b8bc-f2136dfe5b55" "node" "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" "p" 1 -140.0 240
+wire "6498f141-e091-5161-94d1-e07d68b4ab89" "50ba99ae-6e1d-52e8-acfd-67a993ea0f6a" "n" "e7558894-82f6-53ad-bfc6-399aafce5277" "node" 0
+node "7fc79f67-2cb3-594c-92f5-c5892b9a4d1a" "B" 0 140.0 0
+component "1c07a348-070d-5e9a-ba0d-0b1cd2610421" "TB+" T "" "" 0 0 140.0 -120 0
+orientation "1c07a348-070d-5e9a-ba0d-0b1cd2610421" 3 0
+component "bfd7568f-9570-5785-b457-7d3ee1e71d0f" "TB-" T "" "" 0 0 140.0 120 0
+orientation "bfd7568f-9570-5785-b457-7d3ee1e71d0f" 3 0
+semiconductor "1c07a348-070d-5e9a-ba0d-0b1cd2610421" 1 0.01 1000000 0.7
+x-label "1c07a348-070d-5e9a-ba0d-0b1cd2610421" "value" -45 0 0 0
+semiconductor "bfd7568f-9570-5785-b457-7d3ee1e71d0f" 1 0.01 1000000 0.7
+x-label "bfd7568f-9570-5785-b457-7d3ee1e71d0f" "value" -45 0 0 0
+wire "59dc24b8-11a1-5640-be09-7487e06a5df5" "7fc79f67-2cb3-594c-92f5-c5892b9a4d1a" "node" "1c07a348-070d-5e9a-ba0d-0b1cd2610421" "p" 0
+wire "dc132a64-b504-5703-984c-4d449a002b7e" "1c07a348-070d-5e9a-ba0d-0b1cd2610421" "n" "4bc533dd-7481-5a15-82cb-061f4867710e" "node" 1 140.0 -240
+wire "b685420a-63da-5dad-b818-fbb068a4a058" "5433b4f4-abc4-5ffb-b8bc-f2136dfe5b55" "node" "bfd7568f-9570-5785-b457-7d3ee1e71d0f" "p" 1 140.0 240
+wire "bcae020a-7361-5b10-9259-640b18694197" "bfd7568f-9570-5785-b457-7d3ee1e71d0f" "n" "7fc79f67-2cb3-594c-92f5-c5892b9a4d1a" "node" 0
+end_definition

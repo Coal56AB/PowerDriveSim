@@ -64,7 +64,7 @@ QIcon component_icon(int id) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
-    } else if (id == 210 || id == 211) {
+    } else if (id == 210 || id == 211 || id == 212) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(5, 28, 27, 4);
         p.drawLine(0, 12, 4, 12);
@@ -75,6 +75,10 @@ QIcon component_icon(int id) {
         p.drawText(QRectF(5, 4, 13, 13), Qt::AlignCenter, "~");
         p.drawLine(19, 20, 25, 20);
         p.drawLine(19, 23, 25, 23);
+        if (id == 212) {
+            p.setPen(QPen(theme_colors().gate, 1.6));
+            p.drawLine(12, 32, 12, 25);
+        }
     } else if (id == 10 || id == 200 || id == 201) {
         p.drawLine(1, 22, 8, 22);
         p.drawLine(8, 22, 8, 14);

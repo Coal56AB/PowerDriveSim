@@ -308,5 +308,6 @@
   "igbt_module": "IGBT with antiparallel diode",
   "converters": "Converters",
   "diode_bridge_1p": "Single-phase diode bridge",
-  "diode_bridge_3p": "Three-phase diode bridge"
+  "diode_bridge_3p": "Three-phase diode bridge",
+  "thyristor_bridge_1p": "Single-phase thyristor bridge"
 }
