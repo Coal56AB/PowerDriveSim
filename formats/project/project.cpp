@@ -25,6 +25,8 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::map<std::string,Orientation> orientations;
     std::map<std::string,SourceWaveform> sources;
     std::map<std::string,Semiconductor> semiconductors;
+    struct ChargeData { bool enabled; double transit, lifetime, initial; };
+    std::map<std::string,ChargeData> charges;
     size_t number=1;
     while(std::getline(in,line)) {
         ++number;
@@ -193,6 +195,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && p.schema<4)
                 throw Diagnostic("schema_version",c.id,"Probes require schema 4");
             p.components.push_back(c);
+        } else if(tag=="diode_charge" && p.schema>=10) {
+            std::string id;ChargeData data{};unsigned enabled=0;
+            row>>std::quoted(id)>>enabled>>data.transit>>data.lifetime>>data.initial;
+            if(enabled>1||charges.count(id))throw Diagnostic("parse_error",id,"Invalid or duplicate diode charge model");
+            data.enabled=enabled!=0;charges.emplace(id,data);
         } else if(tag=="semiconductor" && p.schema>=9) {
             std::string id; Semiconductor s; unsigned model=0;
             row>>std::quoted(id)>>model>>s.ron>>s.roff>>s.forward_voltage;
@@ -230,6 +237,13 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
         if(c==p.components.end())throw Diagnostic("missing_semiconductor_target",id,"Semiconductor component does not exist");
         c->semiconductor=model;validate_semiconductor(*c);
+    }
+    for(const auto& [id,data]:charges) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
+        if(c==p.components.end()||c->kind!=Kind::diode)throw Diagnostic("invalid_diode_charge",id,"Charge model target must be a diode");
+        c->semiconductor.charge_dynamics=data.enabled;c->semiconductor.transit_time=data.transit;
+        c->semiconductor.carrier_lifetime=data.lifetime;c->semiconductor.initial_charge=data.initial;
+        validate_semiconductor(*c);
     }
     p.schema=project_schema;
     for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
@@ -297,6 +311,9 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& c:p.components)if(c.semiconductor!=Semiconductor{}) {
         validate_semiconductor(c);const auto& s=c.semiconductor;
         out<<"semiconductor "<<std::quoted(c.id)<<' '<<unsigned(s.model)<<' '<<s.ron<<' '<<s.roff<<' '<<s.forward_voltage<<'\n';
+        const Semiconductor defaults;
+        if(s.charge_dynamics||s.transit_time!=defaults.transit_time||s.carrier_lifetime!=defaults.carrier_lifetime||s.initial_charge!=0)
+            out<<"diode_charge "<<std::quoted(c.id)<<' '<<s.charge_dynamics<<' '<<s.transit_time<<' '<<s.carrier_lifetime<<' '<<s.initial_charge<<'\n';
     }
     for(const auto& c:p.components)if(c.source!=SourceWaveform{}) {
         validate_waveform(c);const auto& s=c.source;

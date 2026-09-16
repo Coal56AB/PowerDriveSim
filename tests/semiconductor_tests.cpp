@@ -215,7 +215,7 @@ int main(int argc, char **argv) try {
     p = fixture();
     p.components[1].semiconductor = {};
     auto old = encode(p);
-    old.replace(0, 15, "PowerDriveSim 8");
+    old.replace(0, old.find('\n'), "PowerDriveSim 8");
     std::istringstream legacy(old);
     check(read_project(legacy) == p, "v8 ideal migration");
     auto invalid_record = [&](const std::string &record, const char *code) {

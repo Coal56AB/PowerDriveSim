@@ -292,5 +292,11 @@
   "device_pwl": "Piecewise linear",
   "on_resistance": "Ron",
   "off_resistance": "Roff",
-  "forward_voltage": "Threshold Vf"
+  "forward_voltage": "Threshold Vf",
+  "charge_model": "Diode charge",
+  "charge_off": "No dynamics",
+  "charge_on": "With dynamics",
+  "transit_time": "Transit time",
+  "carrier_lifetime": "Carrier lifetime",
+  "initial_charge": "Initial charge"
 }

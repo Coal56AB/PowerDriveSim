@@ -96,6 +96,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(ir.stamps[i].component.kind==Kind::diode) diode_indices.push_back(i);
     for(size_t i=0;i<ir.stamps.size();++i) {
         states[i]=ir.stamps[i].component.initial;
+        if(dynamic_diode(ir.stamps[i].component))states[i]=ir.stamps[i].component.semiconductor.initial_charge;
         gates[i]=ir.stamps[i].component.closed;
         if(ir.stamps[i].component.kind==Kind::ideal_switch) switch_indices.push_back(i);
     }
@@ -144,9 +145,11 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
                 const double it=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);
                 const double excess_v=v-diode_threshold(stamp.component);
                 const double excess_i=current-diode_threshold_current(stamp.component);
-                if(active[index])residual_i=std::max(residual_i,std::max(0.0,-excess_i));
+                const bool dynamic=dynamic_diode(stamp.component);
+                if(dynamic)residual_v=std::max(residual_v,std::max(0.0,active[index]?-excess_v:excess_v));
+                else if(active[index])residual_i=std::max(residual_i,std::max(0.0,-excess_i));
                 else residual_v=std::max(residual_v,std::max(0.0,excess_v));
-                if((active[index]&&excess_i < -it)||(!active[index]&&excess_v>vt)) {
+                if((active[index]&&(dynamic?excess_v < -vt:excess_i < -it))||(!active[index]&&excess_v>vt)) {
                     violations.push_back(index);offending=stamp.component.id;
                 }
             }
@@ -201,6 +204,18 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             const double voltage=(s.positive<0?0:values[s.positive])-(s.negative<0?0:values[s.negative]);
             if(s.component.kind==Kind::capacitor) { states[i]=voltage; history[i]=values[s.branch]; }
             if(s.component.kind==Kind::inductor) { states[i]=values[s.branch]; history[i]=voltage; }
+            if(dynamic_diode(s.component)) {
+                const auto &model=s.component.semiconductor;
+                const auto law=diode_charge_law(model);
+                const double drive=law.alpha*std::max(0.0,voltage-model.forward_voltage);
+                if(!initialize) {
+                    const double m=h/(ir.profile.method==Method::trapezoidal?2:1);
+                    const double q=(states[i]+m*(drive+(ir.profile.method==Method::trapezoidal?history[i]:0)))/(1+m*law.lambda);
+                    if(!std::isfinite(q)||q<0)throw Diagnostic("invalid_charge_state",s.component.id,"Diode charge became negative or nonfinite; reduce the time step or use Backward Euler",t);
+                    states[i]=q;
+                }
+                history[i]=drive-law.lambda*states[i];
+            }
         }
         return values;
     };

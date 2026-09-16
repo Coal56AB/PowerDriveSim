@@ -23,7 +23,7 @@ Visual Schematic → Model Graph → Validation/Flattening → Topology Analysis
 
 **M0 и M1 проверены по критериям. Активен M2.**
 
-Выполнены атомарный редактор Qt 6, визуальная иерархия, раскрываемые 2L VSI / 3L NPC, топологическая диагностика и тёмная тема. Приёмка M1: docs/verification-m1-acceptance.md. В M2 добавлены источники sine/pulse/PWL, импорт CSV/TSV, три RC-примера и статические PWL S/D с Ron/Roff/Vf (schema 9). Проверены 17/17 CTest, нативные UI-сценарии, аналитика RC/ВАХ и баланс энергии. Следующие задачи — упрощённое восстановление диода и семантики MOSFET/IGBT/тиристора, затем библиотека преобразователей. См. docs/sources.md и docs/semiconductors.md.
+Выполнены атомарный редактор Qt 6, визуальная иерархия, раскрываемые 2L VSI / 3L NPC, топологическая диагностика и тёмная тема. Приёмка M1: docs/verification-m1-acceptance.md. В M2 добавлены источники sine/pulse/PWL, импорт CSV/TSV, PWL S/D с Ron/Roff/Vf и динамика заряда/восстановления диода (schema 10). Проверены 18/18 CTest, нативный UI, RC/ВАХ/заряд/баланс энергии; поставляются три RC-примера и diode-recovery.pds. Следующие задачи — семантики MOSFET/IGBT/тиристора, затем библиотека преобразователей. См. docs/sources.md, docs/semiconductors.md, docs/diode-charge-model.md.
 
 Не переходить к M3 до проверки всех критериев M2. Не начинать Controller раньше M6.
 
@@ -117,7 +117,7 @@ Linux single-config: убрать Release из пути, при конфигур
 - Diode search ограничен iteration budget; общая сходимость сложных идеальных сетей не гарантирована.
 - Естественные diode zero crossings — на концах шагов; scheduled gates — точно.
 - Результаты в RAM; Stop между шагами, отдельная факторизация не прерывается.
-- Источники V/I: DC, sine, pulse, PWL. Формат schema 9, loader v1..v9; постоянная project_schema общая для модели/compiler/формата. Фронты вычисляются лениво, источник меняет RHS generic MNA. См. docs/sources.md. Управление — записанные события и постоянный ШИМ, не Controller.
+- Источники V/I: DC, sine, pulse, PWL. Формат schema 10, loader v1..v10; постоянная project_schema общая для модели/compiler/формата. Фронты вычисляются лениво, источник меняет RHS generic MNA. См. docs/sources.md. Управление — записанные события и постоянный ШИМ, не Controller.
 - Benchmark отдельно измеряет OS peak RSS и ёмкость контейнеров результата; последняя не включает allocator overhead.
 - MSVC выдаёт предупреждение C4701 внутри заголовка Qt 6.5.3 QtTest qtestmouse.h; в коде приложения предупреждений нет.
 

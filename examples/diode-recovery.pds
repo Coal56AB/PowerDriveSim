@@ -1,0 +1,26 @@
+PowerDriveSim 10
+project "88fce58a-9077-532c-99d4-3cde885b9653" "Diode reverse recovery"
+profile 0.00018 0.000000025 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "45f0f1c1-8e60-56f2-9028-7716594b028d" "ground" 1 0 240
+node "3c67ee87-857f-5bca-b246-b03cf5183162" "diode_voltage" 0 180 0
+component "6eafef55-a21e-5073-b1b5-9f41fb63899a" "Source" V "" "" 3 0 -240 100 0
+orientation "6eafef55-a21e-5073-b1b5-9f41fb63899a" 1 0
+component "d352abaa-c0ca-5183-9048-ab3639679059" "diode_current" IP "" "" 0 0 -40 0 0
+component "6b50f3a5-421f-5aa0-a5ea-d43c0f8f53ba" "Diode" D "" "" 0 0 180 100 0
+orientation "6b50f3a5-421f-5aa0-a5ea-d43c0f8f53ba" 1 0
+wire "a006c617-ec9b-59fc-8100-864587f09c56" "6eafef55-a21e-5073-b1b5-9f41fb63899a" "p" "d352abaa-c0ca-5183-9048-ab3639679059" "p" 1 -240 0
+wire "3703f95f-89cd-5f4a-b6e6-f3ab98fe7874" "d352abaa-c0ca-5183-9048-ab3639679059" "n" "3c67ee87-857f-5bca-b246-b03cf5183162" "node" 0
+wire "a0bd648c-91ec-5cc7-80cd-635657f8ac29" "3c67ee87-857f-5bca-b246-b03cf5183162" "node" "6b50f3a5-421f-5aa0-a5ea-d43c0f8f53ba" "p" 0
+wire "ee30918f-8e76-5c79-92b6-31a5bfe4c323" "6b50f3a5-421f-5aa0-a5ea-d43c0f8f53ba" "n" "45f0f1c1-8e60-56f2-9028-7716594b028d" "node" 0
+wire "fca629f8-4c65-59f1-af5f-b36da5dd3972" "45f0f1c1-8e60-56f2-9028-7716594b028d" "node" "6eafef55-a21e-5073-b1b5-9f41fb63899a" "n" 0
+plot "29f137c6-b541-5aba-9cc0-7ef35d54e080" "Voltage and recovery current" 520 60 2 0 -1 -1 -1
+wire "51df31ec-6c8a-5be5-aa45-f969d8e408e9" "3c67ee87-857f-5bca-b246-b03cf5183162" "node" "29f137c6-b541-5aba-9cc0-7ef35d54e080" "in1" 3 180 -100 420 -100 420 48
+wire "5851971a-fc9f-5934-bca5-183737d6c1e6" "d352abaa-c0ca-5183-9048-ab3639679059" "out" "29f137c6-b541-5aba-9cc0-7ef35d54e080" "in2" 3 -40 -160 450 -160 450 72
+source "6eafef55-a21e-5073-b1b5-9f41fb63899a" 2 -2 5000 0 0 0.5 0
+semiconductor "6b50f3a5-421f-5aa0-a5ea-d43c0f8f53ba" 1 2 100000 0.7
+diode_charge "6b50f3a5-421f-5aa0-a5ea-d43c0f8f53ba" 1 0.000001 0.000005 0
+x-label "3c67ee87-857f-5bca-b246-b03cf5183162" "name" 0 -65 0 0

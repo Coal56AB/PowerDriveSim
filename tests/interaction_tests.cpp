@@ -97,6 +97,20 @@ class InteractionTests : public QObject {
             select_mode(1);
             QVERIFY(ron->isVisible() && roff->isVisible());
             QCOMPARE(vf->isVisible(), kind == Kind::diode);
+            auto *charge = w.findChild<QComboBox *>("property_charge_model");
+            auto *transit = w.findChild<QLineEdit *>("property_transit_time");
+            auto *lifetime = w.findChild<QLineEdit *>("property_carrier_lifetime");
+            auto *initial_charge = w.findChild<QLineEdit *>("property_initial_charge");
+            QCOMPARE(charge->isVisible(), kind == Kind::diode);
+            QVERIFY(!transit->isVisible());
+            if (kind == Kind::diode) {
+                charge->setCurrentIndex(1);
+                QMetaObject::invokeMethod(charge, "activated", Q_ARG(int, 1));
+                QVERIFY(transit->isVisible() && lifetime->isVisible() && initial_charge->isVisible());
+                transit->setText("100 us"); QTest::keyClick(transit, Qt::Key_Return);
+                lifetime->setText("500 us"); QTest::keyClick(lifetime, Qt::Key_Return);
+                initial_charge->setText("1 uC"); QTest::keyClick(initial_charge, Qt::Key_Return);
+            }
             const auto before = encoded(w.root_project());
             ron->setText("0"); QTest::keyClick(ron, Qt::Key_Return);
             QCOMPARE(encoded(w.root_project()), before);
@@ -111,9 +125,16 @@ class InteractionTests : public QObject {
             QCOMPARE(device().semiconductor.ron, .2);
             QCOMPARE(device().semiconductor.roff, 1e5);
             if (kind == Kind::diode) QCOMPARE(device().semiconductor.forward_voltage, .8);
+            if (kind == Kind::diode) {
+                QCOMPARE(device().semiconductor.transit_time, 1e-4);
+                QCOMPARE(device().semiconductor.carrier_lifetime, 5e-4);
+                QCOMPARE(device().semiconductor.initial_charge, 1e-6);
+                QVERIFY(device().semiconductor.charge_dynamics);
+            }
             select_mode(0); QVERIFY(!ron->isVisible());
             w.undo(); QCOMPARE(device().semiconductor.model, SemiconductorModel::piecewise_linear);
             QVERIFY(ron->isVisible());
+            if (kind == Kind::diode) QVERIFY(transit->isVisible() && device().semiconductor.charge_dynamics);
             if (auto path = qEnvironmentVariable("PDS_PWL_SCREENSHOT"); !path.isEmpty() && kind == Kind::diode) {
                 QTest::qWait(30); QVERIFY(w.grab().save(path));
             }
@@ -123,6 +144,24 @@ class InteractionTests : public QObject {
         const auto path = dir.filePath("pwl.pds");
         QVERIFY(w.save_project(path)); const auto expected = encoded(w.root_project());
         QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+    }
+    void diode_recovery_example() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/diode-recovery.pds")));
+        ready(w);
+        w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(w.has_result() && !w.result().samples.empty());
+        const auto plot = w.project().plots.front().id;
+        w.open_plot(plot);
+        auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
+        QVERIFY(graph && graph->isVisible());
+        if (auto path = qEnvironmentVariable("PDS_RECOVERY_SCREENSHOT"); !path.isEmpty()) {
+            QTest::qWait(30);
+            QVERIFY(w.grab().save(path));
+            QVERIFY(graph->grab().save(path + "-plot.png"));
+        }
     }
     void import_source_table() {
         struct RestoreNativeDialogs {

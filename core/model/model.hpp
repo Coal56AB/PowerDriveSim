@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 9;
+inline constexpr unsigned project_schema = 10;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe };
 std::string kind_name(Kind kind);
 Kind parse_kind(const std::string& name);
@@ -22,6 +22,8 @@ enum class SemiconductorModel { ideal, piecewise_linear };
 struct Semiconductor {
     SemiconductorModel model = SemiconductorModel::ideal;
     double ron = .01, roff = 1e6, forward_voltage = .7;
+    bool charge_dynamics = false;
+    double transit_time = 1e-6, carrier_lifetime = 5e-6, initial_charge = 0;
     bool operator==(const Semiconductor &) const = default;
 };
 struct Component {

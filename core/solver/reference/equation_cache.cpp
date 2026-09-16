@@ -82,6 +82,20 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 break;
             case Kind::diode:
             case Kind::ideal_switch:
+                if (dynamic_diode(c)) {
+                    const auto &model = c.semiconductor;
+                    const auto law = diode_charge_law(model);
+                    const double m = initialize ? 0 : h / (trapezoidal ? 2 : 1);
+                    const double k = 1 / (1 + m * law.lambda);
+                    const double forward = diodes[i] ? law.alpha * k * (1 + m / model.carrier_lifetime) : 0;
+                    const double conductance = 1 / model.roff + forward;
+                    system.add(b, p, -conductance);
+                    system.add(b, n, conductance);
+                    system.add(b, b, 1);
+                    system.inject(b, -forward * model.forward_voltage);
+                    entry->dynamic.push_back({i, b, c.kind, -k / model.transit_time});
+                    break;
+                }
                 if (resistive_semiconductor(c)) {
                     const auto &model = c.semiconductor;
                     const bool active = c.kind == Kind::diode ? diodes[i] : gates[i];
@@ -125,6 +139,9 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
         if (term.kind == Kind::voltage || term.kind == Kind::current)
             value = term.factor * source_value(ir_.stamps[term.state].component, time,
                                                initialize ? TimeSide::right : TimeSide::left);
+        else if (term.kind == Kind::diode)
+            value = term.factor *
+                    (states[term.state] + (!initialize && trapezoidal ? h / 2 * history[term.state] : 0));
         else if (term.kind == Kind::capacitor)
             value = states[term.state] + (!initialize && trapezoidal ? term.factor * history[term.state] : 0);
         else

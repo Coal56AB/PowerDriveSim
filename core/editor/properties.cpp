@@ -68,7 +68,8 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return c.closed;
             if(c.kind==Kind::diode||c.kind==Kind::ideal_switch) {
                 if(key=="semiconductor_model")return unsigned(c.semiconductor.model);
-                if(c.kind==Kind::diode||key!="forward_voltage")
+                if(c.kind==Kind::diode&&key=="charge_model")return unsigned(c.semiconductor.charge_dynamics);
+                if(c.kind==Kind::diode||key=="ron"||key=="roff")
                     if(auto v=semiconductor_parameter(c.semiconductor,key))return *v;
             }
             if(c.kind==Kind::voltage||c.kind==Kind::current) {
@@ -152,6 +153,11 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
             if (key == "closed")
                 c.closed = std::get<bool>(value);
             if(key=="semiconductor_model")c.semiconductor.model=SemiconductorModel(std::get<unsigned>(value));
+            if(key=="charge_model") {
+                const auto enabled=std::get<unsigned>(value);
+                if(enabled>1)throw Diagnostic("invalid_diode_charge",c.id,"Unknown charge model");
+                c.semiconductor.charge_dynamics=enabled!=0;
+            }
             if(auto v=semiconductor_parameter(c.semiconductor,key))*v=std::get<double>(value);
             if(key=="source_mode") {
                 c.source.kind=Waveform(std::get<unsigned>(value));

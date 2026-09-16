@@ -7,6 +7,16 @@ const double *semiconductor_parameter(const Semiconductor &model, const std::str
 inline bool resistive_semiconductor(const Component &c) {
     return c.semiconductor.model == SemiconductorModel::piecewise_linear;
 }
+inline bool dynamic_diode(const Component &c) {
+    return c.kind == Kind::diode && resistive_semiconductor(c) && c.semiconductor.charge_dynamics;
+}
+struct DiodeChargeLaw {
+    double alpha, lambda;
+};
+inline DiodeChargeLaw diode_charge_law(const Semiconductor &s) {
+    return {(1 + s.carrier_lifetime / s.transit_time) * (1 / s.ron - 1 / s.roff),
+            1 / s.transit_time + 1 / s.carrier_lifetime};
+}
 // Continuous diode I-V corner: I=V/Roff below Vf; above it dI/dV=1/Ron.
 inline double diode_threshold(const Component &c) {
     return resistive_semiconductor(c) ? c.semiconductor.forward_voltage : 0;

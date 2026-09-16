@@ -292,5 +292,11 @@
   "device_pwl": "Кусочно-линейная",
   "on_resistance": "Ron",
   "off_resistance": "Roff",
-  "forward_voltage": "Порог Vf"
+  "forward_voltage": "Порог Vf",
+  "charge_model": "Заряд диода",
+  "charge_off": "Без динамики",
+  "charge_on": "С динамикой",
+  "transit_time": "Время переноса",
+  "carrier_lifetime": "Время жизни",
+  "initial_charge": "Начальный заряд"
 }

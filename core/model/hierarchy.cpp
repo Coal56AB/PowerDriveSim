@@ -70,7 +70,7 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
             }
             if((c.kind==Kind::voltage||c.kind==Kind::current))
                 if(auto target=source_parameter(c.source,p.field)){*target=value;return;}
-            if(c.kind==Kind::diode||(c.kind==Kind::ideal_switch&&p.field!="forward_voltage"))
+            if(c.kind==Kind::diode||(c.kind==Kind::ideal_switch&&(p.field=="ron"||p.field=="roff")))
                 if(auto target=semiconductor_parameter(c.semiconductor,p.field)){*target=value;return;}
         }
     for (auto &g : s.patterns)

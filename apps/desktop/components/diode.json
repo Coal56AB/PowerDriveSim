@@ -16,7 +16,15 @@
     {"key": "roff", "editor": "number", "label": "off_resistance", "unit": "Ohm", "min": 0,
       "exclusiveMin": true, "when": {"semiconductor_model": [1]}},
     {"key": "forward_voltage", "editor": "number", "label": "forward_voltage", "unit": "V", "min": 0,
-      "when": {"semiconductor_model": [1]}}
+      "when": {"semiconductor_model": [1]}},
+    {"key": "charge_model", "editor": "enum", "label": "charge_model", "when": {"semiconductor_model": [1]},
+      "options": [{"value": 0, "label": "charge_off"}, {"value": 1, "label": "charge_on"}]},
+    {"key": "transit_time", "editor": "number", "label": "transit_time", "unit": "s", "min": 0,
+      "exclusiveMin": true, "when": {"semiconductor_model": [1], "charge_model": [1]}},
+    {"key": "carrier_lifetime", "editor": "number", "label": "carrier_lifetime", "unit": "s", "min": 0,
+      "exclusiveMin": true, "when": {"semiconductor_model": [1], "charge_model": [1]}},
+    {"key": "initial_charge", "editor": "number", "label": "initial_charge", "unit": "C", "min": 0,
+      "when": {"semiconductor_model": [1], "charge_model": [1]}}
   ],
   "palette": {
     "id": 6,

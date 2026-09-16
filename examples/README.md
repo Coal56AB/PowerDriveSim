@@ -9,6 +9,12 @@
   Вход/выход подключены к графику. Группа source-waveforms проверяет весь
   аналитический отклик с допуском 2 μV. Генератор: tools/generate_source_examples.py.
 
+- diode-recovery.pds: PWL-диод Ron=2 Ω, Roff=100 kΩ, Vf=0.7 V,
+  Tm=1 μs, τ=5 μs, нулевой начальный заряд. Источник меняется с +1 V на −2 V
+  в 100 μs; график показывает напряжение и обратный ток восстановления.
+  Trapezoidal, шаг 25 ns, время 180 μs. Группа diode-charge проверяет ток
+  по аналитике с допуском 21 μA. Генератор: tools/generate_semiconductor_examples.py.
+
 - rc.pds: 1 V, R=1 kΩ, C=1 μF, τ=1 ms; uC(t)=1-exp(-t/τ).
   Backward Euler h=1 μs, 5 ms. Максимальная ошибка <0.2 mV.
 - rlc.pds: 1 V, R=2 Ω, L=10 mH, C=1 mF; h=2 μs, 40 ms.

@@ -268,7 +268,7 @@ static void serialization() {
         }
         return output;
     };
-    std::string old=downgrade_nodes(text); old.replace(0,15,"PowerDriveSim 1");
+    std::string old=downgrade_nodes(text); old.replace(0,old.find('\n'),"PowerDriveSim 1");
     const auto nonlinear_at=old.find("nonlinear ");
     old.erase(nonlinear_at,old.find('\n',nonlinear_at)-nonlinear_at+1);
     const auto method_at=old.find(" BackwardEuler");
@@ -277,7 +277,7 @@ static void serialization() {
     std::istringstream old_in(old); auto migrated=read_project(old_in);
     require(migrated.schema==project_schema && migrated.profile.method==Method::backward_euler,"Explicit v1 migration");
     require(migrated.extensions==p.extensions,"Migration preserves unknown extensions");
-    std::string v2=downgrade_nodes(text); v2.replace(0,15,"PowerDriveSim 2");
+    std::string v2=downgrade_nodes(text); v2.replace(0,v2.find('\n'),"PowerDriveSim 2");
     const auto v2_nonlinear=v2.find("nonlinear ");
     v2.erase(v2_nonlinear,v2.find('\n',v2_nonlinear)-v2_nonlinear+1);
     std::istringstream v2_in(v2); const auto migrated_v2=read_project(v2_in);
