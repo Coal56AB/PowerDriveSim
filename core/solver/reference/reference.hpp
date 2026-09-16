@@ -1,8 +1,10 @@
 #pragma once
 #include "core/ir/ir.hpp"
+#include "core/ir/snapshot.hpp"
 #include <atomic>
 #include <map>
 #include <functional>
+#include <optional>
 namespace pds {
 class StampSystem {
 public:
@@ -26,6 +28,12 @@ struct Result {
     size_t accepted_steps=0, linear_solves=0, max_step_iterations=0;
     bool cancelled=false;
     double max_scaled_residual=0.0, last_time=0.0;
+    std::optional<SimulationSnapshot> snapshot;
+};
+struct ExecutionOptions {
+    const SimulationSnapshot* resume = nullptr;
+    bool capture_snapshot = false;
+    size_t max_steps = 0; // Zero means no per-call limit; useful for stepping/checkpoints.
 };
 struct Recording { bool all=true; std::vector<std::string> channels; };
 std::vector<Channel> available_channels(const SimulationIR& ir);
@@ -33,5 +41,6 @@ Result select_result(const Result& result,const std::vector<std::string>& channe
 Result execute(const SimulationIR& ir, const std::atomic_bool* cancel=nullptr,
                std::atomic<double>* simulated_time=nullptr,const Recording* recording=nullptr,
                const std::atomic_bool* paused=nullptr,
-               const std::function<void(Result&&)>& stream={});
+               const std::function<void(Result&&)>& stream={},
+               const ExecutionOptions* options=nullptr);
 }

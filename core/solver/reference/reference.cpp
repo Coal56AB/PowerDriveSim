@@ -62,6 +62,7 @@ Result select_result(const Result& source,const std::vector<std::string>& keys){
     std::set<std::string> selected(keys.begin(),keys.end());Result result;
     result.project_id=source.project_id;result.backend=source.backend;result.precision=source.precision;result.engine=source.engine;result.profile=source.profile;
     result.accepted_steps=source.accepted_steps;result.linear_solves=source.linear_solves;result.max_step_iterations=source.max_step_iterations;result.cancelled=source.cancelled;result.max_scaled_residual=source.max_scaled_residual;result.last_time=source.last_time;
+    result.snapshot=source.snapshot;
     std::vector<size_t> analog,gates;
     for(size_t i=0;i<source.channels.size();++i)if(selected.count(source.channels[i].object)){analog.push_back(i);result.channels.push_back(source.channels[i]);}
     for(size_t i=0;i<source.gate_objects.size();++i)if(selected.count("gate/"+source.gate_objects[i])){gates.push_back(i);result.gate_objects.push_back(source.gate_objects[i]);result.gate_names.push_back(i<source.gate_names.size()?source.gate_names[i]:std::string{});}
@@ -70,7 +71,7 @@ Result select_result(const Result& source,const std::vector<std::string>& keys){
     for(const auto& old:source.samples){Sample sample;sample.time=old.time;for(auto i:analog)sample.values.push_back(old.values[i]);for(auto i:gates)sample.gates.push_back(old.gates[i]);result.samples.push_back(std::move(sample));}
     return result;
 }
-static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream) {
+static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream,const ExecutionOptions* options) {
     if(ir.unknowns.empty() || !std::isfinite(ir.profile.step) || ir.profile.step<=0 || !std::isfinite(ir.profile.stop) || ir.profile.stop<=0)
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
@@ -106,6 +107,14 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(gate_controlled(ir.stamps[i].component.kind)) switch_indices.push_back(i);
     }
     size_t next_event=0;
+    const auto* resume=options?options->resume:nullptr;
+    if(resume) {
+        validate_snapshot(*resume,ir);
+        states=resume->states;history=resume->history;gates=resume->gates;
+        diode_states=resume->diodes;latched=resume->latched;signal_values=resume->signal_values;
+        next_event=static_cast<size_t>(std::upper_bound(ir.events.begin(),ir.events.end(),resume->time,
+            [](double time,const GateEvent& event){return time<event.time;})-ir.events.begin());
+    }
     auto apply_events=[&](double t) {
         bool changed=false;
         while(next_event<ir.events.size() && ir.events[next_event].time==t) {
@@ -262,14 +271,20 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         for(size_t index:gate_indices)sample.gates.push_back(index<switch_indices.size()?gates[switch_indices[index]]:signal_values[index-switch_indices.size()]);
         result.samples.push_back(std::move(sample));
     };
-    apply_events(0);
-    record(0,solve(0,0,true));
+    double time=resume?resume->time:0;
+    size_t grid=resume?static_cast<size_t>(resume->next_grid):1;
+    const std::vector<double>* final_values=nullptr;
+    if(resume) final_values=&resume->values;
+    else {
+        apply_events(0);
+        final_values=&solve(0,0,true);
+    }
+    record(time,*final_values);
     auto publish=[&]{if(stream&&!result.samples.empty()){auto samples=std::move(result.samples);Result batch=result;batch.samples=std::move(samples);stream(std::move(batch));}};
     auto next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);
     publish();
-    double time=0;
-    size_t grid=1;
     while(time<ir.profile.stop) {
+        if(options&&options->max_steps&&result.accepted_steps>=options->max_steps)break;
         if(paused && paused->load(std::memory_order_relaxed))publish();
         while(paused && paused->load(std::memory_order_relaxed) && !(cancel && cancel->load()))
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -290,12 +305,23 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         const bool gate_event=apply_events(time);
         if(gate_event||time==source_edge) values=&solve(time,0,true);
         record(time,*values);
+        final_values=values;
         if(stream && result.accepted_steps%1024==0 && std::chrono::steady_clock::now()>=next_publish){publish();next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);}
+    }
+    if(options&&options->capture_snapshot) {
+        SimulationSnapshot checkpoint;
+        checkpoint.project_id=ir.project_id;checkpoint.contract=snapshot_contract(ir,time);
+        checkpoint.time=time;checkpoint.next_grid=grid;
+        checkpoint.states=std::move(states);checkpoint.history=std::move(history);
+        checkpoint.gates=std::move(gates);checkpoint.diodes=std::move(diode_states);
+        checkpoint.latched=std::move(latched);checkpoint.signal_values=std::move(signal_values);
+        checkpoint.values=*final_values;
+        result.snapshot=std::move(checkpoint);
     }
     return result;
 }
-Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream) {
-    try{return execute_impl(ir,cancel,simulated_time,recording,paused,stream);}
+Result execute(const SimulationIR& ir,const std::atomic_bool* cancel,std::atomic<double>* simulated_time,const Recording* recording,const std::atomic_bool* paused,const std::function<void(Result&&)>& stream,const ExecutionOptions* options) {
+    try{return execute_impl(ir,cancel,simulated_time,recording,paused,stream,options);}
     catch(Diagnostic& error) {
         if(auto origin=ir.origins.find(error.object);origin!=ir.origins.end()){error.object=origin->second.object;error.path=origin->second.instances;}
         throw;
