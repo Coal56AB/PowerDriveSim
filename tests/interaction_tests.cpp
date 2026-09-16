@@ -3,6 +3,7 @@
 #include "apps/desktop/theme.hpp"
 #include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
+#include "benchmarks/metrics.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -137,8 +138,36 @@ class InteractionTests : public QObject {
             const auto instance = w.project().instances.front().id;
             w.open_subcircuit(instance);
             QCOMPARE(w.project().instances.size(), size_t(3));
-            const auto phase = w.project().instances.front().id;
-            w.open_subcircuit(phase);
+            const auto phases = w.project().instances;
+            auto edit_every_atom = [&] {
+                w.findChild<QAction *>("edit_definition")->trigger();
+                const auto components = w.project().components;
+                for (const auto &c : components) {
+                    const auto before = encoded(w.root_project());
+                    w.select_object(c.id);
+                    QVERIFY(item(w, c.id)->isSelected());
+                    auto *name = w.findChild<QLineEdit *>("property_name");
+                    QVERIFY(name && !name->isReadOnly());
+                    name->setText(QString::fromStdString(c.name) + " edited");
+                    QTest::keyClick(name, Qt::Key_Return);
+                    const auto changed = std::find_if(w.project().components.begin(), w.project().components.end(),
+                        [&](const auto &candidate) { return candidate.id == c.id; });
+                    QCOMPARE(changed->name, c.name + " edited");
+                    w.undo();
+                    QCOMPARE(encoded(w.root_project()), before);
+                }
+                // Public gate and neutral connections are ordinary selectable wires.
+                for (const auto &wire : w.project().wires) {
+                    w.select_object(wire.id);
+                    QVERIFY(item(w, wire.id)->isSelected());
+                }
+            };
+            edit_every_atom(); // DC-link capacitors, ESR and neutral wiring.
+            for (const auto &phase : phases) {
+                w.navigate_hierarchy({instance, phase.id});
+                edit_every_atom(); // Every switch, diode, clamp and individual RC snubber.
+            }
+            w.navigate_hierarchy({instance, phases.front().id});
             const auto switches = example == "npc-3l" ? 4 : 2;
             QCOMPARE(std::count_if(w.project().components.begin(), w.project().components.end(),
                                    [](const auto &c) { return c.kind == Kind::ideal_switch; }),
@@ -177,6 +206,36 @@ class InteractionTests : public QObject {
             QVERIFY(graph->findChild<QPushButton *>("plot_export")->isEnabled());
             QVERIFY(w.save_project(dir.filePath(example + ".pds")));
         }
+    }
+    void nested_topology_error_navigation() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/vsi-2l.pds")));
+        auto p = w.project();
+        const auto converter = p.instances.front();
+        const auto leg = definition(p, converter.definition).instances.front();
+        auto &body = *std::find_if(p.definitions.begin(), p.definitions.end(),
+            [&](const auto &d) { return d.id == leg.definition; });
+        const auto target = body.components.front().id;
+        for (int value : {1, 2}) {
+            const auto id = new_uuid();
+            body.components.push_back({id, "Conflict", Kind::voltage, "", "", double(value)});
+            body.wires.push_back({new_uuid(), {id, "p"}, {target, "p"}, {}});
+            body.wires.push_back({new_uuid(), {id, "n"}, {target, "n"}, {}});
+        }
+        w.set_project(p);
+        ready(w);
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(!w.has_result());
+        auto *diagnostics = w.findChild<QListWidget *>("diagnostics_list");
+        QCOMPARE(diagnostics->count(), 1);
+        QVERIFY(diagnostics->item(0)->text().contains("conflicting_voltage_constraints"));
+        const auto object = diagnostics->item(0)->data(Qt::UserRole).toString().toStdString();
+        QTest::mouseClick(diagnostics->viewport(), Qt::LeftButton, Qt::NoModifier,
+            diagnostics->visualItemRect(diagnostics->item(0)).center());
+        QCOMPARE(w.hierarchy_path(), (std::vector<std::string>{converter.id, leg.id}));
+        QVERIFY(item(w, object) && item(w, object)->isSelected());
     }
     void hierarchy_graph_windows_remain_independent() {
         QTemporaryDir dir;
@@ -2001,6 +2060,57 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().events.size(), size_t(1));
         QCOMPARE(w.project().events[0].time, .005);
     }
+    void benchmark_run_stop_responsiveness() {
+        for (const auto *name : {"rc", "rlc", "vsi-2l", "npc-3l"}) {
+            QTemporaryDir dir;
+            EditorWindow w("en", dir.path());
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/%1.pds").arg(name)));
+            auto p = w.project();
+            p.profile.stop = 1000;
+            p.profile.step = 1e-6;
+            w.set_project(p);
+            ready(w);
+            QElapsedTimer elapsed;
+            elapsed.start();
+            qint64 last_tick = 0, max_gap = 0;
+            int ticks = 0;
+            QTimer heartbeat;
+            connect(&heartbeat, &QTimer::timeout, &w, [&] {
+                auto now = elapsed.elapsed();
+                max_gap = std::max(max_gap, now - last_tick);
+                last_tick = now;
+                ++ticks;
+            });
+            heartbeat.start(10);
+            w.start_simulation();
+            const auto dispatch = elapsed.elapsed();
+            QVERIFY(w.running());
+            QTest::qWait(120);
+            // Exercise actual viewport input while the worker is computing.
+            const QPoint center = w.canvas()->viewport()->rect().center();
+            QTest::mousePress(w.canvas()->viewport(), Qt::MiddleButton, Qt::NoModifier, center);
+            QTest::mouseMove(w.canvas()->viewport(), center + QPoint(20, 10), 0);
+            QTest::mouseRelease(w.canvas()->viewport(), Qt::MiddleButton, Qt::NoModifier, center + QPoint(20, 10));
+            QTest::qWait(60);
+            QVERIFY(w.running());
+            QVERIFY(ticks >= 3);
+            QVERIFY2(max_gap < 1000, "UI must process events during the benchmark");
+            QElapsedTimer stopping;
+            stopping.start();
+            w.stop_simulation();
+            while (w.running() && stopping.elapsed() < 1000) QTest::qWait(1);
+            QVERIFY2(!w.running(), "M1 benchmark Stop must complete within one second");
+            const auto stop_ms = stopping.elapsed();
+            QVERIFY(w.has_result());
+            QVERIFY(w.result().cancelled);
+            QVERIFY(w.result().last_time < p.profile.stop);
+            for (size_t i = 1; i < w.result().samples.size(); ++i)
+                QVERIFY(w.result().samples[i].time > w.result().samples[i - 1].time);
+            qInfo().noquote() << QString("case=%1 dispatch=%2ms heartbeat_max_gap=%3ms stop=%4ms steps=%5 peak_resident=%6bytes")
+                .arg(name).arg(dispatch).arg(max_gap).arg(stop_ms).arg(w.result().accepted_steps)
+                .arg(benchmark::peak_resident_bytes());
+        }
+    }
     void performance() {
         if (!qEnvironmentVariableIsSet("PDS_UI_BENCHMARK"))
             QSKIP("Set PDS_UI_BENCHMARK for measured interaction timings");
@@ -2058,6 +2168,34 @@ class InteractionTests : public QObject {
                                      .arg(setup)
                                      .arg(stats(hover), stats(move));
         }
+        Project p;
+        p.id = new_uuid(); p.name = "Hierarchy benchmark"; p.wired = true;
+        Definition d;
+        d.id = new_uuid(); d.name = "25 resistor section"; d.wired = true;
+        for (int i = 0; i < 25; ++i)
+            d.components.push_back({new_uuid(), "R" + std::to_string(i), Kind::resistor,
+                                    "", "", 1000, 0, 240.0 * (i % 5), 160.0 * (i / 5)});
+        p.definitions.push_back(d);
+        for (int i = 0; i < 40; ++i)
+            p.instances.push_back({new_uuid(), "Section " + std::to_string(i), d.id,
+                                   240.0 * (i % 8), 200.0 * (i / 8)});
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QElapsedTimer timer; timer.start();
+        w.set_project(p); ready(w);
+        const auto setup = timer.elapsed();
+        qint64 maximum = 0;
+        for (const auto &instance : p.instances) {
+            timer.restart();
+            w.navigate_hierarchy({instance.id});
+            QApplication::processEvents();
+            QCOMPARE(w.project().components.size(), size_t(25));
+            w.navigate_hierarchy({});
+            QApplication::processEvents();
+            maximum = std::max(maximum, timer.elapsed());
+        }
+        qInfo() << "hierarchy: 40 instances / 1000 expanded atoms, setup" << setup
+                << "ms, max open-and-return" << maximum << "ms";
     }
     void simulation_performance() {
         const auto path = qEnvironmentVariable("PDS_SIM_BENCHMARK_PROJECT");

@@ -1,6 +1,8 @@
 #include "formats/project/project.hpp"
 #include "core/model/connectivity.hpp"
+#include "core/model/hierarchy.hpp"
 #include "core/solver/reference/reference.hpp"
+#include "benchmarks/metrics.hpp"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -20,7 +22,8 @@ int main(int argc,char** argv) {
         recording.all=mode=="all";
         if(mode=="stream") {
             recording.channels=p.scope_enabled?p.scope_channels:std::vector<std::string>{};
-            for(const auto& plot:p.plots)for(const auto& key:pds::plot_channels(p,plot.id))recording.channels.push_back(key);
+            const auto flat=pds::flatten(p).project;
+            for(const auto& plot:flat.plots)for(const auto& key:pds::plot_channels(flat,plot.id))recording.channels.push_back(key);
         }
         size_t steps=0,stored=0,solves=0,samples=0; double residual=0,checksum=0,first_sample=0;
         for(int i=0;i<repeats;++i) {
@@ -34,7 +37,9 @@ int main(int argc,char** argv) {
             };
             auto r=pds::execute(ir,nullptr,nullptr,&recording,nullptr,stream); steps+=r.accepted_steps; solves+=r.linear_solves;
             samples+=r.samples.size();
-            stored=r.samples.size()*(sizeof(pds::Sample)+ir.unknowns.size()*sizeof(double));
+            stored=r.samples.capacity()*sizeof(pds::Sample);
+            for(const auto& sample:r.samples)
+                stored+=sample.values.capacity()*sizeof(double)+(sample.gates.capacity()+7)/8;
             residual=std::max(residual,r.max_scaled_residual);
             if(!r.samples.empty()){run_checksum=0;for(double v:r.samples.back().values) run_checksum+=v;}
             checksum+=run_checksum;
@@ -51,6 +56,7 @@ int main(int argc,char** argv) {
             <<"\nwall_seconds="<<elapsed<<"\nsteps="<<steps<<"\nsteps_per_second="<<steps/elapsed
             <<"\nwall_per_simulated_second="<<elapsed/(p.profile.stop*repeats)
             <<"\nresult_payload_estimate_bytes="<<stored
+            <<"\npeak_resident_bytes="<<pds::benchmark::peak_resident_bytes()
             <<"\nlinear_solves="<<solves<<"\nmax_scaled_residual="<<residual<<"\nchecksum="<<checksum<<'\n';
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
