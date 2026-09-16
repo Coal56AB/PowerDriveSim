@@ -1,0 +1,13 @@
+{
+  "type": "library:vsi-2l",
+  "fields": [],
+  "template": "converters/vsi-2l.pds",
+  "palette": {
+    "id": 260,
+    "label": "vsi_2l_module",
+    "category": "converters",
+    "short": "2L VSI",
+    "fixed": false,
+    "hidden": false
+  }
+}

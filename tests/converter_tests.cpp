@@ -60,6 +60,17 @@ static void verify_response(const Project &project, bool npc) {
     std::map<std::string, size_t> channel;
     for (size_t i = 0; i < result.channels.size(); ++i)
         channel[result.channels[i].object] = i;
+    for (const auto &sample : result.samples) {
+        double power = 0;
+        for (const auto &component : resolved.components) {
+            if (component.kind == Kind::voltage_probe)
+                continue; // A voltage observation is not a branch-current channel.
+            const double voltage = sample.values.at(channel.at(component.positive)) -
+                                   sample.values.at(channel.at(component.negative));
+            power += voltage * sample.values.at(channel.at(component.id));
+        }
+        require(std::abs(power) < 1e-5, "Converter instantaneous power balance");
+    }
     for (const auto &component : resolved.components)
         if (component.kind == Kind::diode)
             for (const auto &sample : result.samples) {
@@ -148,6 +159,23 @@ int main(int argc, char **argv) try {
     for (bool npc : {false, true}) {
         std::ifstream input(std::string(argv[1]) + "/examples/" + (npc ? "npc-3l.pds" : "vsi-2l.pds"));
         auto project = read_project(input);
+        std::ifstream library_input(std::string(argv[1]) + "/library/converters/" +
+                                    (npc ? "npc-3l.pds" : "vsi-2l.pds"));
+        const auto library = read_project(library_input);
+        require(library.instances.size() == 1 && library.components.empty() && library.patterns.empty() &&
+                    library.definitions.size() == 4,
+                "Library fragment has the converter and three phase definitions without external sources");
+        for (const auto &body : library.definitions)
+            require(definition(project, body.id) == body, "Example and library share exactly the same definitions");
+        require(definition(library, library.instances.front().definition).parameters.size() == 6,
+                "DC-link capacitors, initial states and ESR are public parameters");
+        Project inserted; inserted.id = new_uuid(); inserted.wired = true;
+        Document palette(inserted);
+        const auto added = palette.paste(library, 40, 80);
+        require(added.size() == 1 && palette.root_project().instances.size() == 1, "Insert full converter fragment");
+        palette.expand_instance(added.front());
+        require(palette.root_project().instances.empty(), "Library converter expands to atoms");
+        palette.undo(); require(palette.root_project().instances.size() == 1, "Undo library expansion");
         auto start = std::chrono::steady_clock::now();
         auto ir = compile(project);
         const auto compiled = std::chrono::steady_clock::now();
@@ -166,6 +194,19 @@ int main(int argc, char **argv) try {
             verify_response(project, npc);
         }
         verify_editing(project, npc);
+        auto shorted = project;
+        for (auto &body : shorted.definitions)
+            for (auto &gate : body.patterns)
+                gate.initial = true;
+        bool diagnosed = false;
+        try {
+            (void)execute(compile(shorted));
+        } catch (const Diagnostic &e) {
+            diagnosed = (e.code == "conflicting_voltage_constraints" || e.code == "nonlinear_convergence") &&
+                         !e.object.empty();
+            if (!diagnosed) throw;
+        }
+        require(diagnosed, "All gates on diagnoses a DC-bus short circuit");
     }
     return 0;
 } catch (const std::exception &e) {

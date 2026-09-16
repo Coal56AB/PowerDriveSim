@@ -145,10 +145,14 @@ def phase_leg(levels, phase, initial):
     return leg
 
 
-def example(levels):
-    states = ([[1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]]
-              if levels == 2 else
-              [[1, 0, -1], [0, 1, -1], [-1, 1, 0], [-1, 0, 1], [0, -1, 1], [1, -1, 0]])
+def switching_states(levels):
+    return ([[1, -1, -1], [1, 1, -1], [-1, 1, -1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]]
+            if levels == 2 else
+            [[1, 0, -1], [0, 1, -1], [-1, 1, 0], [-1, 0, 1], [0, -1, 1], [1, -1, 0]])
+
+
+def converter_definition(levels):
+    states = switching_states(levels)
     name = "2L VSI" if levels == 2 else "3L NPC"
     converter = Diagram(str(levels) + "l/converter", name)
     positive = converter.node("DC+", -360, -200)
@@ -162,6 +166,9 @@ def example(levels):
         converter.wire(top, esr["p"])
         converter.wire(esr["n"], capacitor["p"])
         converter.wire(capacitor["n"], bottom)
+        converter.parameter("Cdc" + label, capacitor["p"], "value", "F", .001)
+        converter.parameter("uCdc" + label + "(0)", capacitor["p"], "initial", "V", 300)
+        converter.parameter("ESR" + label, esr["p"], "value", "Ohm", .05)
     definitions, legs = [], []
     for phase, letter in enumerate("ABC"):
         leg = phase_leg(levels, letter, states[0][phase])
@@ -180,6 +187,24 @@ def example(levels):
     for phase, letter in enumerate("ABC"):
         for index in range(count):
             converter.port(letter + str(index + 1), legs[phase]["g" + str(index + 1)], gate=True)
+    return converter, definitions
+
+
+def library_fragment(levels):
+    converter, definitions = converter_definition(levels)
+    root = Diagram(str(levels) + "l/library", converter.name)
+    root.instance(converter.name, converter, 0, 0)
+    lines = root.body() + converter.definition()
+    for leg in definitions:
+        lines += leg.definition()
+    return "\n".join(lines) + "\n"
+
+
+def example(levels):
+    states = switching_states(levels)
+    converter, definitions = converter_definition(levels)
+    name = converter.name
+    count = 2 if levels == 2 else 4
     gate_bank = Diagram(str(levels) + "l/recorded-gates", "Recorded gate sequence")
     for phase, letter in enumerate("ABC"):
         for index in range(count):
@@ -226,3 +251,4 @@ if __name__ == "__main__":
     folder = Path(__file__).resolve().parents[1] / "examples"
     for levels, filename in ((2, "vsi-2l.pds"), (3, "npc-3l.pds")):
         (folder / filename).write_text(example(levels), encoding="utf-8")
+        (folder.parent / "library/converters" / filename).write_text(library_fragment(levels), encoding="utf-8")

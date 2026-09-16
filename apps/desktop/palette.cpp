@@ -64,6 +64,15 @@ QIcon component_icon(int id) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
+    } else if (id == 260 || id == 261) {
+        p.drawLine(3, 2, 29, 2); p.drawLine(3, 30, 29, 30);
+        for (int x : {6, 16, 26}) {
+            p.drawLine(x, 2, x, 30);
+            p.setBrush(theme_colors().window);
+            for (int y : (id == 260 ? std::vector<int>{6, 22} : std::vector<int>{5, 11, 19, 25}))
+                p.drawRect(QRectF(x - 2, y - 2, 4, 4));
+            p.drawLine(x, 16, x + 5, 16);
+        }
     } else if (id == 250) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16);

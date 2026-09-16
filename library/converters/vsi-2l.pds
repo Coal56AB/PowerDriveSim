@@ -1,66 +1,11 @@
 PowerDriveSim 7
-project "5c4a10c9-1218-5cea-b1d0-6d8f1847a9d5" "2L VSI with RL load and recorded gates"
+project "c107a9b9-36e9-5cf3-9f9b-92439af9922e" "2L VSI"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
-instance "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2L VSI" "7947b68c-41de-59de-aa7e-fe70a3849762" 0 0 0
-instance "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "Recorded gates" "0d90a35d-3213-5bb0-9ce3-915bb71d0794" -420 60 0
-node "a99bf2c4-e701-5365-a571-cb2933aecd65" "N" 1 -240 300
-component "f46ae810-53bf-5160-b810-fbf0d63c2251" "Supply+" V "" "" 300 0 -240 -300 0
-orientation "f46ae810-53bf-5160-b810-fbf0d63c2251" 1 0
-component "b84d5908-d3b7-5d2e-88af-7f2aba239b79" "Supply-" V "" "" 300 0 -240 180 0
-orientation "b84d5908-d3b7-5d2e-88af-7f2aba239b79" 1 0
-wire "21f21aac-af8d-5f09-9a54-d7009af0f501" "f46ae810-53bf-5160-b810-fbf0d63c2251" "p" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "bcaf702a-2394-5f79-bc52-9680a175fd50" 0
-wire "4c75a8f3-a0d8-59ce-8fb7-53fdb3d0380c" "f46ae810-53bf-5160-b810-fbf0d63c2251" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "7d72627b-6368-50d8-82b0-a00c8e8c2376" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" "b84d5908-d3b7-5d2e-88af-7f2aba239b79" "p" 0
-wire "33e1e7be-b996-53b7-8f86-ea8b56b5df54" "b84d5908-d3b7-5d2e-88af-7f2aba239b79" "n" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "0c1d4ceb-a2fb-5533-9d3c-c270f545d7d6" 0
-wire "57c146a8-85b7-5957-a4b2-79b58f384899" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "c79f6ff4-17aa-59ed-9d65-6f419ae2a4ab" 0
-component "535f05bd-2ac1-5783-9da0-8ee4dfd99f1b" "UA" VP "" "" 0 0 230 -70 0
-component "4d3e3721-7d64-5eea-84c7-edd8f2fefb1c" "RA" R "" "" 20 0 300 -120 0
-component "3bb0cf9e-144f-5cc6-83cc-52d6648e7073" "LA" L "" "" 0.02 0 480 -120 0
-component "8de6be4e-7d0d-5639-b298-53648ce80a5f" "IA" IP "" "" 0 0 640 -120 0
-wire "f3539939-dfc0-5c2e-928d-3f3fa533c4ae" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2df0bdeb-d4a2-52e1-b182-356fa35beeb7" "4d3e3721-7d64-5eea-84c7-edd8f2fefb1c" "p" 0
-wire "c4093dfe-f1b1-5b20-9133-c457d3472c08" "4d3e3721-7d64-5eea-84c7-edd8f2fefb1c" "n" "3bb0cf9e-144f-5cc6-83cc-52d6648e7073" "p" 0
-wire "f51bd82b-9177-577e-bcf6-e9781cf37ba2" "3bb0cf9e-144f-5cc6-83cc-52d6648e7073" "n" "8de6be4e-7d0d-5639-b298-53648ce80a5f" "p" 0
-wire "61b2c4e9-02e8-5303-b210-bb9ae6413039" "8de6be4e-7d0d-5639-b298-53648ce80a5f" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "d9342d1b-921e-5e55-b1aa-518bdfc23720" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2df0bdeb-d4a2-52e1-b182-356fa35beeb7" "535f05bd-2ac1-5783-9da0-8ee4dfd99f1b" "p" 0
-wire "003ea2d6-f8db-5c92-b519-45667002d1e5" "535f05bd-2ac1-5783-9da0-8ee4dfd99f1b" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "fdf6b55e-14ee-53fc-9eb8-a2fc0c02c273" "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "f845fc63-b9b5-5ca5-bf0b-11d830844dce" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "17550ae0-cfb6-5481-be94-6703307e7b52" 0
-wire "812ed3f1-a295-5b19-b842-4d54edef7036" "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "242d36cb-8200-59d6-86b9-5e65815d4c66" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "f60c61e1-7976-5b3c-8d75-035ce1970448" 0
-component "6d1157c2-8046-5a1e-b54b-e71aac54b444" "UB" VP "" "" 0 0 230 90 0
-component "a47e8cfd-e5cd-50b9-82c9-4f3b16d371c8" "RB" R "" "" 20 0 300 40 0
-component "c0ff3144-1c2d-53d2-8c20-2da28db7284c" "LB" L "" "" 0.02 0 480 40 0
-component "af2c567b-4eb2-5293-ad12-9ae1eb637bad" "IB" IP "" "" 0 0 640 40 0
-wire "392a587d-440f-5857-822b-6bc22dad40b6" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "593d152a-256a-5414-b9f4-397418c8b199" "a47e8cfd-e5cd-50b9-82c9-4f3b16d371c8" "p" 0
-wire "bb673c14-ad1c-5ad1-93ca-9193ae9758ba" "a47e8cfd-e5cd-50b9-82c9-4f3b16d371c8" "n" "c0ff3144-1c2d-53d2-8c20-2da28db7284c" "p" 0
-wire "2eb4e735-6db0-5c37-b11e-7e28f145238d" "c0ff3144-1c2d-53d2-8c20-2da28db7284c" "n" "af2c567b-4eb2-5293-ad12-9ae1eb637bad" "p" 0
-wire "3b8472d7-874a-5af4-8b4a-de5c690b9a20" "af2c567b-4eb2-5293-ad12-9ae1eb637bad" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "d2b1e875-2f6a-585d-b05d-821e277c7d7b" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "593d152a-256a-5414-b9f4-397418c8b199" "6d1157c2-8046-5a1e-b54b-e71aac54b444" "p" 0
-wire "777b806e-55b3-53e9-a336-74c48eed0719" "6d1157c2-8046-5a1e-b54b-e71aac54b444" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "2c236ef7-d948-5cf2-b002-ad830e53d9c8" "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "fb834650-9298-5d5a-9c4d-404d2c186ad9" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "0646b0c6-e1ec-567e-9bb9-c982a28e996a" 0
-wire "6b6c7e1d-2bc8-54df-91ce-2e57d7919fd6" "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "21fe7816-d9e8-54d3-a5a0-a44222cc44cf" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "dba42882-b662-56d9-ab96-6a8dee141438" 0
-component "dd2b9886-67a0-5c8d-bd27-0b7455d58eeb" "UC" VP "" "" 0 0 230 250 0
-component "83b2a19c-2d32-51d5-b706-4e325e1f4bce" "RC" R "" "" 20 0 300 200 0
-component "1b21353a-70e5-5d81-96d8-5500ad0c228c" "LC" L "" "" 0.02 0 480 200 0
-component "f22fd69b-19fa-59e8-a874-495e40cb9e80" "IC" IP "" "" 0 0 640 200 0
-wire "c4d221f4-51c0-5395-8596-c28af96afb2f" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2d990613-1eb0-5203-9a7f-fa1bcd113dc5" "83b2a19c-2d32-51d5-b706-4e325e1f4bce" "p" 0
-wire "10ad22d8-3f7a-5ecf-b89f-b54d24de6df0" "83b2a19c-2d32-51d5-b706-4e325e1f4bce" "n" "1b21353a-70e5-5d81-96d8-5500ad0c228c" "p" 0
-wire "c0b725a9-f132-50cd-86bc-1fc4abd32085" "1b21353a-70e5-5d81-96d8-5500ad0c228c" "n" "f22fd69b-19fa-59e8-a874-495e40cb9e80" "p" 0
-wire "c3b0a857-9de3-5722-aafd-ee450b101911" "f22fd69b-19fa-59e8-a874-495e40cb9e80" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "20a8f57d-9fd1-5e96-967c-7088f21fe389" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2d990613-1eb0-5203-9a7f-fa1bcd113dc5" "dd2b9886-67a0-5c8d-bd27-0b7455d58eeb" "p" 0
-wire "aec9633f-dceb-511c-b936-6abdbc325cfa" "dd2b9886-67a0-5c8d-bd27-0b7455d58eeb" "n" "a99bf2c4-e701-5365-a571-cb2933aecd65" "node" 0
-wire "86b442a3-3f97-5528-805a-9be2beee7c6c" "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "848300ac-cf10-5706-9d4a-21ef18e45997" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "1f2930a9-cc2d-5f30-995f-c272702020b7" 0
-wire "2517676e-2e9d-55e6-9396-0a57c7c19903" "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "73491239-8550-51b9-a219-66414a473b9b" "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2a0e2e8b-2d49-5f09-ab79-4a03e13855a2" 0
-plot "e4029872-9c71-5268-9a12-52ddb05f92e7" "Phase voltages" 870 -130 3 0 -1 -1 -1
-wire "c4e390a0-8430-5ffb-b5ef-fda77e3faa47" "535f05bd-2ac1-5783-9da0-8ee4dfd99f1b" "out" "e4029872-9c71-5268-9a12-52ddb05f92e7" "in1" 0
-wire "d3d2502d-b5eb-529a-8f6b-bf61658ea683" "6d1157c2-8046-5a1e-b54b-e71aac54b444" "out" "e4029872-9c71-5268-9a12-52ddb05f92e7" "in2" 0
-wire "e149e358-26f8-57f4-942c-27be3ec8b7df" "dd2b9886-67a0-5c8d-bd27-0b7455d58eeb" "out" "e4029872-9c71-5268-9a12-52ddb05f92e7" "in3" 0
-plot "1d1d110c-7f61-59e8-89e1-5c064bd5e3e3" "Phase currents" 870 120 3 0 -1 -1 -1
-wire "8c4834db-5d1b-5bab-adda-2f3f064e812b" "8de6be4e-7d0d-5639-b298-53648ce80a5f" "out" "1d1d110c-7f61-59e8-89e1-5c064bd5e3e3" "in1" 0
-wire "68a87297-65d1-56f5-83e0-dfa6cc491b54" "af2c567b-4eb2-5293-ad12-9ae1eb637bad" "out" "1d1d110c-7f61-59e8-89e1-5c064bd5e3e3" "in2" 0
-wire "de5127f0-233a-507b-83e4-7242270607b5" "f22fd69b-19fa-59e8-a874-495e40cb9e80" "out" "1d1d110c-7f61-59e8-89e1-5c064bd5e3e3" "in3" 0
+instance "ff84a7f6-be39-54d2-96d6-baaed1463be4" "2L VSI" "7947b68c-41de-59de-aa7e-fe70a3849762" 0 0 0
 definition "7947b68c-41de-59de-aa7e-fe70a3849762" "2L VSI"
 public_parameter "6d3698b4-88a7-5df1-bcb4-544d60d4bd46" "Cdc+" "F" "b8424958-d246-567a-a823-8f7356a30ef0" "value" 0.001
 public_parameter "903ffca6-e06c-51ad-ba63-05a4639c368c" "uCdc+(0)" "V" "b8424958-d246-567a-a823-8f7356a30ef0" "initial" 300
@@ -258,36 +203,4 @@ wire "85075430-0dcb-591a-84dc-3b5f303b451f" "46a9eb33-2df8-5a88-8915-15db2039c47
 wire "9480cbea-7eb2-56c5-87ed-f588f40570e3" "46a9eb33-2df8-5a88-8915-15db2039c478" "node" "18cf3437-1ed9-5ce4-9589-5a2e70ed77f9" "p" 0
 wire "54bb1bab-02b2-578e-b233-3ae055192208" "46a9eb33-2df8-5a88-8915-15db2039c478" "node" "3721719b-a916-5e20-9f39-1eddc18daa80" "n" 0
 wire "84533a20-68d0-5049-b9a0-6476204e5ff5" "606c7993-a6e4-5181-a1ba-4525950462cb" "n" "3721719b-a916-5e20-9f39-1eddc18daa80" "p" 0
-end_definition
-definition "0d90a35d-3213-5bb0-9ce3-915bb71d0794" "Recorded gate sequence"
-public_port "f845fc63-b9b5-5ca5-bf0b-11d830844dce" "A1" "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" "out" 1 2
-public_port "242d36cb-8200-59d6-86b9-5e65815d4c66" "A2" "eaaa301c-0100-590a-aa06-df5d1356cb89" "out" 1 2
-public_port "fb834650-9298-5d5a-9c4d-404d2c186ad9" "B1" "3e036677-5e6d-57d4-a6f5-1a700d15e921" "out" 1 2
-public_port "21fe7816-d9e8-54d3-a5a0-a44222cc44cf" "B2" "313d02a0-2552-54e0-8c6b-03d902bcaf3c" "out" 1 2
-public_port "848300ac-cf10-5706-9d4a-21ef18e45997" "C1" "dbf302ed-93f5-59f9-81d8-20e2f87814a7" "out" 1 2
-public_port "73491239-8550-51b9-a219-66414a473b9b" "C2" "333cd206-78be-502b-bd20-83616b67c5e0" "out" 1 2
-body
-PowerDriveSim 7
-project "0d90a35d-3213-5bb0-9ce3-915bb71d0794" "Recorded gate sequence"
-profile 0.006 0.00001 BackwardEuler
-nonlinear 64 1e-9 1e-12 1e-9
-wiring wires
-scope_enabled 0
-scopeview 0 -1 -1 -1
-pattern "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" "A1" 0 0 1
-event 0.002 "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" 0
-event 0.005 "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" 1
-pattern "eaaa301c-0100-590a-aa06-df5d1356cb89" "A2" 180 0 0
-event 0.002 "eaaa301c-0100-590a-aa06-df5d1356cb89" 1
-event 0.005 "eaaa301c-0100-590a-aa06-df5d1356cb89" 0
-pattern "3e036677-5e6d-57d4-a6f5-1a700d15e921" "B1" 0 130 0
-event 0.001 "3e036677-5e6d-57d4-a6f5-1a700d15e921" 1
-event 0.004 "3e036677-5e6d-57d4-a6f5-1a700d15e921" 0
-pattern "313d02a0-2552-54e0-8c6b-03d902bcaf3c" "B2" 180 130 1
-event 0.001 "313d02a0-2552-54e0-8c6b-03d902bcaf3c" 0
-event 0.004 "313d02a0-2552-54e0-8c6b-03d902bcaf3c" 1
-pattern "dbf302ed-93f5-59f9-81d8-20e2f87814a7" "C1" 0 260 0
-event 0.003 "dbf302ed-93f5-59f9-81d8-20e2f87814a7" 1
-pattern "333cd206-78be-502b-bd20-83616b67c5e0" "C2" 180 260 1
-event 0.003 "333cd206-78be-502b-bd20-83616b67c5e0" 0
 end_definition

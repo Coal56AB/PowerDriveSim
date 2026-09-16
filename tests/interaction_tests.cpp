@@ -75,6 +75,35 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void three_phase_library_parameters() {
+        for (const int type : {260, 261}) {
+            QTemporaryDir dir; EditorWindow w("ru", dir.path());
+            Project empty; empty.id = new_uuid(); empty.wired = true;
+            w.set_project(empty); ready(w);
+            auto *insert = w.findChild<QAction *>("insert_component_" + QString::number(type));
+            QVERIFY(insert && !insert->icon().isNull()); insert->trigger();
+            QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              w.canvas()->mapFromScene(QPointF(0, 0)));
+            QCOMPARE(w.project().instances.size(), size_t(1));
+            const auto module = w.project().instances.front();
+            const auto body = definition(w.project(), module.definition);
+            QCOMPARE(body.parameters.size(), size_t(6));
+            auto *value = w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(body.parameters.front().id));
+            QVERIFY(value && value->isVisible());
+            value->setText("2 mF"); QTest::keyClick(value, Qt::Key_Return);
+            QCOMPARE(w.project().instances.front().parameters.front().second, .002);
+            w.open_subcircuit(module.id);
+            QCOMPARE(w.project().instances.size(), size_t(3));
+            w.open_subcircuit(w.project().instances.front().id);
+            QCOMPARE(w.project().components.size(), size_t(type == 260 ? 8 : 18));
+            w.navigate_hierarchy({}); w.undo();
+            QVERIFY(w.project().instances.front().parameters.empty());
+            if (auto screenshot = qEnvironmentVariable("PDS_THREE_PHASE_LIBRARY_SCREENSHOT"); !screenshot.isEmpty()) {
+                w.select_object(module.id); QTest::qWait(30);
+                QVERIFY(w.grab().save(screenshot + QString::number(type) + ".png"));
+            }
+        }
+    }
     void ac_controller_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
         Project empty; empty.id = new_uuid(); empty.wired = true;
