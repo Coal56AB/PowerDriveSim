@@ -1,4 +1,5 @@
 #pragma once
+#include "apps/desktop/theme.hpp"
 #include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
@@ -40,7 +41,9 @@ class UiIconEngine final : public QIconEngine {
         const double side = std::min(rect.width(), rect.height());
         p->translate(rect.center().x() - side / 2, rect.center().y() - side / 2);
         p->scale(side / 24, side / 24);
-        const QColor color(mode == QIcon::Disabled ? "#98a7b7" : light_ ? "#ffffff" : "#294c70");
+        const QColor color(mode == QIcon::Disabled ? theme_colors().muted
+                           : light_                ? QColor(Qt::white)
+                                                   : theme_colors().text);
         p->setPen(QPen(color, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p->setBrush(Qt::NoBrush);
         auto line = [&](int x, int y, int a, int b) { p->drawLine(x, y, a, b); };
@@ -130,7 +133,7 @@ class UiIconEngine final : public QIconEngine {
         case UiIcon::settings:
             for (int y = 5; y <= 19; y += 7) {
                 line(3, y, 21, y);
-                p->setBrush(Qt::white);
+                p->setBrush(theme_colors().surface);
                 p->drawEllipse(QPointF(y == 12 ? 16 : 8, y), 2.5, 2.5);
             }
             break;

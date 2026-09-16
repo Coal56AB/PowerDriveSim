@@ -1,3 +1,4 @@
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "core/model/hierarchy.hpp"
@@ -266,7 +267,7 @@ void EditorWindow::open_plot(const std::string &local_id) {
     auto *header = new QHBoxLayout;
     auto *name = new QLabel(QString::fromStdString(plot->name));
     name->setObjectName("plot_heading");
-    name->setStyleSheet("font-size:18px;font-weight:600;color:#253e60;");
+    name->setStyleSheet("font-size:18px;font-weight:600;color:palette(text);");
     header->addWidget(name);
     header->addStretch();
     auto *export_button = new QPushButton(ui_icon(UiIcon::export_data), QString());

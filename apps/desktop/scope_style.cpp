@@ -1,6 +1,7 @@
 #include "apps/desktop/scope_style.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "apps/desktop/theme.hpp"
 #include <QApplication>
 #include <QComboBox>
 #include <QDialog>
@@ -99,7 +100,7 @@ void Scope::show_curve_settings(const std::string &key) {
     normalize_decimal_point(size);
     form->addRow(text("marker_size"), size);
     auto *error = new QLabel;
-    error->setStyleSheet("color:#ba3535");
+    error->setStyleSheet("color:palette(bright-text)");
     form->addRow(error);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Close);
     form->addRow(buttons);
@@ -158,11 +159,13 @@ void Scope::paint_legend(QPainter &painter, int lane) {
         return;
     painter.save();
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setPen(QPen(QColor("#9eafc4"), 1));
-    painter.setBrush(QColor(255, 255, 255, 220));
+    painter.setPen(QPen(theme_colors().border, 1));
+    auto background = theme_colors().surface;
+    background.setAlpha(225);
+    painter.setBrush(background);
     painter.drawRoundedRect(layout.box, 4, 4);
     painter.setClipRect(layout.box.adjusted(2, 2, -2, -2));
-    const QColor colors[]{"#146cca", "#c56819", "#17866d", "#935ad5", "#d04769"};
+    const auto &colors = theme_colors().curves;
     for (const auto &[i, row] : layout.rows) {
         auto info = result_channel(*result_, channels_[i]);
         auto style = curve_style(info.object);
@@ -170,7 +173,7 @@ void Scope::paint_legend(QPainter &painter, int lane) {
         painter.setPen(QPen(color, style.width, curve_pen(style.line)));
         painter.drawLine(QPointF(row.left(), row.center().y()), QPointF(row.left() + 26, row.center().y()));
         paint_marker(painter, {row.left() + 13, row.center().y()}, style, color);
-        painter.setPen(QColor("#263e59"));
+        painter.setPen(theme_colors().text);
         painter.drawText(row.adjusted(34, 0, 0, 0), Qt::AlignVCenter | Qt::AlignLeft,
                          (curve_name(info.object) + QString::fromStdString(" [" + info.unit + "]")));
     }

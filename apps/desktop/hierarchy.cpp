@@ -1,6 +1,7 @@
 #include "core/model/hierarchy.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
 #include <QAction>
 #include <QApplication>
@@ -236,15 +237,19 @@ void EditorWindow::refresh_hierarchy() {
             if (dot->data(1).toString() == "port") {
                 const auto label =
                     exposed[endpoint_key({id, dot->data(2).toString().toStdString()})].trimmed();
-                if (dot->data(7).toString() == label)
+                if (dot->data(7).toString() == label) {
+                    for (auto *child : dot->childItems())
+                        if (auto *note = dynamic_cast<QGraphicsSimpleTextItem *>(child))
+                            note->setBrush(theme_colors().signal);
                     continue;
+                }
                 dot->setData(7, label);
                 for (auto *old : dot->childItems())
                     delete old;
                 if (!label.isEmpty()) {
                     auto *note = new QGraphicsSimpleTextItem(label, dot);
                     note->setAcceptedMouseButtons(Qt::NoButton);
-                    note->setBrush(QColor("#7351b5"));
+                    note->setBrush(theme_colors().signal);
                     auto font = note->font();
                     font.setPointSize(8);
                     note->setFont(font);

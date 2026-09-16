@@ -270,5 +270,6 @@
   "public_interface": "Public ports and parameters",
   "public_parameters": "Parameters",
   "public_ports": "Ports",
-  "subcircuit": "Subcircuit"
+  "subcircuit": "Subcircuit",
+  "dark_theme": "Dark theme"
 }

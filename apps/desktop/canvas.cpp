@@ -1,3 +1,4 @@
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/routing.hpp"
 #include <QApplication>
@@ -196,7 +197,7 @@ WireAnchor Canvas::anchor_at(QPoint p, bool prefer_valid) const {
 void Canvas::begin_wire(WireAnchor source) {
     source_ = std::move(source);
     wire_origin_ = {source_.point.x, source_.point.y};
-    wire_preview_ = scene()->addPath(QPainterPath(wire_origin_), QPen(QColor("#467fe0"), 1.6, Qt::DashLine));
+    wire_preview_ = scene()->addPath(QPainterPath(wire_origin_), QPen(theme_colors().accent, 1.6, Qt::DashLine));
     wire_preview_->setZValue(100);
     wire_preview_->setAcceptedMouseButtons(Qt::NoButton);
     gesture_ = Gesture::wiring;
@@ -595,10 +596,10 @@ void Canvas::wheelEvent(QWheelEvent *e) {
     e->accept();
 }
 void Canvas::drawBackground(QPainter *p, const QRectF &rect) {
-    p->fillRect(rect, QColor("#f4f7fb"));
+    p->fillRect(rect, theme_colors().canvas);
     if (transform().m11() < .3)
         return;
-    p->setPen(QPen(QColor("#d9e2ed"), 0));
+    p->setPen(QPen(theme_colors().grid, 0));
     for (double x = std::floor(rect.left() / 20) * 20; x < rect.right(); x += 20)
         for (double y = std::floor(rect.top() / 20) * 20; y < rect.bottom(); y += 20)
             p->drawPoint(QPointF(x, y));
@@ -611,8 +612,8 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
     p->restore();
     p->save();
     p->resetTransform();
-    p->setPen(QPen(QColor("#467fe0"), 1));
-    p->setBrush(Qt::white);
+    p->setPen(QPen(theme_colors().accent, 1));
+    p->setBrush(theme_colors().surface);
     for (auto *item : scene()->selectedItems())
         if (item->data(1).toString() == "wire") {
             auto path = static_cast<QGraphicsPathItem *>(item)->path();
@@ -639,7 +640,7 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
         font.setPointSize(20);
         font.setBold(true);
         p->setFont(font);
-        p->setPen(QColor("#45607f"));
+        p->setPen(theme_colors().muted);
         p->drawText(viewport()->rect().adjusted(30, -65, -30, -65), Qt::AlignCenter, text("empty_title"));
         font.setPointSize(11);
         font.setBold(false);

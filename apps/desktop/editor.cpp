@@ -2,6 +2,7 @@
 #include "apps/desktop/labels.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
@@ -82,13 +83,13 @@ class PortDot final : public QGraphicsItem {
             return; // Junctions are drawn once by the parent, not as component terminals.
         if (hovered_) {
             painter->setPen(Qt::NoPen);
-            auto halo = color_;
+            auto halo = themed_signal(color_);
             halo.setAlpha(35);
             painter->setBrush(halo);
             painter->drawEllipse(QPointF(), 6, 6);
         }
-        painter->setPen(QPen(color_, 1.2));
-        painter->setBrush(Qt::white);
+        painter->setPen(QPen(themed_signal(color_), 1.2));
+        painter->setBrush(theme_colors().surface);
         painter->drawEllipse(QPointF(), hovered_ ? 2.8 : 2.0, hovered_ ? 2.8 : 2.0);
     }
     void hoverEnterEvent(QGraphicsSceneHoverEvent *) override {
@@ -104,10 +105,12 @@ class WireItem final : public QGraphicsPathItem {
   public:
     std::vector<QPointF> junctions;
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
-        p->setPen(pen());
+        auto themed_pen = pen();
+        themed_pen.setColor(themed_signal(themed_pen.color()));
+        p->setPen(themed_pen);
         p->setBrush(Qt::NoBrush);
         p->drawPath(path());
-        p->setBrush(pen().color());
+        p->setBrush(themed_pen.color());
         for (auto point : junctions)
             p->drawEllipse(point, 2.8, 2.8);
         p->setBrush(Qt::NoBrush);
@@ -252,12 +255,12 @@ class Atom final : public QGraphicsItem {
         const bool channel_highlight = data(channel_highlight_role).toBool();
         p->setPen(QPen(channel_highlight ? QColor("#b34cce")
                        : isSelected()    ? QColor("#e88b22")
-                                         : QColor("#263c55"),
+                                         : theme_colors().text,
                        channel_highlight ? 3 : 2));
-        p->setBrush(Qt::white);
+        p->setBrush(theme_colors().surface);
         if (type == 4) {
             double h = std::max(36., input_count * 14.);
-            p->setBrush(QColor("#f1f5fc"));
+            p->setBrush(theme_colors().canvas);
             p->drawRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
             auto font = p->font();
             font.setPointSize(8);
@@ -268,7 +271,7 @@ class Atom final : public QGraphicsItem {
                       point.x() < 0 ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
                       QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 65));
             }
-            p->setPen(QPen(QColor("#607b9e"), 1.5));
+            p->setPen(QPen(theme_colors().muted, 1.5));
             p->drawRect(QRectF(-8, -12, 16, 8));
             p->drawLine(0, -4, 0, 5);
             p->drawLine(-9, 5, 9, 5);
@@ -278,13 +281,13 @@ class Atom final : public QGraphicsItem {
         }
         if (type == 3) {
             double h = std::max(36.0, input_count * 12.0);
-            p->setBrush(QColor("#ffffff"));
-            p->setPen(QPen(isSelected() ? QColor("#3a7fe0") : QColor("#a7b8ce"), 1.5));
+            p->setBrush(theme_colors().surface);
+            p->setPen(QPen(isSelected() ? QColor("#3a7fe0") : theme_colors().border, 1.5));
             p->drawRoundedRect(QRectF(-46, -h, 104, 2 * h), 7, 7);
-            p->setPen(QPen(QColor("#c7d5e8"), 1));
+            p->setPen(QPen(theme_colors().grid, 1));
             p->drawLine(-24, 17, -24, -17);
             p->drawLine(-24, 17, 37, 17);
-            p->setPen(QPen(QColor("#5469d4"), 2));
+            p->setPen(QPen(theme_colors().signal, 2));
             QPainterPath curve;
             curve.moveTo(-20, 12);
             curve.cubicTo(-6, 10, -4, -15, 10, -11);
@@ -292,11 +295,11 @@ class Atom final : public QGraphicsItem {
             p->drawPath(curve);
             for (unsigned i = 1; i <= input_count; ++i) {
                 double y = (static_cast<double>(i) - (input_count + 1) / 2.0) * 22;
-                p->setPen(QPen(QColor("#8c67c8"), 1.4));
+                p->setPen(QPen(theme_colors().signal, 1.4));
                 p->drawLine(QPointF(-70, y), QPointF(-46, y));
                 label(p, QRectF(-43, y - 9, 16, 18), Qt::AlignCenter, QString::number(i));
             }
-            p->setPen(QColor("#334c69"));
+            p->setPen(theme_colors().text);
             if (!separate_labels)
                 label(p, QRectF(-78, h + 7, 156, 24), Qt::AlignCenter, name);
             return;
@@ -308,7 +311,7 @@ class Atom final : public QGraphicsItem {
                 p->drawLine(-10, 21, 10, 21);
                 p->drawLine(-4, 27, 4, 27);
             } else {
-                p->setBrush(channel_highlight ? QColor("#b34cce") : QColor("#263c55"));
+                p->setBrush(channel_highlight ? QColor("#b34cce") : theme_colors().text);
                 if (data(4).toInt() >= 3)
                     p->drawEllipse(QPointF(0, 0), 3, 3);
                 else if (isSelected() || data(4).toInt() == 0) {
@@ -321,7 +324,7 @@ class Atom final : public QGraphicsItem {
             return;
         }
         if (type == 2) {
-            p->setBrush(QColor("#e6f5ed"));
+            p->setBrush(theme_colors().gate_fill);
             p->drawRoundedRect(QRectF(-38, -22, 76, 44), 7, 7);
             label(p, QRectF(-38, -22, 76, 44), Qt::AlignCenter, symbol.isEmpty() ? QString("Gate") : symbol);
             p->drawLine(38, 0, 60, 0);
@@ -654,6 +657,8 @@ EditorWindow::EditorWindow(const QString &language, const QString &recovery_dir)
     setMinimumSize(1050, 720);
     if (recovery_dir_.isEmpty())
         recovery_dir_ = QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+    QSettings appearance(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+    apply_theme(appearance.value("dark_theme", false).toBool());
     build_ui();
     connect(&watcher_, &QFutureWatcher<Outcome>::finished, this, [this] { finish_simulation(); });
     auto *timer = new QTimer(this);
@@ -691,35 +696,7 @@ EditorWindow::~EditorWindow() {
     watcher_.waitForFinished();
 }
 void EditorWindow::build_ui() {
-    setStyleSheet(R"(
-        QMainWindow,QDialog { background:#f3f6fa; color:#25344a; }
-        QMenuBar { background:#ffffff; padding:4px 12px; border-bottom:1px solid #dfe6ef; }
-        QMenuBar::item { padding:5px 12px; } QMenuBar::item:selected { background:#e8f0ff; border-radius:4px; }
-        QToolBar#controls { background:#182c47; padding:12px 16px; spacing:10px; border:0; }
-        QToolBar#controls QLabel { color:#dce7f7; } QToolBar#controls QLineEdit,QToolBar#controls QComboBox { background:#29415f; color:white; border:1px solid #49617c; border-radius:5px; padding:6px 8px; }
-        QToolBar#controls QComboBox QAbstractItemView { background:white; color:#25344a; }
-        QToolButton { padding:7px 12px; border:1px solid #dbe3ee; border-radius:5px; background:white; color:#25344a; }
-        QToolButton:hover { background:#edf4ff; border-color:#a8c3ec; }
-        QToolButton#run_button,QToolButton#stop_button { color:white; border:0; padding:5px 10px; font-weight:600; }
-        QToolButton#run_button { background:#16a085; }
-        QToolButton#run_button:hover { background:#118873; } QToolButton:disabled { color:#94a3b8; background:#e9eef5; }
-        QToolButton#stop_button { background:#cf3e3e; }
-        QToolButton#stop_button:hover { background:#ad2929; }
-        QDockWidget::title { background:#f3f6fa; color:#52677e; padding:9px 12px; font-weight:600; }
-        QLineEdit,QPlainTextEdit,QComboBox { background:white; border:1px solid #d6e0ed; border-radius:5px; padding:7px; selection-background-color:#2c71d9; }
-        QLineEdit:focus,QPlainTextEdit:focus { border-color:#4388e5; }
-        QTreeWidget,QListWidget { background:white; border:0; outline:0; padding:4px; }
-        QTreeWidget::item,QListWidget::item { min-height:28px; border-radius:4px; padding:2px 6px; }
-        QTreeWidget::item:selected,QListWidget::item:selected { background:#e6f0ff; color:#194f98; }
-        QTreeWidget::item:hover,QListWidget::item:hover { background:#f1f6fd; }
-        QPushButton { background:white; border:1px solid #cfdceb; border-radius:5px; padding:8px 12px; color:#2f527c; }
-        QPushButton:hover { background:#eaf3ff; } QPushButton#apply_properties { background:#e7f0fd; border-color:#c5daf7; color:#225693; font-weight:600; }
-        QTabWidget::pane { border:1px solid #dce5ef; background:white; }
-        QTabBar::tab { background:#edf2f8; padding:10px 18px; border:0; color:#718299; }
-        QTabBar::tab:selected { background:white; color:#24558e; border-top:2px solid #3a7fe0; }
-        QCheckBox { spacing:8px; padding:4px; } QCheckBox::indicator { width:15px; height:15px; }
-        QStatusBar { background:white; color:#6b7f95; border-top:1px solid #dfe6ef; padding:4px 12px; }
-    )");
+
     auto *file_menu = menuBar()->addMenu(text("file_menu"));
     auto *edit_menu = menuBar()->addMenu(text("edit_menu"));
     auto *view_menu = menuBar()->addMenu(text("view_menu"));
@@ -813,6 +790,23 @@ void EditorWindow::build_ui() {
     });
     action(view_menu, "diagnostics", {}, [this] { bottom_->setCurrentIndex(0); });
     action(view_menu, "scope_tab", {}, [this] { bottom_->setCurrentIndex(1); });
+    view_menu->addSeparator();
+    auto *theme_action = view_menu->addAction(text("dark_theme"));
+    theme_action->setObjectName("dark_theme");
+    theme_action->setCheckable(true);
+    theme_action->setChecked(dark_theme());
+    connect(theme_action, &QAction::toggled, this, [this](bool enabled) {
+        QSettings appearance(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
+        appearance.setValue("dark_theme", enabled);
+        apply_theme(enabled);
+        refresh_component_icons();
+        refresh_hierarchy();
+        choose_channels();
+        canvas_->scene()->update();
+        for (auto *widget : QApplication::allWidgets())
+            if (auto *scope = dynamic_cast<Scope *>(widget))
+                scope->refresh_theme();
+    });
     auto *examples = menuBar()->addMenu(text("examples"));
     QDir dir(QCoreApplication::applicationDirPath() + "/examples");
     for (const auto &file : dir.entryList({"*.pds"}, QDir::Files))
@@ -874,7 +868,7 @@ void EditorWindow::build_ui() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     auto *canvas_tools = new QWidget;
-    canvas_tools->setStyleSheet("background:white;border-bottom:1px solid #dfe6ef;");
+    canvas_tools->setStyleSheet("background:palette(base);border-bottom:1px solid palette(mid);");
     auto *tools_layout = new QHBoxLayout(canvas_tools);
     tools_layout->setContentsMargins(16, 8, 16, 8);
     auto *title = new QLabel(text("canvas_title"));
@@ -901,7 +895,9 @@ void EditorWindow::build_ui() {
     canvas_ = new Canvas;
     layout->addWidget(canvas_, 1);
     banner_ = new QLabel(text("hint"));
-    banner_->setStyleSheet("padding:9px 16px;color:#657c95;background:#f8fafc;border-top:1px solid #e2e9f1;");
+    banner_->setStyleSheet(
+        "padding:9px 16px;color:palette(placeholder-text);background:palette(window);border-top:1px solid "
+        "palette(mid);");
     banner_->setWordWrap(true);
     layout->addWidget(banner_);
     setCentralWidget(center);
@@ -914,6 +910,7 @@ void EditorWindow::build_ui() {
         return d;
     };
     auto *left_tabs = new QTabWidget;
+    left_tabs->setObjectName("workspace_tabs");
     auto *lib = new QWidget;
     auto *ll = new QVBoxLayout(lib);
     ll->setContentsMargins(10, 12, 10, 8);
@@ -947,7 +944,7 @@ void EditorWindow::build_ui() {
         navigate_hierarchy(steps);
     });
     auto *left = dock("workspace", left_tabs, Qt::LeftDockWidgetArea);
-    left->setMinimumWidth(255);
+    left->setMinimumWidth(300);
     left->setMaximumWidth(380);
     auto *inspector = new QWidget;
     properties_ = new QFormLayout(inspector);
@@ -955,7 +952,7 @@ void EditorWindow::build_ui() {
     properties_->setVerticalSpacing(14);
     inspector_hint_ = new QLabel(text("inspector_empty"));
     inspector_hint_->setWordWrap(true);
-    inspector_hint_->setStyleSheet("color:#8191a6;padding:18px 0;");
+    inspector_hint_->setStyleSheet("color:palette(placeholder-text);padding:18px 0;");
     properties_->addRow(inspector_hint_);
     properties_->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     build_property_editors();
@@ -965,7 +962,7 @@ void EditorWindow::build_ui() {
     properties_->addRow(apply);
     property_error_ = new QLabel;
     property_error_->setObjectName("property_error");
-    property_error_->setStyleSheet("color:#b8394e");
+    property_error_->setStyleSheet("color:palette(bright-text)");
     property_error_->setWordWrap(true);
     properties_->addRow(property_error_);
     connect(apply, &QPushButton::clicked, this, [this] { apply_inspector(); });
@@ -981,7 +978,7 @@ void EditorWindow::build_ui() {
     auto *dl = new QVBoxLayout(diagnostics);
     auto *diagnostic_hint = new QLabel(text("diagnostics_hint"));
     diagnostic_hint->setObjectName("diagnostic_status");
-    diagnostic_hint->setStyleSheet("padding:5px 12px;color:#72869c;");
+    diagnostic_hint->setStyleSheet("padding:5px 12px;color:palette(placeholder-text);");
     dl->addWidget(diagnostic_hint);
     errors_ = new QListWidget;
     errors_->setObjectName("diagnostics_list");
@@ -1025,7 +1022,7 @@ void EditorWindow::build_ui() {
     scope_hint_ = new QLabel(text("scope_disabled"));
     scope_hint_->setWordWrap(true);
     scope_hint_->setAlignment(Qt::AlignCenter);
-    scope_hint_->setStyleSheet("color:#8090a4;padding:24px;font-size:13px;");
+    scope_hint_->setStyleSheet("color:palette(placeholder-text);padding:24px;font-size:13px;");
     scope_layout_->addWidget(scope_hint_, 1);
     bottom_->addTab(scope_page_, text("scope_tab"));
     connect(scope_enable_, &QCheckBox::toggled, this, [this](bool checked) {
@@ -2109,16 +2106,16 @@ void EditorWindow::choose_channels() {
     if (!channels_)
         return;
     std::vector<std::string> keys;
-    const QStringList colors{"#146cca", "#c56819", "#17866d", "#935ad5", "#d04769"};
+    const auto &colors = theme_colors().curves;
     bool prior = rebuilding_;
     rebuilding_ = true;
     for (int i = 0; i < channels_->count(); ++i) {
         auto *item = channels_->item(i);
         if (item->checkState() == Qt::Checked) {
-            item->setForeground(QColor(colors[static_cast<int>(keys.size()) % colors.size()]));
+            item->setForeground(colors[keys.size() % colors.size()]);
             keys.push_back(item->data(Qt::UserRole).toString().toStdString());
         } else
-            item->setForeground(QColor("#8390a3"));
+            item->setForeground(theme_colors().muted);
     }
     rebuilding_ = prior;
     if (keys != project().scope_channels)

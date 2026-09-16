@@ -1,6 +1,7 @@
 #include "apps/desktop/curve_name_button.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "results/measurements.hpp"
 #include <QActionGroup>
@@ -26,6 +27,10 @@
 #include <algorithm>
 #include <cmath>
 namespace pds::desktop {
+void Scope::refresh_theme() {
+    update_channel_controls();
+    update();
+}
 QRectF Scope::plot_rect() const {
     return {58, 12, double(std::max(1, width() - 84)), double(std::max(1, height() - 64))};
 }
@@ -36,11 +41,11 @@ QWidget *Scope::channel_controls() {
     channel_bar_->setIconSize({18, 18});
     channel_bar_->setStyleSheet(
         "QToolBar{background:transparent;border:0;spacing:6px;}"
-        "QFrame#curve_channel{border:1px solid #d3dfef;border-radius:4px;background:transparent;}"
-        "QFrame#curve_channel:hover{background:#eaf3ff;border-color:#9bbde8;}"
+        "QFrame#curve_channel{border:1px solid palette(mid);border-radius:4px;background:transparent;}"
+        "QFrame#curve_channel:hover{background:palette(light);border-color:palette(link);}"
         "QFrame#curve_channel QToolButton{padding:3px 5px;border:0;border-radius:3px;background:transparent;}"
-        "QFrame#curve_channel QToolButton:hover{background:#dceafe;}"
-        "QFrame#curve_channel QToolButton:pressed{background:#cbdffc;}");
+        "QFrame#curve_channel QToolButton:hover{background:palette(highlight);}"
+        "QFrame#curve_channel QToolButton:pressed{background:palette(highlight);}");
     update_channel_controls();
     return channel_bar_;
 }
@@ -139,7 +144,7 @@ void Scope::update_channel_controls() {
                     [this, key = info.object] { show_curve_settings(key); });
         }
     }
-    const QStringList colors{"#146cca", "#c56819", "#17866d", "#935ad5", "#d04769"};
+    const auto &colors = theme_colors().curves;
     int index = 0;
     for (auto *action : channel_bar_->actions()) {
         if (!action->isCheckable())
@@ -153,13 +158,15 @@ void Scope::update_channel_controls() {
             settings->setText(text("curve_style").arg(action->text()));
         action->setChecked(visible);
         action->setIcon(ui_icon(visible ? UiIcon::visible : UiIcon::hidden));
-        action->setToolTip(text(visible ? "hide_signal" : "show_signal").arg(action->text()) + "\n" + text("curve_rename_hint"));
+        action->setToolTip(text(visible ? "hide_signal" : "show_signal").arg(action->text()) + "\n" +
+                           text("curve_rename_hint"));
         auto font = action->font();
         font.setStrikeOut(!visible);
         action->setFont(font);
         if (auto *button =
                 channel_bar_->widgetForAction(action)->findChild<QToolButton *>("curve_visibility"))
-            button->setStyleSheet("color:" + (visible ? colors[index % colors.size()] : "#8793a3") + ";");
+            button->setStyleSheet(
+                "color:" + (visible ? colors[index % colors.size()] : theme_colors().muted).name() + ";");
         ++index;
     }
     channel_bar_->setVisible(!keys.empty());
@@ -176,8 +183,8 @@ QWidget *Scope::navigation() {
     bar->setIconSize({22, 22});
     bar->setStyleSheet(
         "QToolBar{background:transparent;border:0;spacing:2px;}QToolButton{padding:3px;"
-        "min-height:22px;min-width:22px;}QToolButton:checked{background:#dceafe;border:1px solid "
-        "#6f9ad0;color:#21496f;}");
+        "min-height:22px;min-width:22px;}QToolButton:checked{background:palette(highlight);border:1px solid "
+        "palette(link);color:palette(text);}");
     layout->addWidget(bar);
     auto *group = new QActionGroup(bar);
     group->setExclusionPolicy(QActionGroup::ExclusionPolicy::ExclusiveOptional);
@@ -256,7 +263,8 @@ QWidget *Scope::navigation() {
             time_span_edit_->setStyleSheet("padding:3px 5px;min-height:22px;");
             time_span_edit_->setToolTip(text("time_span_hint"));
         } catch (const std::exception &e) {
-            time_span_edit_->setStyleSheet("padding:3px 5px;min-height:22px;border:1px solid #b8394e;");
+            time_span_edit_->setStyleSheet(
+                "padding:3px 5px;min-height:22px;border:1px solid palette(bright-text);");
             time_span_edit_->setToolTip(QString::fromUtf8(e.what()));
         }
     });
@@ -344,7 +352,7 @@ QWidget *Scope::navigation() {
                 set_cursor(i, t);
                 time->setStyleSheet({});
             } catch (const std::exception &e) {
-                time->setStyleSheet("border:1px solid #b8394e");
+                time->setStyleSheet("border:1px solid palette(bright-text)");
                 time->setToolTip(QString::fromUtf8(e.what()));
             }
         });

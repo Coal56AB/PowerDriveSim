@@ -1,3 +1,4 @@
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/routing.hpp"
 #include "formats/project/project.hpp"
@@ -299,7 +300,7 @@ void EditorWindow::show_shortcuts() {
     layout->setContentsMargins(20, 20, 20, 20);
     layout->setSpacing(14);
     auto *title = new QLabel(text("shortcuts"));
-    title->setStyleSheet("font-size:18px;font-weight:600;color:#253e5c");
+    title->setStyleSheet("font-size:18px;font-weight:600;color:palette(text)");
     layout->addWidget(title);
     auto *table = new QTableWidget(static_cast<int>(commands_.size()), 2);
     table->setHorizontalHeaderLabels({text("action_label"), text("shortcut_label")});
@@ -347,7 +348,7 @@ void EditorWindow::show_shortcuts() {
     auto *error = new QLabel;
     error->setObjectName("shortcut_error");
     error->setWordWrap(true);
-    error->setStyleSheet("color:#b8394e");
+    error->setStyleSheet("color:palette(bright-text)");
     layout->addWidget(error);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel |
                                          QDialogButtonBox::RestoreDefaults);

@@ -135,6 +135,7 @@ class Scope : public QWidget {
     void show_measurements();
     void show_display_settings();
     ViewOptions view_options() const;
+    void refresh_theme();
     void load_view_options(const ViewOptions &options);
     std::optional<ViewOptions> pending_options_;
     Axes zoom_axes = Axes::x;
@@ -365,6 +366,7 @@ class EditorWindow : public QMainWindow {
     void edit_inline(const std::string &id, const QJsonObject &field, QRect rect);
     void build_component_palette(QLineEdit *search);
     void rebuild_component_bar();
+    void refresh_component_icons();
     void set_component_pinned(int id, bool pinned);
     void begin_placement(int id);
     void set_placement_preview();

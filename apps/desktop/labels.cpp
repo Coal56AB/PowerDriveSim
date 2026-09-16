@@ -1,3 +1,4 @@
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/labels.hpp"
 #include <QApplication>
 #include <QFontMetricsF>
@@ -28,7 +29,7 @@ QRectF LabelItem::boundingRect() const {
 }
 void LabelItem::paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) {
     p->setFont(font_);
-    p->setPen(isSelected() ? QColor("#d7811c") : QColor("#263c55"));
+    p->setPen(isSelected() ? QColor("#d7811c") : theme_colors().text);
     p->drawText(bounds_, Qt::AlignCenter, text_);
     if (isSelected()) {
         p->setPen(QPen(QColor("#db923d"), 1, Qt::DashLine));

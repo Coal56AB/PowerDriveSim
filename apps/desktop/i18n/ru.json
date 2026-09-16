@@ -270,5 +270,6 @@
   "public_interface": "Публичные порты и параметры",
   "public_parameters": "Параметры",
   "public_ports": "Порты",
-  "subcircuit": "Подсхема"
+  "subcircuit": "Подсхема",
+  "dark_theme": "Тёмная тема"
 }

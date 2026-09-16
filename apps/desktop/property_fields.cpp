@@ -1,3 +1,4 @@
+#include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "core/editor/properties.hpp"
@@ -278,7 +279,7 @@ void EditorWindow::edit_inline(const std::string &id, const QJsonObject &field, 
             cancel_inline_edit();
             refresh();
         } catch (const std::exception &e) {
-            edit->setStyleSheet("border:1px solid #b8394e;");
+            edit->setStyleSheet("border:1px solid palette(bright-text);");
             edit->setToolTip(QString::fromUtf8(e.what()));
         }
     });

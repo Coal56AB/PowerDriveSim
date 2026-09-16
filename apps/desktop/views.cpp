@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/scope_style.hpp"
+#include "apps/desktop/theme.hpp"
 #include "results/measurements.hpp"
 #include <QActionGroup>
 #include <QApplication>
@@ -151,11 +152,11 @@ double Scope::sample_value(size_t sample, int channel) const {
 void Scope::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.fillRect(rect(), QColor("#ffffff"));
+    painter.fillRect(rect(), theme_colors().surface);
     const int lanes = display_count();
     for (int lane = 0; lane < lanes; ++lane) {
         const auto plot = lane_rect(lane);
-        painter.setPen(QColor("#91a2b7"));
+        painter.setPen(theme_colors().muted);
         painter.drawRect(plot);
         if (!result_ || channels_.empty()) {
             painter.drawText(plot, Qt::AlignCenter, text("scope_empty"));
@@ -171,11 +172,11 @@ void Scope::paintEvent(QPaintEvent *) {
                      high = separate_axes_ ? display_ranges_[lane].second : y_high;
         for (int grid = 0; grid <= 4; ++grid) {
             double fraction = grid / 4.0;
-            painter.setPen(QColor("#e5ebf3"));
+            painter.setPen(theme_colors().grid);
             if (show_grid_)
                 painter.drawLine(QPointF(plot.left(), plot.top() + fraction * plot.height()),
                                  QPointF(plot.right(), plot.top() + fraction * plot.height()));
-            painter.setPen(QColor("#5f7187"));
+            painter.setPen(theme_colors().muted);
             painter.drawText(QRectF(plot.left() - 58, plot.top() + fraction * plot.height() - 9, 51, 20),
                              Qt::AlignRight, QString::number(high - fraction * (high - low), 'g', 4));
             painter.drawText(QRectF(plot.left() + fraction * plot.width() - 38, plot.bottom() + 5, 76, 20),
@@ -184,8 +185,7 @@ void Scope::paintEvent(QPaintEvent *) {
         if (lane + std::min(display_columns_, display_count()) >= lanes)
             painter.drawText(QRectF(plot.left(), height() - 22, plot.width(), 18), Qt::AlignCenter,
                              text("time_s"));
-        const QList<QColor> colors = {QColor("#146cca"), QColor("#c56819"), QColor("#17866d"),
-                                      QColor("#935ad5"), QColor("#d04769")};
+        const auto &colors = theme_colors().curves;
         painter.save();
         painter.setClipRect(plot);
         auto x = [&](double t) { return plot.left() + (t - begin) / (end - begin) * plot.width(); };
@@ -301,20 +301,22 @@ void Scope::paintEvent(QPaintEvent *) {
             if (!reading || !channel_visible(reading->key) || reading->time < begin || reading->time > end)
                 continue;
             const double cx = x(reading->time);
-            painter.setPen(QPen(index == 0 ? QColor("#1975b9") : QColor("#cb5d25"), 1, Qt::DashLine));
+            painter.setPen(QPen(theme_colors().curves[index], 1, Qt::DashLine));
             painter.drawLine(QPointF(cx, plot.top()), QPointF(cx, plot.bottom()));
             const double cy = plot.bottom() - (reading->value - low) / (high - low) * plot.height();
-            painter.setBrush(Qt::white);
+            painter.setBrush(theme_colors().surface);
             painter.drawEllipse(QPointF(cx, cy), 4, 4);
             const QRectF tag(std::clamp(cx + 3, plot.left(), plot.right() - 16),
                              plot.bottom() - 20 - index * 17, 16, 16);
-            painter.fillRect(tag, QColor(255, 255, 255, 220));
+            auto tag_background = theme_colors().surface;
+            tag_background.setAlpha(225);
+            painter.fillRect(tag, tag_background);
             painter.drawText(tag, Qt::AlignCenter, index == 0 ? "A" : "B");
             if (screen_cursors_)
                 painter.drawLine(QPointF(plot.left(), cy), QPointF(plot.right(), cy));
         }
         if (trigger_time_) {
-            painter.setPen(QPen(QColor("#b23a48"), 1, Qt::DashDotLine));
+            painter.setPen(QPen(theme_colors().error, 1, Qt::DashDotLine));
             double tx = x(*trigger_time_);
             painter.drawLine(QPointF(tx, plot.top()), QPointF(tx, plot.bottom()));
             painter.drawText(QPointF(tx + 4, plot.top() + 30), "T");
@@ -330,7 +332,7 @@ void Scope::paintEvent(QPaintEvent *) {
                 region.setLeft(plot.left());
                 region.setRight(plot.right());
             }
-            painter.setPen(QPen(QColor("#3985ca"), 1, Qt::DashLine));
+            painter.setPen(QPen(theme_colors().accent, 1, Qt::DashLine));
             painter.setBrush(QColor(57, 133, 202, 35));
             painter.drawRect(region);
         }

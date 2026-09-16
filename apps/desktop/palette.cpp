@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/theme.hpp"
 #include <QAction>
 #include <QDir>
 #include <QLabel>
@@ -18,7 +19,7 @@ QIcon component_icon(int id) {
     QPainter p(&image);
     p.setRenderHint(QPainter::Antialiasing);
     p.scale(2, 2);
-    p.setPen(QPen(QColor("#294c70"), 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.setPen(QPen(theme_colors().text, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
     if (id == 100) {
         p.drawLine(16, 4, 16, 17);
@@ -27,7 +28,7 @@ QIcon component_icon(int id) {
         p.drawLine(13, 27, 19, 27);
     } else if (id == 103) {
         p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
-        p.setPen(QPen(QColor("#5f65d9"), 1.8));
+        p.setPen(QPen(theme_colors().signal, 1.8));
         QPainterPath line(QPointF(6, 22));
         line.cubicTo(13, 22, 12, 8, 19, 12);
         line.cubicTo(23, 15, 23, 21, 27, 14);
@@ -42,7 +43,7 @@ QIcon component_icon(int id) {
         p.setFont(f);
         p.drawText(QRectF(6, 6, 20, 20), Qt::AlignCenter, id == 7 || id == 3 ? "V" : "A");
         if (id == 7 || id == 8) {
-            p.setPen(QPen(QColor("#8868b8"), 1.6));
+            p.setPen(QPen(theme_colors().signal, 1.6));
             p.drawLine(16, 26, 16, 31);
         }
     } else if (id == 0) {
@@ -72,7 +73,7 @@ QIcon component_icon(int id) {
         p.drawLine(24, 7, 24, 25);
         p.drawLine(24, 16, 31, 16);
     } else {
-        p.setPen(QPen(QColor("#17866d"), 1.8));
+        p.setPen(QPen(theme_colors().gate, 1.8));
         QPainterPath line(QPointF(2, 25));
         line.lineTo(6, 25);
         line.lineTo(6, 7);
@@ -86,6 +87,10 @@ QIcon component_icon(int id) {
     return QIcon(image);
 }
 } // namespace
+void EditorWindow::refresh_component_icons() {
+    for (const auto &[id, action] : component_actions_)
+        action->setIcon(component_icon(id));
+}
 void EditorWindow::begin_placement(int id) {
     if (running())
         return;
@@ -188,10 +193,12 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
     component_bar_->setToolButtonStyle(Qt::ToolButtonIconOnly);
     component_bar_->setIconSize(QSize(28, 28));
     component_bar_->setStyleSheet(
-        "QToolBar{background:#f4f7fb;border-bottom:1px solid #dfe6ef;spacing:5px;padding:4px;}"
-        "QToolButton{color:#253e5c;background:white;border:1px solid #d4dfed;border-radius:4px;padding:5px "
+        "QToolBar{background:palette(window);border-bottom:1px solid palette(mid);spacing:5px;padding:4px;}"
+        "QToolButton{color:palette(text);background:palette(base);border:1px solid "
+        "palette(mid);border-radius:4px;padding:5px "
         "12px;}"
-        "QToolButton:hover{background:#e7f0ff;} QToolButton:disabled{color:#9aa6b5;}");
+        "QToolButton:hover{background:palette(light);} "
+        "QToolButton:disabled{color:palette(placeholder-text);}");
     component_bar_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(component_bar_, &QWidget::customContextMenuRequested, this, [this](QPoint point) {
         auto *action = component_bar_->actionAt(point);

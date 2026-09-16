@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/routing.hpp"
+#include "apps/desktop/theme.hpp"
 #include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
 #include <QAction>
@@ -71,6 +72,62 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void dark_theme_editor_graphs_and_persistence() {
+        QTemporaryDir dir;
+        {
+            EditorWindow w("ru", dir.path());
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/vsi-2l.pds"));
+            ready(w);
+            w.start_simulation();
+            QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
+            QVERIFY(w.has_result());
+            const auto plot = w.project().plots.front().id;
+            w.open_plot(plot);
+            auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
+            QVERIFY(graph);
+            auto *scope = graph->findChild<Scope *>("scope");
+            auto options = scope->view_options();
+            options.legend = true;
+            scope->load_view_options(options);
+            scope->set_cursor_mode(true);
+            scope->set_cursor(0, .0015);
+            scope->set_cursor(1, .0045);
+            const auto before = encoded(w.project());
+            auto *action = w.findChild<QAction *>("dark_theme");
+            QVERIFY(action && action->isCheckable());
+            action->setChecked(true);
+            QVERIFY(dark_theme());
+            QCOMPARE(encoded(w.project()), before);
+            QVERIFY(graph->palette().color(QPalette::Base).lightness() < 90);
+            QVERIFY(graph->palette().color(QPalette::Text).lightness() > 200);
+            const auto background = scope->grab().toImage().pixelColor(5, 5);
+            QCOMPARE(background, theme_colors().surface);
+            const auto key = plot_channels(w.project(), plot).front();
+            scope->show_curve_settings(key);
+            auto *settings = scope->findChild<QDialog *>("curve_settings");
+            QVERIFY(settings && settings->isVisible());
+            QVERIFY(settings->palette().color(QPalette::Window).lightness() < 90);
+            if (auto folder = qEnvironmentVariable("PDS_THEME_SCREENSHOT_DIR"); !folder.isEmpty()) {
+                w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-50, -50, 50, 50),
+                                      Qt::KeepAspectRatio);
+                QVERIFY(w.grab().save(folder + "/theme-dark-editor.png"));
+                QVERIFY(graph->grab().save(folder + "/theme-dark-graph.png"));
+                QVERIFY(settings->grab().save(folder + "/theme-dark-settings.png"));
+            }
+            settings->close();
+            action->setChecked(false);
+            QVERIFY(!dark_theme());
+            QCOMPARE(scope->grab().toImage().pixelColor(5, 5), theme_colors().surface);
+            action->setChecked(true);
+            QCOMPARE(encoded(w.project()), before);
+        }
+        {
+            EditorWindow reopened("en", dir.path());
+            QVERIFY(dark_theme());
+            QVERIFY(reopened.findChild<QAction *>("dark_theme")->isChecked());
+            reopened.findChild<QAction *>("dark_theme")->setChecked(false);
+        }
+    }
     void editable_converter_examples() {
         QTemporaryDir dir;
         for (const auto &example : {QString("vsi-2l"), QString("npc-3l")}) {

@@ -1,4 +1,5 @@
 #pragma once
+#include "apps/desktop/theme.hpp"
 #include "core/model/model.hpp"
 #include <QPainter>
 #include <QPainterPath>
@@ -24,7 +25,7 @@ inline void paint_marker(QPainter &p, QPointF center, const CurveStyle &style, Q
     p.save();
     p.translate(center);
     p.setPen(QPen(color, std::min(style.width, 2.)));
-    p.setBrush(Qt::white);
+    p.setBrush(theme_colors().surface);
     switch (style.marker) {
     case CurveMarker::circle:
         p.drawEllipse(QPointF(), r, r);
