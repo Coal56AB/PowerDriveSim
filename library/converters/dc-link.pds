@@ -1,0 +1,32 @@
+PowerDriveSim 12
+project "69b342b9-a42b-5f94-9436-8776ecad6963" "DC-link"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "0aaa90fc-bc6c-5883-9303-9105faf97ca7" "DC-link" "2748e6c3-f8f4-504e-a88a-effe6c459614" 0 0 0
+definition "2748e6c3-f8f4-504e-a88a-effe6c459614" "DC-link"
+public_port "4a74c20e-b685-59c7-b3ab-bea3db7d54a8" "+" "d3f877a7-2199-5695-b9a1-d329c4c1589d" "node" 0 0
+public_port "69ecccb9-8ece-5ff0-a0a4-0dd87695349a" "-" "7e396885-5d63-569c-bf0e-9bdbb823c0ad" "node" 0 0
+public_parameter "9ff4a183-7cbf-5936-bfdf-da752b94f0de" "C" "F" "523ed4f8-f174-56bb-928c-1af47783dbfe" "value" 0.001
+public_parameter "9c429535-38f3-5e09-aeb2-3172113e4a42" "uC(0)" "V" "523ed4f8-f174-56bb-928c-1af47783dbfe" "initial" 0
+public_parameter "90834466-641e-5f6b-b4d6-c76fb104deca" "ESR" "Ohm" "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "value" 0.1
+body
+PowerDriveSim 12
+project "2748e6c3-f8f4-504e-a88a-effe6c459614" "DC-link"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "d3f877a7-2199-5695-b9a1-d329c4c1589d" "+" 0 0 -240
+node "7e396885-5d63-569c-bf0e-9bdbb823c0ad" "-" 0 0 240
+component "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "ESR" R "" "" 0.1 0 0 -90 0
+orientation "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" 1 0
+component "523ed4f8-f174-56bb-928c-1af47783dbfe" "Capacitor" C "" "" 0.001 0 0 90 0
+orientation "523ed4f8-f174-56bb-928c-1af47783dbfe" 1 0
+wire "949047b9-71d4-54bd-a5ea-dfccda87f4f4" "d3f877a7-2199-5695-b9a1-d329c4c1589d" "node" "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "p" 0
+wire "3a8c8000-0885-57bc-9bc9-7197a0aa71e3" "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "n" "523ed4f8-f174-56bb-928c-1af47783dbfe" "p" 0
+wire "0d2c015b-9c6f-5d49-b1c5-e726a1c24d2b" "523ed4f8-f174-56bb-928c-1af47783dbfe" "n" "7e396885-5d63-569c-bf0e-9bdbb823c0ad" "node" 0
+end_definition

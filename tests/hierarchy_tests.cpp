@@ -352,6 +352,7 @@ int main() try {
     Document navigating(nested());
     const auto unedited = navigating.root_project();
     navigating.navigate({id(20), id(31)});
+    require(!navigating.can_undo(), "Browsing does not create an edit transaction");
     require(navigating.project().id != navigating.root_project().id &&
                 navigating.project().components.size() == 2,
             "Active hierarchy view");
@@ -367,11 +368,10 @@ int main() try {
     navigating.undo();
     require(navigating.location().size() == 2 && navigating.root_project() == unedited,
             "Undo inside definition");
-    navigating.undo();
-    require(navigating.location().empty(), "Undo navigation");
+    navigating.navigate({});
+    require(navigating.can_redo(), "Browsing preserves the pending edit redo");
     navigating.redo();
-    require(navigating.location().size() == 2, "Redo navigation");
-    navigating.redo();
+    require(navigating.location().size() == 2, "Redo restores the edited level");
     require(navigating.project().components[0].value == 3000, "Redo shared edit");
     navigating.apply("Record both instances", [](Project &p) {
         p.scope_enabled = true;

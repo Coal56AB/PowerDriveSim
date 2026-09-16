@@ -316,5 +316,8 @@
   "buck_boost_module": "Buck-boost · Инвертирующий",
   "half_bridge_module": "Полумост",
   "full_bridge_module": "Полный мост",
-  "bidirectional_module": "Двунаправленный buck/boost"
+  "bidirectional_module": "Двунаправленный buck/boost",
+  "precharge_module": "Предварительный заряд",
+  "dc_link_module": "DC-link · Конденсатор",
+  "switched_resistor_module": "Разряд / тормозной резистор"
 }

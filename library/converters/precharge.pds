@@ -1,0 +1,33 @@
+PowerDriveSim 12
+project "eaca0d02-5b24-5c6e-927e-0250fc9ce32c" "Precharge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "77480e0b-2e65-5547-aaac-99a00b3491b6" "Precharge" "a0a3ae76-3687-5049-a2a0-50a2ef4c8efa" 0 0 0
+definition "a0a3ae76-3687-5049-a2a0-50a2ef4c8efa" "Precharge"
+public_port "a5ac4d72-076d-5e4e-90c7-59d408796448" "IN" "e299a8c6-898b-5600-8c4a-1a7ea13b4d7f" "node" 0 0
+public_port "f7d4b7a7-4779-5f68-b9d8-ad0f9ac9f3f9" "OUT" "e1709a88-bedd-571e-9a41-8a3169a2ca1e" "node" 0 0
+public_port "0186d556-e0d4-57cd-8b1b-bab93a5d3e59" "gPre" "1d7c6718-f273-5a6c-8059-45ee0b4eab5d" "gate" 1 1
+public_port "db58667b-ccf9-5430-96fd-764423a46a33" "gBypass" "1da57b42-d378-5137-9257-b8b6f30ba872" "gate" 1 1
+public_parameter "5fcfc6e2-7968-537e-8b7d-43a85da2a8d1" "Rpre" "Ohm" "2cb0a9d1-9b9e-5954-8096-3e7319f47a9b" "value" 10
+body
+PowerDriveSim 12
+project "a0a3ae76-3687-5049-a2a0-50a2ef4c8efa" "Precharge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "e299a8c6-898b-5600-8c4a-1a7ea13b4d7f" "IN" 0 -240 0
+node "e1709a88-bedd-571e-9a41-8a3169a2ca1e" "OUT" 0 240 0
+component "2cb0a9d1-9b9e-5954-8096-3e7319f47a9b" "Precharge R" R "" "" 10 0 -100 100 0
+component "1d7c6718-f273-5a6c-8059-45ee0b4eab5d" "Precharge switch" S "" "" 0 0 100 100 0
+component "1da57b42-d378-5137-9257-b8b6f30ba872" "Bypass" S "" "" 0 0 0 -100 0
+wire "f4092fb7-0533-5297-a32e-6c46578bcced" "e299a8c6-898b-5600-8c4a-1a7ea13b4d7f" "node" "2cb0a9d1-9b9e-5954-8096-3e7319f47a9b" "p" 1 -240 100
+wire "9ac5ddc9-621d-5ed5-a3c5-f2d4d87f5c5b" "2cb0a9d1-9b9e-5954-8096-3e7319f47a9b" "n" "1d7c6718-f273-5a6c-8059-45ee0b4eab5d" "p" 0
+wire "2ede1fa1-99f8-548d-a377-2c3312784272" "1d7c6718-f273-5a6c-8059-45ee0b4eab5d" "n" "e1709a88-bedd-571e-9a41-8a3169a2ca1e" "node" 1 240 100
+wire "fea2ee45-a4a5-5311-a431-85d2998ec6ef" "e299a8c6-898b-5600-8c4a-1a7ea13b4d7f" "node" "1da57b42-d378-5137-9257-b8b6f30ba872" "p" 1 -240 -100
+wire "1eda0c05-4fa9-524a-b0d0-b96f7ccc3f68" "1da57b42-d378-5137-9257-b8b6f30ba872" "n" "e1709a88-bedd-571e-9a41-8a3169a2ca1e" "node" 1 240 -100
+end_definition

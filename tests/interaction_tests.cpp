@@ -75,6 +75,41 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void dc_link_library_and_run() {
+        QTemporaryDir dir; EditorWindow w("ru", dir.path());
+        Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty); ready(w);
+        for (const int type : {240, 241, 242}) {
+            ready(w);
+            auto *insert = w.findChild<QAction *>("insert_component_" + QString::number(type));
+            QVERIFY(insert && !insert->icon().isNull()); insert->trigger();
+            QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              w.canvas()->mapFromScene(QPointF(0, 0)));
+            QCOMPARE(w.project().instances.size(), size_t(1));
+            const auto module = w.project().instances.front();
+            const auto parameter = definition(w.project(), module.definition).parameters.front().id;
+            auto *value = w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(parameter));
+            QVERIFY(value && value->isVisible());
+            w.open_subcircuit(module.id); QCOMPARE(w.project().components.size(), size_t(type == 240 ? 3 : 2));
+            w.navigate_hierarchy({}); w.undo(); QVERIFY(w.project().instances.empty());
+            QVERIFY(w.hierarchy_path().empty());
+            QVERIFY(w.root_project().instances.empty());
+        }
+        for (const QString kind : {QString("precharge-discharge"), QString("braking-chopper")}) {
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/") + kind + ".pds"));
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+            w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+            QVERIFY(w.has_result() && !w.result().samples.empty());
+            const auto path = dir.filePath(kind + ".pds"); QVERIFY(w.save_project(path));
+            const auto expected = encoded(w.root_project());
+            if (auto screenshot = qEnvironmentVariable("PDS_DC_LINK_SCREENSHOT"); !screenshot.isEmpty()) {
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + kind + ".png"));
+                const auto plot = w.project().plots.front().id; w.open_plot(plot);
+                auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
+                QVERIFY(graph); QTest::qWait(30); QVERIFY(graph->grab().save(screenshot + kind + "-plot.png")); graph->close();
+            }
+            QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+        }
+    }
     void bridge_library_and_run() {
         for (const int type : {230, 231}) {
             QTemporaryDir dir; EditorWindow w("ru", dir.path());
@@ -816,8 +851,12 @@ class InteractionTests : public QObject {
         QVERIFY(w.hierarchy_path().empty());
         w.undo();
         QCOMPARE(w.hierarchy_path(), std::vector<std::string>{grouped});
+        QCOMPARE(definition(w.root_project(), shared).components.front().value, 1000.);
+        w.navigate_hierarchy({});
         w.redo();
-        QVERIFY(w.hierarchy_path().empty());
+        QCOMPARE(w.hierarchy_path(), std::vector<std::string>{grouped});
+        QCOMPARE(definition(w.root_project(), shared).components.front().value, 2000.);
+        w.navigate_hierarchy({});
         w.select_object(grouped);
         w.detach_selected();
         QVERIFY(w.root_project().instances.front().definition != shared);

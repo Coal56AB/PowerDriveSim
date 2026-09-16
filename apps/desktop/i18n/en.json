@@ -316,5 +316,8 @@
   "buck_boost_module": "Inverting buck-boost",
   "half_bridge_module": "Half bridge",
   "full_bridge_module": "Full bridge",
-  "bidirectional_module": "Bidirectional buck/boost"
+  "bidirectional_module": "Bidirectional buck/boost",
+  "precharge_module": "Precharge circuit",
+  "dc_link_module": "DC-link capacitor",
+  "switched_resistor_module": "Discharge / braking resistor"
 }

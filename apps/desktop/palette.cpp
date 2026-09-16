@@ -64,6 +64,19 @@ QIcon component_icon(int id) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
+    } else if (id >= 240 && id <= 242) {
+        if (id == 241) {
+            p.drawLine(16, 1, 16, 5); p.drawRect(QRectF(12, 5, 8, 9));
+            p.drawLine(16, 14, 16, 19); p.drawLine(6, 19, 26, 19);
+            p.drawLine(6, 24, 26, 24); p.drawLine(16, 24, 16, 31);
+        } else {
+            p.drawLine(1, 22, 6, 22); p.drawRect(QRectF(6, 18, 10, 8));
+            p.drawLine(16, 22, 20, 22); p.drawLine(20, 22, 27, 16); p.drawLine(28, 22, 31, 22);
+            if (id == 240) {
+                p.drawLine(2, 22, 2, 8); p.drawLine(2, 8, 11, 8);
+                p.drawLine(11, 8, 21, 2); p.drawLine(23, 8, 30, 8); p.drawLine(30, 8, 30, 22);
+            }
+        }
     } else if (id == 230 || id == 231) {
         for (int x : (id == 230 ? std::vector<int>{12} : std::vector<int>{8, 24})) {
             p.drawLine(x, 2, x, 30);

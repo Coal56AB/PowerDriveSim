@@ -1,0 +1,13 @@
+{
+  "type": "library:switched-resistor",
+  "fields": [],
+  "template": "converters/switched-resistor.pds",
+  "palette": {
+    "id": 242,
+    "label": "switched_resistor_module",
+    "category": "converters",
+    "short": "switched-resistor",
+    "fixed": false,
+    "hidden": false
+  }
+}

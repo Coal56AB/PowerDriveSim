@@ -1,0 +1,13 @@
+{
+  "type": "library:dc-link",
+  "fields": [],
+  "template": "converters/dc-link.pds",
+  "palette": {
+    "id": 241,
+    "label": "dc_link_module",
+    "category": "converters",
+    "short": "dc-link",
+    "fixed": false,
+    "hidden": false
+  }
+}

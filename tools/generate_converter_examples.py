@@ -48,10 +48,13 @@ class Diagram:
             quoted(ident), quoted(name), quoted(terminal[0]), quoted(terminal[1]),
             1 if gate else 0, 2 if output else 1 if gate else 0))
 
-    def instance(self, name, definition, x, y):
+    def instance(self, name, definition, x, y, parameters=None):
         ident = self.uuid("instance/" + name)
-        self.lines.append("instance {} {} {} {} {} 0".format(
-            quoted(ident), quoted(name), quoted(definition.id), x, y))
+        values = parameters or {}
+        overrides = "".join(" {} {}".format(quoted(definition.uuid("parameter/" + key)), value)
+                            for key, value in values.items())
+        self.lines.append("instance {} {} {} {} {} {}{}".format(
+            quoted(ident), quoted(name), quoted(definition.id), x, y, len(values), overrides))
         return {name: (ident, port) for name, port in definition.port_ids.items()}
 
     def parameter(self, name, terminal, field, unit, value):
@@ -66,6 +69,14 @@ class Diagram:
         for index in range(1, len(states)):
             if states[index] != states[index - 1]:
                 self.lines.append("event {} {} {}".format(index * .001, quoted(ident), int(states[index])))
+        return ident, "out"
+
+    def recorded(self, name, initial, events, x, y):
+        ident = self.uuid("pattern/" + name)
+        self.lines.append("pattern {} {} {} {} {}".format(
+            quoted(ident), quoted(name), x, y, int(initial)))
+        for time, value in events:
+            self.lines.append("event {} {} {}".format(time, quoted(ident), int(value)))
         return ident, "out"
 
     def plot(self, name, terminals, x, y, routes=None):

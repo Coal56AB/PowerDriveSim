@@ -57,7 +57,9 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
    проверены RL-аналитика, dead time, диоды, энергия и диагностика сквозного тока.
    Двунаправленный DC/DC на общем полумосте проверен в режимах заряда и возврата
    энергии, с внешними комплементарными gates и точной RL-аналитикой.
-   Следом — precharge/DC-link/discharge, braking chopper и AC voltage controller.
+   [Precharge/DC-link и коммутируемый резистор](dc-link.md) добавлены с примерами
+   заряда/обхода/разряда и торможения; проверены RC-аналитика, мощность и энергия.
+   Следом — AC voltage controller и оставшиеся топологии §12.
 3. Initial conditions, snapshot/continue и улучшения шага с учётом событий.
 4. Расширенный анализ Scope: FFT/THD и измерения энергии; scenario/parameter sweep.
 5. Документация компонентов, energy balance/steady-state/fault assertions,

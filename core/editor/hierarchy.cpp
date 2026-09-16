@@ -96,10 +96,8 @@ void Document::navigate(const std::vector<std::string> &path) {
     (void)definition_at(current_, path);
     if (path == location_)
         return;
-    undo_.push_back({"Navigate hierarchy", current_, current_, location_, path});
-    if (undo_.size() > 100)
-        undo_.erase(undo_.begin());
-    redo_.clear();
+    // Browsing does not edit the document or invalidate a pending redo.
+    // Actual edits retain their location and restore it on undo/redo.
     location_ = path;
     rebuild_view();
 }

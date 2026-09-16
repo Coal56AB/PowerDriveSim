@@ -1,0 +1,31 @@
+PowerDriveSim 12
+project "c074388d-09fb-56c1-9b30-69fd8496072b" "Switched resistor"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "6aa97e39-1ed5-5743-8345-69bf42e99ad8" "Switched resistor" "e260934c-a937-5964-b63a-eb1d54deaf42" 0 0 0
+definition "e260934c-a937-5964-b63a-eb1d54deaf42" "Switched resistor"
+public_port "1def51c2-6570-5554-9643-e8c046027bf4" "+" "5db79160-96bf-524d-a315-2c5a70df76c8" "node" 0 0
+public_port "fe9d9a87-1a37-5755-899d-6daca8d36a39" "-" "8e55ea33-e4a0-59cb-9b6e-8bcf7c17a4bf" "node" 0 0
+public_port "da2bfef6-0cf9-5a79-a3b0-5a8b16f7676c" "g" "fad5afea-1468-5a20-a313-b31ef62ae2ea" "gate" 1 1
+public_parameter "fb3236fa-e7ae-52f0-9271-83fdd7bc2a91" "R" "Ohm" "047f6798-83fa-5bb4-943c-a152da6009d4" "value" 100
+body
+PowerDriveSim 12
+project "e260934c-a937-5964-b63a-eb1d54deaf42" "Switched resistor"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "5db79160-96bf-524d-a315-2c5a70df76c8" "+" 0 0 -240
+node "8e55ea33-e4a0-59cb-9b6e-8bcf7c17a4bf" "-" 0 0 240
+component "047f6798-83fa-5bb4-943c-a152da6009d4" "Resistor" R "" "" 100 0 0 -90 0
+orientation "047f6798-83fa-5bb4-943c-a152da6009d4" 1 0
+component "fad5afea-1468-5a20-a313-b31ef62ae2ea" "Switch" S "" "" 0 0 0 90 0
+orientation "fad5afea-1468-5a20-a313-b31ef62ae2ea" 1 0
+wire "36c72cbd-d8de-5067-9f31-096d573dc0b6" "5db79160-96bf-524d-a315-2c5a70df76c8" "node" "047f6798-83fa-5bb4-943c-a152da6009d4" "p" 0
+wire "7b7e6bed-5582-57bf-b762-14a51448039e" "047f6798-83fa-5bb4-943c-a152da6009d4" "n" "fad5afea-1468-5a20-a313-b31ef62ae2ea" "p" 0
+wire "1a9c1df7-368b-5004-8e7b-5ac81d6e6802" "fad5afea-1468-5a20-a313-b31ef62ae2ea" "n" "8e55ea33-e4a0-59cb-9b6e-8bcf7c17a4bf" "node" 0
+end_definition

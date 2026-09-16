@@ -1,0 +1,13 @@
+{
+  "type": "library:precharge",
+  "fields": [],
+  "template": "converters/precharge.pds",
+  "palette": {
+    "id": 240,
+    "label": "precharge_module",
+    "category": "converters",
+    "short": "precharge",
+    "fixed": false,
+    "hidden": false
+  }
+}

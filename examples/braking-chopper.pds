@@ -1,0 +1,74 @@
+PowerDriveSim 12
+project "31b32473-43d4-5381-a28e-16357193f1df" "Braking chopper with external gate"
+profile 0.06 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "f215a82f-b3c7-51ec-bd64-472276db29ba" "DC-link" "2748e6c3-f8f4-504e-a88a-effe6c459614" 0 120 1 "9c429535-38f3-5e09-aeb2-3172113e4a42" 48
+instance "89a3f450-165c-5fee-8198-5a1a63d92837" "Braking resistor" "e260934c-a937-5964-b63a-eb1d54deaf42" 420 120 1 "fb3236fa-e7ae-52f0-9271-83fdd7bc2a91" 40
+component "df29c21f-8b2c-5d98-b669-5abbb0603e61" "Regenerated current" I "" "" 0.5 0 -340 100 0
+orientation "df29c21f-8b2c-5d98-b669-5abbb0603e61" 3 0
+node "b95d1792-c907-5bf5-973f-8f195044e1ca" "Udc" 0 -340 -80
+node "f6d09e8f-8048-53f5-a4f1-6cad2bb76951" "COM" 1 160 340
+wire "a1f41e57-ab20-5470-9e48-37b2a842dae1" "df29c21f-8b2c-5d98-b669-5abbb0603e61" "n" "b95d1792-c907-5bf5-973f-8f195044e1ca" "node" 0
+wire "31af9195-d804-52a0-8bd4-b64a07cbf669" "df29c21f-8b2c-5d98-b669-5abbb0603e61" "p" "f6d09e8f-8048-53f5-a4f1-6cad2bb76951" "node" 1 -340 340
+wire "8f3587be-570a-5f1d-bad9-6084caae44e7" "b95d1792-c907-5bf5-973f-8f195044e1ca" "node" "f215a82f-b3c7-51ec-bd64-472276db29ba" "4a74c20e-b685-59c7-b3ab-bea3db7d54a8" 2 -160 -80 -160 120
+wire "653063ea-1013-539b-9d7f-ad27c1d8dfde" "f215a82f-b3c7-51ec-bd64-472276db29ba" "69ecccb9-8ece-5ff0-a0a4-0dd87695349a" "f6d09e8f-8048-53f5-a4f1-6cad2bb76951" "node" 1 160 120
+wire "57e2c23d-7edc-5cdb-8966-a158362fc0dd" "b95d1792-c907-5bf5-973f-8f195044e1ca" "node" "89a3f450-165c-5fee-8198-5a1a63d92837" "1def51c2-6570-5554-9643-e8c046027bf4" 2 280 -80 280 107
+wire "f76ff369-0fab-50ee-ba81-36e43819364b" "89a3f450-165c-5fee-8198-5a1a63d92837" "fe9d9a87-1a37-5755-899d-6daca8d36a39" "f6d09e8f-8048-53f5-a4f1-6cad2bb76951" "node" 2 620 120 620 340
+pattern "c98c130e-8f55-5211-b36d-5f842894a29b" "External brake gate" 0 -220 0
+event 0.01 "c98c130e-8f55-5211-b36d-5f842894a29b" 1
+event 0.03 "c98c130e-8f55-5211-b36d-5f842894a29b" 0
+event 0.04 "c98c130e-8f55-5211-b36d-5f842894a29b" 1
+wire "965e2066-c317-5568-b756-a3080e85ba2a" "c98c130e-8f55-5211-b36d-5f842894a29b" "out" "89a3f450-165c-5fee-8198-5a1a63d92837" "da2bfef6-0cf9-5a79-a3b0-5a8b16f7676c" 2 240 -220 240 133
+plot "4f995122-0a9b-50c2-84a5-8edee17812cc" "DC voltage and brake command" 840 -100 2 0 -1 -1 -1
+wire "2a94436b-b9d0-553d-a225-cc49b479ede6" "b95d1792-c907-5bf5-973f-8f195044e1ca" "node" "4f995122-0a9b-50c2-84a5-8edee17812cc" "in1" 3 -340 -320 720 -320 720 -111
+wire "15843b7a-b4e5-5e32-a06b-240963eb5297" "c98c130e-8f55-5211-b36d-5f842894a29b" "out" "4f995122-0a9b-50c2-84a5-8edee17812cc" "in2" 3 80 -220 700 -220 700 -89
+definition "2748e6c3-f8f4-504e-a88a-effe6c459614" "DC-link"
+public_port "4a74c20e-b685-59c7-b3ab-bea3db7d54a8" "+" "d3f877a7-2199-5695-b9a1-d329c4c1589d" "node" 0 0
+public_port "69ecccb9-8ece-5ff0-a0a4-0dd87695349a" "-" "7e396885-5d63-569c-bf0e-9bdbb823c0ad" "node" 0 0
+public_parameter "9ff4a183-7cbf-5936-bfdf-da752b94f0de" "C" "F" "523ed4f8-f174-56bb-928c-1af47783dbfe" "value" 0.001
+public_parameter "9c429535-38f3-5e09-aeb2-3172113e4a42" "uC(0)" "V" "523ed4f8-f174-56bb-928c-1af47783dbfe" "initial" 0
+public_parameter "90834466-641e-5f6b-b4d6-c76fb104deca" "ESR" "Ohm" "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "value" 0.1
+body
+PowerDriveSim 12
+project "2748e6c3-f8f4-504e-a88a-effe6c459614" "DC-link"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "d3f877a7-2199-5695-b9a1-d329c4c1589d" "+" 0 0 -240
+node "7e396885-5d63-569c-bf0e-9bdbb823c0ad" "-" 0 0 240
+component "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "ESR" R "" "" 0.1 0 0 -90 0
+orientation "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" 1 0
+component "523ed4f8-f174-56bb-928c-1af47783dbfe" "Capacitor" C "" "" 0.001 0 0 90 0
+orientation "523ed4f8-f174-56bb-928c-1af47783dbfe" 1 0
+wire "949047b9-71d4-54bd-a5ea-dfccda87f4f4" "d3f877a7-2199-5695-b9a1-d329c4c1589d" "node" "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "p" 0
+wire "3a8c8000-0885-57bc-9bc9-7197a0aa71e3" "b296a0f7-1302-54ea-b32f-84dbbefc5bf6" "n" "523ed4f8-f174-56bb-928c-1af47783dbfe" "p" 0
+wire "0d2c015b-9c6f-5d49-b1c5-e726a1c24d2b" "523ed4f8-f174-56bb-928c-1af47783dbfe" "n" "7e396885-5d63-569c-bf0e-9bdbb823c0ad" "node" 0
+end_definition
+definition "e260934c-a937-5964-b63a-eb1d54deaf42" "Switched resistor"
+public_port "1def51c2-6570-5554-9643-e8c046027bf4" "+" "5db79160-96bf-524d-a315-2c5a70df76c8" "node" 0 0
+public_port "fe9d9a87-1a37-5755-899d-6daca8d36a39" "-" "8e55ea33-e4a0-59cb-9b6e-8bcf7c17a4bf" "node" 0 0
+public_port "da2bfef6-0cf9-5a79-a3b0-5a8b16f7676c" "g" "fad5afea-1468-5a20-a313-b31ef62ae2ea" "gate" 1 1
+public_parameter "fb3236fa-e7ae-52f0-9271-83fdd7bc2a91" "R" "Ohm" "047f6798-83fa-5bb4-943c-a152da6009d4" "value" 100
+body
+PowerDriveSim 12
+project "e260934c-a937-5964-b63a-eb1d54deaf42" "Switched resistor"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "5db79160-96bf-524d-a315-2c5a70df76c8" "+" 0 0 -240
+node "8e55ea33-e4a0-59cb-9b6e-8bcf7c17a4bf" "-" 0 0 240
+component "047f6798-83fa-5bb4-943c-a152da6009d4" "Resistor" R "" "" 100 0 0 -90 0
+orientation "047f6798-83fa-5bb4-943c-a152da6009d4" 1 0
+component "fad5afea-1468-5a20-a313-b31ef62ae2ea" "Switch" S "" "" 0 0 0 90 0
+orientation "fad5afea-1468-5a20-a313-b31ef62ae2ea" 1 0
+wire "36c72cbd-d8de-5067-9f31-096d573dc0b6" "5db79160-96bf-524d-a315-2c5a70df76c8" "node" "047f6798-83fa-5bb4-943c-a152da6009d4" "p" 0
+wire "7b7e6bed-5582-57bf-b762-14a51448039e" "047f6798-83fa-5bb4-943c-a152da6009d4" "n" "fad5afea-1468-5a20-a313-b31ef62ae2ea" "p" 0
+wire "1a9c1df7-368b-5004-8e7b-5ac81d6e6802" "fad5afea-1468-5a20-a313-b31ef62ae2ea" "n" "8e55ea33-e4a0-59cb-9b6e-8bcf7c17a4bf" "node" 0
+end_definition
