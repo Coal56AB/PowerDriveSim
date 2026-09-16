@@ -21,7 +21,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     header >> std::ws;
     if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>project_schema))
         throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1.."+std::to_string(project_schema));
-    bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false;
+    bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false, initialization=false;
     std::map<std::string,Orientation> orientations;
     std::map<std::string,SourceWaveform> sources;
     std::map<std::string,Semiconductor> semiconductors;
@@ -139,6 +139,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 p.profile.method=parse_method(method);
             }
             profile=true;
+        } else if(tag=="initialization" && p.schema>=13 && !initialization) {
+            std::string mode;
+            row >> mode >> p.profile.warmup;
+            p.profile.initial_state = parse_initial_state(mode);
+            initialization = true;
         } else if(tag=="nonlinear" && p.schema>=3 && !nonlinear) {
             row >> p.profile.max_iterations >> p.profile.voltage_tolerance
                 >> p.profile.current_tolerance >> p.profile.relative_tolerance;
@@ -301,6 +306,7 @@ void write_project(const Project& p, std::ostream& out) {
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
         << p.profile.current_tolerance << ' ' << p.profile.relative_tolerance << '\n';
+    out << "initialization " << initial_state_name(p.profile.initial_state) << ' ' << p.profile.warmup << '\n';
     auto write_orientation=[&](const auto& object){if(object.orientation.quarter_turns>3)throw Diagnostic("invalid_orientation",object.id,"Rotation must contain 0..3 quarter turns");if(object.orientation.quarter_turns||object.orientation.mirrored)out<<"orientation "<<std::quoted(object.id)<<' '<<object.orientation.quarter_turns<<' '<<object.orientation.mirrored<<'\n';};
     for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
     for(const auto& i:p.instances)write_orientation(i);

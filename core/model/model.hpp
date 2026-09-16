@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 12;
+inline constexpr unsigned project_schema = 13;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -45,11 +45,16 @@ struct GateEvent { double time; std::string target; bool closed; bool operator==
 enum class Method { backward_euler, trapezoidal };
 std::string method_name(Method method);
 Method parse_method(const std::string& name);
+enum class InitialState { specified, zero, dc_operating_point };
+std::string initial_state_name(InitialState state);
+InitialState parse_initial_state(const std::string &name);
 struct Profile {
     double stop = 0.01, step = 0.00001;
     Method method = Method::backward_euler;
     unsigned max_iterations = 64;
     double voltage_tolerance = 1e-9, current_tolerance = 1e-12, relative_tolerance = 1e-9;
+    InitialState initial_state = InitialState::specified;
+    double warmup = 0; // Unrecorded interval [0, warmup); time remains absolute.
     bool operator==(const Profile&) const = default;
 };
 struct Endpoint {

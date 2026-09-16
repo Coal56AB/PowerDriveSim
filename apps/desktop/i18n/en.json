@@ -1,4 +1,13 @@
 {
+  "dialog_cancel": "Cancel",
+  "initial_settings": "Initial conditions…",
+  "initial_mode": "Initial state",
+  "initial_specified": "Specified component states",
+  "initial_zero": "Zero state",
+  "initial_dc": "DC operating point",
+  "initial_warmup": "Warm-up duration, s",
+  "initial_warmup_error": "Warm-up must be nonnegative and shorter than stop time.",
+  "initial_hint": "Zero mode clears C/L energy and diode charge. DC finds equilibrium at source and gate values at t = 0. Warm-up is not recorded in plots; time remains absolute, progress and Stop stay available. Zero disables warm-up.",
   "simulation_menu": "Simulation",
   "continue_state": "Continue from state",
   "simulation_step": "Single simulation step",

@@ -125,6 +125,8 @@ int main(int argc, char **argv) try {
     check(read_project(input) == p, "Charge round trip");
     auto old = serialized;
     old.replace(0, old.find('\n'), "PowerDriveSim 9");
+    const auto initialization = old.find("initialization ");
+    old.erase(initialization, old.find('\n', initialization) - initialization + 1);
     try {
         std::istringstream in(old);
         read_project(in);

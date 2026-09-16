@@ -166,6 +166,8 @@ int main(int argc, char **argv) try {
     auto serialized = encode(p);
     auto old = serialized;
     old.replace(0, old.find('\n'), "PowerDriveSim 10");
+    const auto initialization = old.find("initialization ");
+    old.erase(initialization, old.find('\n', initialization) - initialization + 1);
     error("schema_version", [&] { decode(old); });
     error("parse_error", [&] { decode(serialized + "thyristor \"" + id(11) + "\" 0.03 0\n"); });
     error("invalid_thyristor", [&] { decode(serialized + "thyristor \"" + id(10) + "\" 0.03 0\n"); });

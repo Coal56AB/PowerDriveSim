@@ -8,5 +8,6 @@ void validate_source_loops(const SimulationIR &ir);
 std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, bool initialize,
                                                      const std::vector<bool> &gates,
                                                      const std::vector<bool> &diodes,
-                                                     const std::vector<double> &states, double time);
+                                                     const std::vector<double> &states, double time,
+                                                     bool operating_point = false);
 } // namespace pds

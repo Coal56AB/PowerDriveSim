@@ -857,6 +857,8 @@ void EditorWindow::build_ui() {
         if (!path.isEmpty())
             load_simulation_snapshot(path);
     });
+    simulation_menu->addSeparator();
+    action(simulation_menu, "initial_settings", {}, [this] { show_initial_settings(); });
     auto *examples = menuBar()->addMenu(text("examples"));
     QDir dir(QCoreApplication::applicationDirPath() + "/examples");
     for (const auto &file : dir.entryList({"*.pds"}, QDir::Files))

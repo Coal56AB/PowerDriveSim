@@ -75,6 +75,9 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     if(ir.unknowns.empty() || !std::isfinite(ir.profile.step) || ir.profile.step<=0 || !std::isfinite(ir.profile.stop) || ir.profile.stop<=0)
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
+    (void)initial_state_name(ir.profile.initial_state);
+    if(!std::isfinite(ir.profile.warmup)||ir.profile.warmup<0||ir.profile.warmup>=ir.profile.stop)
+        throw Diagnostic("invalid_profile",ir.project_id,"Warm-up must be shorter than stop time");
     Result result; result.project_id=ir.project_id; result.profile=ir.profile;
     const std::set<std::string> requested=recording?std::set<std::string>(recording->channels.begin(),recording->channels.end()):std::set<std::string>();
     auto selected=[&](const std::string& key){return !recording||recording->all||requested.count(key);};
@@ -106,6 +109,11 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         }
         if(gate_controlled(ir.stamps[i].component.kind)) switch_indices.push_back(i);
     }
+    if(ir.profile.initial_state==InitialState::zero) {
+        std::fill(states.begin(),states.end(),0.0);
+        std::fill(latched.begin(),latched.end(),false);
+        std::fill(diode_states.begin(),diode_states.end(),false);
+    }
     size_t next_event=0;
     const auto* resume=options?options->resume:nullptr;
     if(resume) {
@@ -127,7 +135,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     EquationCache equations(ir);
     std::vector<size_t> violations;
     violations.reserve(diode_indices.size());
-    auto solve=[&](double t,double h,bool initialize) -> const std::vector<double>& {
+    auto solve=[&](double t,double h,bool initialize,bool operating_point=false) -> const std::vector<double>& {
         for(auto i:thyristor_indices) {
             released[i]=false;
             if(!gates[i])diode_states[i]=latched[i];
@@ -143,10 +151,10 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             singular=false;
             violations.clear();
             try {
-                solution=&equations.solve(t,h,initialize,gates,active,states,history);
+                solution=&equations.solve(t,h,initialize,gates,active,states,history,operating_point);
             } catch(const Diagnostic& d) {
                 if(d.code!="singular_matrix")throw;
-                auto detail=diagnose_singular_topology(ir,initialize,gates,active,states,t);
+                auto detail=diagnose_singular_topology(ir,initialize,gates,active,states,t,operating_point);
                 const auto& failure=detail?*detail:d;
                 if(diode_indices.empty())throw failure;
                 offending=failure.object;last_linear=failure.code+": "+failure.what();singular=true;
@@ -245,13 +253,14 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
                 const auto &model=s.component.semiconductor;
                 const auto law=diode_charge_law(model);
                 const double drive=law.alpha*std::max(0.0,voltage-model.forward_voltage);
-                if(!initialize) {
+                if(operating_point) states[i]=drive/law.lambda;
+                else if(!initialize) {
                     const double m=h/(ir.profile.method==Method::trapezoidal?2:1);
                     const double q=(states[i]+m*(drive+(ir.profile.method==Method::trapezoidal?history[i]:0)))/(1+m*law.lambda);
                     if(!std::isfinite(q)||q<0)throw Diagnostic("invalid_charge_state",s.component.id,"Diode charge became negative or nonfinite; reduce the time step or use Backward Euler",t);
                     states[i]=q;
                 }
-                history[i]=drive-law.lambda*states[i];
+                history[i]=operating_point?0:drive-law.lambda*states[i];
             }
         }
         return values;
@@ -259,6 +268,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     auto record=[&](double t,const std::vector<double>& values) {
         result.last_time=t;
         if(simulated_time) simulated_time->store(t,std::memory_order_relaxed);
+        if(t<ir.profile.warmup)return;
         // No sample or history allocation when recording is disabled.
         if(analog_indices.empty()&&gate_indices.empty())return;
         Sample sample;sample.time=t;sample.values.reserve(analog_indices.size());sample.gates.reserve(gate_indices.size());
@@ -277,7 +287,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     if(resume) final_values=&resume->values;
     else {
         apply_events(0);
-        final_values=&solve(0,0,true);
+        final_values=&solve(0,0,true,ir.profile.initial_state==InitialState::dc_operating_point);
     }
     record(time,*final_values);
     auto publish=[&]{if(stream&&!result.samples.empty()){auto samples=std::move(result.samples);Result batch=result;batch.samples=std::move(samples);stream(std::move(batch));}};
@@ -291,6 +301,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(cancel && cancel->load()) { result.cancelled=true; break; }
         const double grid_time=static_cast<double>(grid)*ir.profile.step;
         double end=std::min(grid_time,ir.profile.stop);
+        if(time<ir.profile.warmup)end=std::min(end,ir.profile.warmup);
         if(next_event<ir.events.size()) end=std::min(end,ir.events[next_event].time);
         double source_edge=std::numeric_limits<double>::infinity();
         for(auto index:source_indices)source_edge=std::min(source_edge,next_source_breakpoint(ir.stamps[index].component,time));

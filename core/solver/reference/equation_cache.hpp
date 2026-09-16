@@ -9,7 +9,7 @@ class EquationCache {
     explicit EquationCache(const SimulationIR &ir) : ir_(ir) {}
     const std::vector<double> &solve(double time, double h, bool initialize, const std::vector<bool> &gates,
                                      const std::vector<bool> &diodes, const std::vector<double> &states,
-                                     const std::vector<double> &history);
+                                     const std::vector<double> &history, bool operating_point = false);
     const StampSystem &system() const { return entries_[recent_]->system; }
 
   private:
@@ -22,6 +22,7 @@ class EquationCache {
     struct Entry {
         double h;
         bool initialize;
+        bool operating_point;
         std::vector<bool> gates, diodes;
         StampSystem system;
         FactorizationCache factorization;

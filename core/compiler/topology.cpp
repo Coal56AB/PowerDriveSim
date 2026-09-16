@@ -40,7 +40,7 @@ struct Potentials {
 };
 std::optional<Diagnostic> voltage_loop(const SimulationIR &ir, bool fixed_only, bool initialize,
                                        const std::vector<bool> &gates, const std::vector<bool> &diodes,
-                                       const std::vector<double> &states, double time) {
+                                       const std::vector<double> &states, double time, bool operating_point = false) {
     Potentials potentials(ir.node_count + 1);
     std::optional<Diagnostic> redundant;
     auto node = [&](int n) { return n < 0 ? ir.node_count : n; };
@@ -55,9 +55,10 @@ std::optional<Diagnostic> voltage_loop(const SimulationIR &ir, bool fixed_only, 
         } else if (kind == Kind::current_probe) {
         } else if (fixed_only)
             continue;
-        else if (kind == Kind::capacitor && initialize)
+        else if (kind == Kind::capacitor && initialize && !operating_point)
             voltage = states[i];
-        else if (kind == Kind::ideal_switch && gates[i] && !resistive_semiconductor(s.component)) {
+        else if (kind == Kind::inductor && operating_point) {
+        } else if (kind == Kind::ideal_switch && gates[i] && !resistive_semiconductor(s.component)) {
         } else if (rectifying(kind) && diodes[i] && !resistive_semiconductor(s.component)) {
         } else
             continue;
@@ -92,16 +93,17 @@ void validate_source_loops(const SimulationIR &ir) {
 std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, bool initialize,
                                                      const std::vector<bool> &gates,
                                                      const std::vector<bool> &diodes,
-                                                     const std::vector<double> &states, double time) {
-    if (auto loop = voltage_loop(ir, false, initialize, gates, diodes, states, time))
+                                                     const std::vector<double> &states, double time,
+                                                     bool operating_point) {
+    if (auto loop = voltage_loop(ir, false, initialize, gates, diodes, states, time, operating_point))
         return loop;
     Potentials islands(ir.node_count + 1);
     auto node = [&](int n) { return n < 0 ? ir.node_count : n; };
     for (size_t i = 0; i < ir.stamps.size(); ++i) {
         const auto &s = ir.stamps[i];
         const auto k = s.component.kind;
-        const bool path = k == Kind::resistor || k == Kind::capacitor || k == Kind::voltage ||
-                          k == Kind::current_probe || (k == Kind::inductor && !initialize) ||
+        const bool path = k == Kind::resistor || (k == Kind::capacitor && !operating_point) || k == Kind::voltage ||
+                          k == Kind::current_probe || (k == Kind::inductor && (!initialize || operating_point)) ||
                           (k == Kind::ideal_switch && (gates[i] || resistive_semiconductor(s.component))) ||
                           (rectifying(k) && (diodes[i] || resistive_semiconductor(s.component)));
         if (path)
@@ -114,7 +116,7 @@ std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, boo
         double current;
         if (s.component.kind == Kind::current)
             current = source_value(s.component, time, initialize ? TimeSide::right : TimeSide::left);
-        else if (s.component.kind == Kind::inductor && initialize)
+        else if (s.component.kind == Kind::inductor && initialize && !operating_point)
             current = states[i];
         else
             continue;
@@ -147,8 +149,9 @@ std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, boo
         if (!floating)
             floating =
                 Diagnostic("floating_island", ir.unknowns[i].object,
-                           "This island has no voltage-reference path in the current switch/diode state. "
-                           "At initialization an inductor fixes current, not voltage.",
+                           operating_point ? "This DC island has no voltage-reference path; capacitors are open circuits."
+                           : "This island has no voltage-reference path in the current switch/diode state. "
+                             "At initialization an inductor fixes current, not voltage.",
                            time);
     }
     return floating;

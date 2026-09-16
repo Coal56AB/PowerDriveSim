@@ -1,6 +1,19 @@
 #include "core/model/model.hpp"
 #include <cctype>
 namespace pds {
+std::string initial_state_name(InitialState state) {
+    switch (state) {
+    case InitialState::specified: return "Specified";
+    case InitialState::zero: return "Zero";
+    case InitialState::dc_operating_point: return "DCOperatingPoint";
+    }
+    throw Diagnostic("invalid_initial_state", "", "Unsupported initial state mode");
+}
+InitialState parse_initial_state(const std::string &name) {
+    for (auto state : {InitialState::specified, InitialState::zero, InitialState::dc_operating_point})
+        if (initial_state_name(state) == name) return state;
+    throw Diagnostic("invalid_initial_state", name, "Unsupported initial state mode");
+}
 std::string method_name(Method method) {
     switch(method) {
     case Method::backward_euler: return "BackwardEuler";

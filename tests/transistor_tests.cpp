@@ -88,6 +88,8 @@ int main(int argc, char **argv) try {
     auto p = fixture();
     auto old = encode(p);
     old.replace(0, old.find('\n'), "PowerDriveSim 11");
+    const auto initialization = old.find("initialization ");
+    old.erase(initialization, old.find('\n', initialization) - initialization + 1);
     try {
         std::istringstream in(old);
         read_project(in);

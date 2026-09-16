@@ -1790,6 +1790,68 @@ class InteractionTests : public QObject {
         next.show_shortcuts();
         QVERIFY(loaded);
     }
+    void initial_state_settings_and_run() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        ready(w);
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        w.set_scope_enabled(true);
+        auto *channels = w.findChild<QListWidget *>("channels");
+        for (int i = 0; i < channels->count(); ++i)
+            channels->item(i)->setCheckState(Qt::Checked);
+        bool edited = false;
+        QTimer::singleShot(0, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("initial_settings_dialog");
+            QVERIFY(dialog);
+            QTimer::singleShot(3000, dialog, &QDialog::reject);
+            auto *mode = dialog->findChild<QComboBox *>("initial_state_mode");
+            auto *warmup = dialog->findChild<QLineEdit *>("initial_warmup");
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            mode->setCurrentIndex(2);
+            warmup->setText("1");
+            buttons->button(QDialogButtonBox::Ok)->click();
+            QVERIFY(dialog->isVisible());
+            QVERIFY(!dialog->findChild<QLabel *>("initial_error")->text().isEmpty());
+            warmup->selectAll();
+            QTest::keyClicks(warmup, "0,001");
+            QCOMPARE(warmup->text(), QString("0.001"));
+            if (!qEnvironmentVariableIsEmpty("PDS_INITIAL_STATE_SCREENSHOT"))
+                QVERIFY(dialog->grab().save(qEnvironmentVariable("PDS_INITIAL_STATE_SCREENSHOT")));
+            buttons->button(QDialogButtonBox::Ok)->click();
+            edited = true;
+        });
+        w.show_initial_settings();
+        QVERIFY(edited);
+        QCOMPARE(w.project().profile.initial_state, InitialState::dc_operating_point);
+        QCOMPARE(w.project().profile.warmup, .001);
+        w.undo();
+        QCOMPARE(w.project().profile.initial_state, InitialState::specified);
+        QCOMPARE(w.project().profile.warmup, 0.0);
+        w.redo();
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.has_result());
+        QCOMPARE(w.result().samples.front().time, .001);
+        for (const auto &sample : w.result().samples)
+            for (size_t i = 0; i < sample.values.size(); ++i)
+                QVERIFY(std::abs(sample.values[i] - w.result().samples.front().values[i]) < 1e-10);
+        QVERIFY(w.save_project(dir.filePath("initial.pds")));
+        QVERIFY(w.open_project(dir.filePath("initial.pds")));
+        QCOMPARE(w.project().profile.initial_state, InitialState::dc_operating_point);
+        QCOMPARE(w.project().profile.warmup, .001);
+        auto p = w.root_project();
+        p.profile.stop = 1; p.profile.step = 1e-7; p.profile.warmup = .9;
+        w.set_project(p);
+        w.start_simulation();
+        QTest::qWait(80);
+        QVERIFY(w.running());
+        QVERIFY(!w.has_result()); // No history allocation during the warm-up interval.
+        w.stop_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(w.simulation_snapshot());
+        QVERIFY(w.result().cancelled && w.result().samples.empty());
+        QVERIFY(w.simulation_snapshot()->time < .9);
+    }
     void simulation_snapshots_and_step() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

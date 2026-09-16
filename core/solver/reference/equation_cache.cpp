@@ -6,11 +6,12 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                                                 const std::vector<bool> &gates,
                                                 const std::vector<bool> &diodes,
                                                 const std::vector<double> &states,
-                                                const std::vector<double> &history) {
+                                                const std::vector<double> &history, bool operating_point) {
     const bool trapezoidal = ir_.profile.method == Method::trapezoidal;
     auto matches = [&](size_t i) {
         const auto &e = *entries_[i];
-        return e.h == h && e.initialize == initialize && e.gates == gates && e.diodes == diodes;
+        return e.h == h && e.initialize == initialize && e.operating_point == operating_point &&
+               e.gates == gates && e.diodes == diodes;
     };
     size_t found = entries_.size();
     if (recent_ < entries_.size() && matches(recent_))
@@ -25,6 +26,7 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
         auto entry = std::make_unique<Entry>(ir_.unknowns.size());
         entry->h = h;
         entry->initialize = initialize;
+        entry->operating_point = operating_point;
         entry->gates = gates;
         entry->diodes = diodes;
         auto &system = entry->system;
@@ -56,6 +58,10 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                     entry->dynamic.push_back({i, b, c.kind, 1});
                 break;
             case Kind::capacitor:
+                if (operating_point) {
+                    system.add(b, b, 1); // DC: capacitor current is zero.
+                    break;
+                }
                 system.add(b, p, 1);
                 system.add(b, n, -1);
                 if (!initialize)
@@ -63,6 +69,11 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
                 entry->dynamic.push_back({i, b, c.kind, !initialize && trapezoidal ? h / (2 * c.value) : 0});
                 break;
             case Kind::inductor: {
+                if (operating_point) {
+                    system.add(b, p, 1); // DC: inductor voltage is zero.
+                    system.add(b, n, -1);
+                    break;
+                }
                 const double factor = initialize ? 1 : c.value / h * (trapezoidal ? 2 : 1);
                 if (initialize)
                     system.add(b, b, 1);
@@ -84,7 +95,7 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
             case Kind::thyristor:
             case Kind::diode:
             case Kind::ideal_switch:
-                if (dynamic_diode(c)) {
+                if (dynamic_diode(c) && !operating_point) {
                     const auto &model = c.semiconductor;
                     const auto law = diode_charge_law(model);
                     const double m = initialize ? 0 : h / (trapezoidal ? 2 : 1);
