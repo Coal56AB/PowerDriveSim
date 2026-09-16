@@ -75,6 +75,43 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void rectifier_library_and_run() {
+        for (const int type : {210, 211}) {
+            QTemporaryDir dir;
+            EditorWindow w("ru", dir.path());
+            Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
+            ready(w);
+            auto *insert = w.findChild<QAction *>("insert_component_" + QString::number(type));
+            QVERIFY(insert && !insert->icon().isNull());
+            insert->trigger();
+            QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              w.canvas()->mapFromScene(QPointF(0, 0)));
+            QCOMPARE(w.project().instances.size(), size_t(1));
+            const auto module = w.project().instances.front();
+            w.open_subcircuit(module.id);
+            QCOMPARE(w.project().components.size(), size_t(type == 210 ? 4 : 6));
+            w.navigate_hierarchy({});
+            w.undo(); QVERIFY(w.project().instances.empty());
+            w.redo(); QCOMPARE(w.project().instances.front().id, module.id);
+            const auto path = dir.filePath("bridge.pds");
+            QVERIFY(w.save_project(path)); const auto expected = encoded(w.root_project());
+            QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/diode-bridge-%1p.pds").arg(type == 210 ? 1 : 3)));
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+            w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+            QVERIFY(w.has_result() && !w.result().samples.empty());
+            if (auto screenshot = qEnvironmentVariable("PDS_RECTIFIER_SCREENSHOT"); !screenshot.isEmpty()) {
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + QString::number(type) + ".png"));
+                const auto plot = w.project().plots.front().id; w.open_plot(plot);
+                auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(plot));
+                QVERIFY(graph); QTest::qWait(30);
+                QVERIFY(graph->grab().save(screenshot + QString::number(type) + "-plot.png"));
+                graph->close();
+                w.open_subcircuit(w.project().instances.front().id);
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + QString::number(type) + "-inside.png"));
+            }
+        }
+    }
     void transistor_library_and_run() {
         try {
             for (const int type : {200, 201}) {
@@ -1768,7 +1805,7 @@ class InteractionTests : public QObject {
             auto *tree = w.findChild<QTreeWidget *>("library");
             auto *bar = w.findChild<QToolBar *>("component_bar");
             QVERIFY(tree && bar);
-            QCOMPARE(tree->topLevelItemCount(), 4);
+            QCOMPARE(tree->topLevelItemCount(), 5);
             QCOMPARE(bar->actions().size(), 4);
             for (int i = 0; i < tree->topLevelItemCount(); ++i) {
                 QVERIFY(!tree->topLevelItem(i)->isExpanded());

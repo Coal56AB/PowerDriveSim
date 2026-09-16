@@ -305,5 +305,8 @@
   "initial_gate": "Initial gate",
   "igbt_channel": "IGBT · Channel",
   "mosfet_module": "MOSFET with body diode",
-  "igbt_module": "IGBT with antiparallel diode"
+  "igbt_module": "IGBT with antiparallel diode",
+  "converters": "Converters",
+  "diode_bridge_1p": "Single-phase diode bridge",
+  "diode_bridge_3p": "Three-phase diode bridge"
 }

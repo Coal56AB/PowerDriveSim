@@ -1,0 +1,13 @@
+{
+  "type": "library:diode-bridge-3p",
+  "fields": [],
+  "template": "converters/diode-bridge-3p.pds",
+  "palette": {
+    "id": 211,
+    "label": "diode_bridge_3p",
+    "category": "converters",
+    "short": "3~",
+    "fixed": false,
+    "hidden": false
+  }
+}

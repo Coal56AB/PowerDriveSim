@@ -33,7 +33,7 @@ class DesktopTests : public QObject {
         QTest::qWait(50);
         auto *library = window.findChild<QTreeWidget *>("library");
         QVERIFY(library);
-        QCOMPARE(library->topLevelItemCount(), 4);
+        QCOMPARE(library->topLevelItemCount(), 5);
         QVERIFY(window.scope() == nullptr);
         QVERIFY(!window.project().scope_enabled);
         auto place = [&](int kind, QPointF point) {

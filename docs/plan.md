@@ -45,6 +45,9 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
    См. [источники](sources.md), [полупроводники](semiconductors.md).
 2. Редактируемые библиотечные AC/DC, DC/DC и DC/AC из приоритетного набора §12;
    precharge/DC-link/braking/discharge и готовые примеры с проверенными метриками.
+   [Однофазный и трёхфазный диодные мосты](rectifiers.md) доступны в библиотеке;
+   проверены форма и среднее напряжение, ток, мощность, раскрытие и UI.
+   Следом — управляемый тиристорный мост и семейство DC/DC.
 3. Initial conditions, snapshot/continue и улучшения шага с учётом событий.
 4. Расширенный анализ Scope: FFT/THD и измерения энергии; scenario/parameter sweep.
 5. Документация компонентов, energy balance/steady-state/fault assertions,
