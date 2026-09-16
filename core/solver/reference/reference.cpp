@@ -1,5 +1,6 @@
 #include "core/solver/reference/reference.hpp"
 #include "core/solver/reference/equation_cache.hpp"
+#include "core/compiler/topology.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -120,8 +121,11 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             try {
                 solution=&equations.solve(t,h,initialize,gates,active,states,history);
             } catch(const Diagnostic& d) {
-                if(d.code!="singular_matrix" || diode_indices.empty())throw;
-                offending=d.object;last_linear=d.what();singular=true;
+                if(d.code!="singular_matrix")throw;
+                auto detail=diagnose_singular_topology(ir,initialize,gates,active,states,t);
+                const auto& failure=detail?*detail:d;
+                if(diode_indices.empty())throw failure;
+                offending=failure.object;last_linear=failure.code+": "+failure.what();singular=true;
                 return false;
             }
             const auto &values=*solution;

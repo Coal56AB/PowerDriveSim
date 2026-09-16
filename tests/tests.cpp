@@ -307,7 +307,7 @@ static void topology() {
     p=rc(); p.components[1].id=p.components[0].id;
     error("invalid_uuid",[&]{compile(p);});
     p=rc(); p.components.push_back(part(20,Kind::voltage,3,2,2));
-    error("singular_matrix",[&]{execute(compile(p));});
+    error("conflicting_voltage_constraints",[&]{execute(compile(p));});
     p=rc(); p.events={{0.001,id(11),true}};
     error("invalid_gate_target",[&]{compile(p);});
     p=switching(); p.events.push_back(p.events.front());
@@ -321,7 +321,59 @@ static void topology() {
     p=base(); p.nodes.pop_back(); p.components={part(10,Kind::current,2,3,1)};
     error("floating_node",[&]{compile(p);});
     p=base(); p.nodes.pop_back(); p.components={part(10,Kind::ideal_switch,2,3,0)};
-    error("singular_matrix",[&]{execute(compile(p));});
+    error("floating_island",[&]{execute(compile(p));});
+
+    // Equal ideal sources still have undetermined individual branch currents.
+    p=rc(); p.components.push_back(part(20,Kind::voltage,3,2,1));
+    error("ideal_voltage_loop",[&]{compile(p);});
+    // Three-edge loops exercise signed potentials, not just parallel branches.
+    p=base(); p.components={part(10,Kind::voltage,3,2,5),part(11,Kind::voltage,4,3,2),
+                           part(12,Kind::voltage,4,2,7)};
+    error("ideal_voltage_loop",[&]{compile(p);});
+    p.components.back().value=-7;
+    error("conflicting_voltage_constraints",[&]{compile(p);});
+    std::reverse(p.components.begin(),p.components.end());
+    error("conflicting_voltage_constraints",[&]{compile(p);});
+    p=base(); p.nodes.pop_back();
+    p.components={part(10,Kind::current_probe,3,2,0),part(11,Kind::current_probe,2,3,0)};
+    error("ideal_voltage_loop",[&]{compile(p);});
+
+    // Capacitor constraints exist at initialization, not on ordinary steps.
+    p=base(); p.nodes.pop_back();
+    p.components={part(10,Kind::voltage,3,2,5),part(20,Kind::capacitor,3,2,1e-6,0)};
+    error("conflicting_voltage_constraints",[&]{execute(compile(p));});
+    p.components.back().initial=5;
+    error("ideal_voltage_loop",[&]{execute(compile(p));});
+
+    // A disconnected inductor initial current cannot disappear through an open switch.
+    p=base(); p.nodes.pop_back();
+    p.components={part(10,Kind::inductor,3,2,.01,1),part(11,Kind::ideal_switch,3,2,0)};
+    try { execute(compile(p)); require(false,"Expected current cutset"); }
+    catch(const Diagnostic& d) {
+        require(d.code=="current_cutset" && d.object==id(10) && d.time==0,
+                "Current cutset identifies the inductor and time");
+    }
+    p.components.front().initial=0;
+    error("floating_island",[&]{execute(compile(p));});
+    p.components.back().closed=true;
+    require(!execute(compile(p)).samples.empty(),"Closed switch provides inductor return path");
+
+    // An event can make a previously valid topology impossible.
+    p=base(); p.nodes.pop_back(); p.profile={.002,.0001};
+    p.components={part(10,Kind::voltage,3,2,5),part(20,Kind::ideal_switch,3,2,0)};
+    p.events={{.001,id(20),true}};
+    try { execute(compile(p)); require(false,"Expected shorted voltage source"); }
+    catch(const Diagnostic& d) {
+        require(d.code=="conflicting_voltage_constraints" && d.object==id(20) && d.time==.001,
+                "Gate-induced conflict identifies switch and event time");
+    }
+    p.components={part(10,Kind::current,2,3,1),part(20,Kind::ideal_switch,3,2,0)};
+    p.components.back().closed=true; p.events={{.001,id(20),false}};
+    try { execute(compile(p)); require(false,"Expected interrupted current source"); }
+    catch(const Diagnostic& d) {
+        require(d.code=="current_cutset" && d.object==id(10) && d.time==.001,
+                "Gate-induced current cutset retains the event time");
+    }
 }
 static void regression() {
     // Compare cache hits, eviction, pivoting and sparse fallback to the original solver.

@@ -1,4 +1,5 @@
 #include "core/ir/ir.hpp"
+#include "core/compiler/topology.hpp"
 #include "core/model/connectivity.hpp"
 #include "core/model/hierarchy.hpp"
 #include <algorithm>
@@ -58,7 +59,7 @@ static SimulationIR compile_flat(const Project& p) {
         if(c.kind==Kind::current)ir.observations.push_back({{c.id,"i:"+c.name,"A"},-1,-1,0,c.value});
     }
     // Current sources do not establish a voltage-reference path.
-    // State-dependent ideal loops/islands are also checked by factorization.
+    // State-dependent ideal loops/islands are diagnosed after a failed solve.
     for(size_t pass=0;pass<nodes.size();++pass)
         for(const auto& c:components) if(c.kind!=Kind::current && c.kind!=Kind::voltage_probe) {
             if(reached.count(c.positive)) reached.insert(c.negative);
@@ -66,6 +67,7 @@ static SimulationIR compile_flat(const Project& p) {
         }
     for(const auto& n:nodes) if(!reached.count(n.id))
         throw Diagnostic("floating_node",n.id,"No structural voltage-reference path; connect an explicit reference path");
+    validate_source_loops(ir);
     ir.events=p.events;
     // Validate timestamps before sorting: NaN violates strict weak ordering.
     for(const auto& e:ir.events)

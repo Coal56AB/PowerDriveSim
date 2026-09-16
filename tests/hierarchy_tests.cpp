@@ -153,6 +153,33 @@ int main() try {
                     e.path == std::vector<std::string>{id(20), id(31)},
                 "Addressed nested diagnostic");
     }
+    bad = p;
+    bad.definitions[0].components.push_back({id(61), "Isolated L", Kind::inductor, "", "", .01, 1});
+    bad.definitions[0].nodes.push_back({id(60), "Isolated node", false});
+    wire(bad.definitions[0], {id(61), "p"}, {id(60), "node"});
+    wire(bad.definitions[0], {id(61), "n"}, {id(13), "n"});
+    try {
+        execute(compile(bad));
+        throw std::runtime_error("Missing nested current cutset diagnostic");
+    } catch (const Diagnostic &e) {
+        require(e.code == "current_cutset" && e.object == id(61) && e.path.size() == 2 &&
+                    e.path.back() == id(31) && (e.path.front() == id(20) || e.path.front() == id(21)),
+                "Runtime topology diagnostic points to nested inductor");
+    }
+    bad = p;
+    for (int n : {62, 63}) {
+        bad.definitions[0].components.push_back({id(n), "Conflicting V", Kind::voltage, "", "", double(n)});
+        wire(bad.definitions[0], {id(n), "p"}, {id(13), "p"});
+        wire(bad.definitions[0], {id(n), "n"}, {id(13), "n"});
+    }
+    try {
+        compile(bad);
+        throw std::runtime_error("Missing nested voltage loop diagnostic");
+    } catch (const Diagnostic &e) {
+        require(e.code == "conflicting_voltage_constraints" && (e.object == id(62) || e.object == id(63)) &&
+                    e.path.size() == 2 && e.path.back() == id(31),
+                "Compile topology diagnostic points to nested source");
+    }
     Document doc(p);
     auto baseline = execute(compile(doc.project()));
     doc.detach_instance(id(20));
