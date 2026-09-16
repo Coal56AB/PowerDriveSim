@@ -22,6 +22,7 @@ static SimulationIR compile_flat(const Project& p) {
     (void)initial_state_name(p.profile.initial_state);
     if (!std::isfinite(p.profile.warmup) || p.profile.warmup < 0 || p.profile.warmup >= p.profile.stop)
         throw Diagnostic("invalid_profile", p.id, "Warm-up must be finite, nonnegative and shorter than stop time");
+    validate_step_control(p.profile, p.id);
     if(p.profile.max_iterations<1 || p.profile.max_iterations>1024
        || !std::isfinite(p.profile.voltage_tolerance) || p.profile.voltage_tolerance<=0
        || !std::isfinite(p.profile.current_tolerance) || p.profile.current_tolerance<=0

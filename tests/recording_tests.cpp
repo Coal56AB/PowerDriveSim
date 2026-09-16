@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
         std::getline(lines, line);
         v4 << "PowerDriveSim 4\n";
         while (std::getline(lines, line))
-            if (line.rfind("scope_enabled ", 0) != 0 && line.rfind("initialization ", 0) != 0)
+            if (line.rfind("scope_enabled ", 0) != 0 && line.rfind("initialization ", 0) != 0 && line.rfind("stepping ", 0) != 0)
                 v4 << line << '\n';
         std::istringstream old(v4.str());
         auto migrated = read_project(old);

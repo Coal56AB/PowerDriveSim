@@ -26,6 +26,9 @@ struct Result {
     std::vector<std::string> gate_names;
     std::vector<Sample> samples;
     size_t accepted_steps=0, linear_solves=0, max_step_iterations=0;
+    size_t rejected_steps=0;
+    double min_accepted_step=0, max_accepted_step=0, max_local_error=0;
+    std::string step_reduction_reason;
     bool cancelled=false;
     double max_scaled_residual=0.0, last_time=0.0;
     std::optional<SimulationSnapshot> snapshot;
@@ -38,6 +41,7 @@ struct ExecutionOptions {
 struct Recording { bool all=true; std::vector<std::string> channels; };
 std::vector<Channel> available_channels(const SimulationIR& ir);
 Result select_result(const Result& result,const std::vector<std::string>& channels);
+void accumulate_statistics(Result &result, const Result &previous);
 Result execute(const SimulationIR& ir, const std::atomic_bool* cancel=nullptr,
                std::atomic<double>* simulated_time=nullptr,const Recording* recording=nullptr,
                const std::atomic_bool* paused=nullptr,

@@ -67,7 +67,7 @@ void EditorWindow::update_command_state() {
             can_advance = false;
         }
     }
-    for (const char *key : {"snapshot_save", "snapshot_load", "continue_state", "simulation_step", "initial_settings"}) {
+    for (const char *key : {"snapshot_save", "snapshot_load", "continue_state", "simulation_step", "initial_settings", "step_settings"}) {
         auto action = commands_.find(key);
         if (action != commands_.end())
             action->second->setEnabled(!running() &&

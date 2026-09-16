@@ -260,7 +260,7 @@ static void serialization() {
     auto downgrade_nodes=[](std::string original) {
         std::istringstream input(original); std::string line,output;
         while(std::getline(input,line)) {
-            if(line.rfind("scope_enabled ",0)==0 || line.rfind("wiring ",0)==0 || line.rfind("scopeview ",0)==0 || line.rfind("initialization ",0)==0) continue;
+            if(line.rfind("scope_enabled ",0)==0 || line.rfind("wiring ",0)==0 || line.rfind("scopeview ",0)==0 || line.rfind("initialization ",0)==0 || line.rfind("stepping ",0)==0) continue;
             if(line.rfind("node ",0)==0) {
                 line.erase(line.find_last_of(' ')); line.erase(line.find_last_of(' '));
             }

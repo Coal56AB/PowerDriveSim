@@ -15,6 +15,11 @@ std::string snapshot_contract(const SimulationIR &ir, double time) {
          << static_cast<int>(ir.profile.method) << ' ' << ir.profile.max_iterations << ' '
          << ir.profile.voltage_tolerance << ' ' << ir.profile.current_tolerance << ' '
          << ir.profile.relative_tolerance << ' ' << ir.node_count << '\n';
+    if (ir.profile.step_control.adaptive) {
+        const auto &control = ir.profile.step_control;
+        text << "adaptive " << control.minimum_step << ' ' << control.relative_tolerance << ' '
+             << control.voltage_tolerance << ' ' << control.current_tolerance << ' ' << control.charge_tolerance << '\n';
+    }
     for (const auto &channel : ir.unknowns)
         text << channel.object << '\n';
     for (const auto &stamp : ir.stamps) {
@@ -44,11 +49,15 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
     const auto invalid = [&](const char *message) {
         throw Diagnostic("invalid_snapshot", ir.project_id, message);
     };
-    if (s.version != 1 || !std::isfinite(s.time) || s.time < 0 || s.time > ir.profile.stop ||
+    if ((s.version != 1 && s.version != 2) || !std::isfinite(s.time) || s.time < 0 || s.time > ir.profile.stop ||
         s.next_grid == 0)
         invalid("Snapshot version or time is invalid for this run");
     if (s.project_id != ir.project_id || s.contract != snapshot_contract(ir, s.time))
         invalid("Snapshot belongs to a different model, integration profile or past gate schedule");
+    if (!std::isfinite(s.next_step) || (ir.profile.step_control.adaptive
+        ? s.version < 2 || s.next_step < ir.profile.step_control.minimum_step || s.next_step > ir.profile.step
+        : s.next_step != 0))
+        invalid("Snapshot adaptive step is invalid");
     const auto count = ir.stamps.size();
     if (s.states.size() != count || s.history.size() != count || s.gates.size() != count ||
         s.diodes.size() != count || s.latched.size() != count || s.values.size() != ir.unknowns.size() ||

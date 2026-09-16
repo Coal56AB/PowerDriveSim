@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "formats/snapshot/snapshot.hpp"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -11,10 +12,87 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QVBoxLayout>
+#include <array>
 #include <cmath>
 #include <sstream>
 
 namespace pds::desktop {
+void EditorWindow::show_step_settings() {
+    if (running() || !commit_inline_edit())
+        return;
+    QDialog dialog(this);
+    dialog.setObjectName("step_settings_dialog");
+    dialog.setWindowTitle(text("step_settings"));
+    dialog.setMinimumWidth(470);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *adaptive = new QCheckBox(text("adaptive_enabled"));
+    adaptive->setObjectName("adaptive_enabled");
+    adaptive->setChecked(project().profile.step_control.adaptive);
+    layout->addWidget(adaptive);
+    auto *form = new QFormLayout;
+    const auto &control = project().profile.step_control;
+    struct Field {
+        const char *key;
+        const char *unit;
+        double value;
+        QLineEdit *edit = nullptr;
+    };
+    Field fields[] = {
+        {"step_maximum", "s", project().profile.step},     {"step_minimum", "s", control.minimum_step},
+        {"step_relative", "", control.relative_tolerance}, {"step_voltage", "V", control.voltage_tolerance},
+        {"step_current", "A", control.current_tolerance},  {"step_charge", "C", control.charge_tolerance}};
+    for (auto &field : fields) {
+        field.edit = new QLineEdit(QString::number(field.value, 'g', 12));
+        field.edit->setObjectName(field.key);
+        normalize_decimal_point(field.edit);
+        if (&field == &fields[0])
+            field.edit->setText(step_->text());
+        else {
+            field.edit->setEnabled(adaptive->isChecked());
+            connect(adaptive, &QCheckBox::toggled, field.edit, &QWidget::setEnabled);
+        }
+        form->addRow(text(field.key), field.edit);
+    }
+    layout->addLayout(form);
+    auto *hint = new QLabel(text("adaptive_hint"));
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    auto *error = new QLabel;
+    error->setObjectName("step_error");
+    error->setWordWrap(true);
+    layout->addWidget(error);
+    for (auto &field : fields)
+        connect(field.edit, &QLineEdit::textChanged, error, &QLabel::clear);
+    connect(adaptive, &QCheckBox::toggled, error, &QLabel::clear);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Cancel)->setText(text("dialog_cancel"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        try {
+            auto profile = project().profile;
+            std::array<double, 6> values;
+            for (size_t k = 0; k < values.size(); ++k)
+                values[k] = k == 0 || adaptive->isChecked()
+                                ? parse_si(fields[k].edit->text().toStdString(), fields[k].unit)
+                                : fields[k].value;
+            profile.step = values[0];
+            profile.step_control = {
+                adaptive->isChecked(), values[1], values[2], values[3], values[4], values[5]};
+            if (!std::isfinite(profile.step) || profile.step <= 0)
+                throw std::runtime_error(text("positive_time").toStdString());
+            validate_step_control(profile, root_project().id);
+            document_->apply("Integration step", [&](Project &p) { p.profile = profile; });
+            step_->setModified(false);
+            dialog.accept();
+        } catch (const std::exception &e) {
+            error->setText(QString::fromUtf8(e.what()));
+        }
+    });
+    if (dialog.exec() == QDialog::Accepted)
+        refresh();
+}
+
 void EditorWindow::show_initial_settings() {
     if (running() || !commit_inline_edit())
         return;

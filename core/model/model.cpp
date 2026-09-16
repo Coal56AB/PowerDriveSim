@@ -1,6 +1,18 @@
 #include "core/model/model.hpp"
 #include <cctype>
+#include <cmath>
 namespace pds {
+void validate_step_control(const Profile &profile, const std::string &object) {
+    const auto &control = profile.step_control;
+    for (double value : {control.minimum_step, control.voltage_tolerance,
+                         control.current_tolerance, control.charge_tolerance})
+        if (!std::isfinite(value) || value <= 0)
+            throw Diagnostic("invalid_profile", object, "Adaptive step limits and tolerances must be finite and positive");
+    if (!std::isfinite(control.relative_tolerance) || control.relative_tolerance < 0)
+        throw Diagnostic("invalid_profile", object, "Adaptive relative tolerance must be finite and nonnegative");
+    if (control.adaptive && control.minimum_step > profile.step)
+        throw Diagnostic("invalid_profile", object, "Minimum step exceeds the maximum step");
+}
 std::string initial_state_name(InitialState state) {
     switch (state) {
     case InitialState::specified: return "Specified";

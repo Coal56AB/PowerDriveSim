@@ -5,10 +5,11 @@ namespace pds {
 // Numeric state aligned with a validated IR. No backend handles or factorization
 // caches are persisted. History is the conjugate C/L quantity (or diode dq/dt).
 struct SimulationSnapshot {
-    unsigned version = 1;
+    unsigned version = 2;
     std::string project_id, contract;
     double time = 0;
     std::uint64_t next_grid = 1;
+    double next_step = 0; // Adaptive controller proposal; zero for fixed stepping.
     std::vector<double> states, history, values;
     std::vector<bool> gates, diodes, latched, signal_values;
     bool operator==(const SimulationSnapshot &) const = default;

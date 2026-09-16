@@ -1,5 +1,6 @@
 #include "core/solver/reference/reference.hpp"
 #include "core/solver/reference/equation_cache.hpp"
+#include "core/solver/reference/adaptive.hpp"
 #include "core/compiler/topology.hpp"
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
@@ -58,11 +59,25 @@ std::vector<Channel> available_channels(const SimulationIR& ir){
     for(const auto& signal:ir.gate_signals)channels.push_back({"gate/"+signal.id,signal.name,"bool"});
     return channels;
 }
+void accumulate_statistics(Result& result,const Result& previous) {
+    result.accepted_steps+=previous.accepted_steps;result.rejected_steps+=previous.rejected_steps;
+    result.linear_solves+=previous.linear_solves;
+    result.max_step_iterations=std::max(result.max_step_iterations,previous.max_step_iterations);
+    result.max_scaled_residual=std::max(result.max_scaled_residual,previous.max_scaled_residual);
+    if(previous.min_accepted_step>0)result.min_accepted_step=result.min_accepted_step>0?
+        std::min(result.min_accepted_step,previous.min_accepted_step):previous.min_accepted_step;
+    result.max_accepted_step=std::max(result.max_accepted_step,previous.max_accepted_step);
+    result.max_local_error=std::max(result.max_local_error,previous.max_local_error);
+    if(result.step_reduction_reason.empty())result.step_reduction_reason=previous.step_reduction_reason;
+}
 Result select_result(const Result& source,const std::vector<std::string>& keys){
     std::set<std::string> selected(keys.begin(),keys.end());Result result;
     result.project_id=source.project_id;result.backend=source.backend;result.precision=source.precision;result.engine=source.engine;result.profile=source.profile;
     result.accepted_steps=source.accepted_steps;result.linear_solves=source.linear_solves;result.max_step_iterations=source.max_step_iterations;result.cancelled=source.cancelled;result.max_scaled_residual=source.max_scaled_residual;result.last_time=source.last_time;
     result.snapshot=source.snapshot;
+    result.rejected_steps=source.rejected_steps;result.min_accepted_step=source.min_accepted_step;
+    result.max_accepted_step=source.max_accepted_step;result.max_local_error=source.max_local_error;
+    result.step_reduction_reason=source.step_reduction_reason;
     std::vector<size_t> analog,gates;
     for(size_t i=0;i<source.channels.size();++i)if(selected.count(source.channels[i].object)){analog.push_back(i);result.channels.push_back(source.channels[i]);}
     for(size_t i=0;i<source.gate_objects.size();++i)if(selected.count("gate/"+source.gate_objects[i])){gates.push_back(i);result.gate_objects.push_back(source.gate_objects[i]);result.gate_names.push_back(i<source.gate_names.size()?source.gate_names[i]:std::string{});}
@@ -76,6 +91,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         throw Diagnostic("invalid_ir",ir.project_id,"IR must have unknowns and a positive finite time profile");
     (void)method_name(ir.profile.method);
     (void)initial_state_name(ir.profile.initial_state);
+    validate_step_control(ir.profile,ir.project_id);
     if(!std::isfinite(ir.profile.warmup)||ir.profile.warmup<0||ir.profile.warmup>=ir.profile.stop)
         throw Diagnostic("invalid_profile",ir.project_id,"Warm-up must be shorter than stop time");
     Result result; result.project_id=ir.project_id; result.profile=ir.profile;
@@ -290,6 +306,13 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         final_values=&solve(0,0,true,ir.profile.initial_state==InitialState::dc_operating_point);
     }
     record(time,*final_values);
+    const bool adaptive=ir.profile.step_control.adaptive;
+    double proposed_step=adaptive?(resume?resume->next_step:ir.profile.step):ir.profile.step;
+    // Adaptive trials may replace cache entries. Keep the accepted endpoint
+    // independently so cancellation after a rejected trial still has valid state.
+    std::vector<double> accepted_values, before_states, before_history, coarse_values, coarse_states;
+    std::vector<bool> before_diodes, before_latched, coarse_latched;
+    if(adaptive){accepted_values=*final_values;final_values=&accepted_values;}
     auto publish=[&]{if(stream&&!result.samples.empty()){auto samples=std::move(result.samples);Result batch=result;batch.samples=std::move(samples);stream(std::move(batch));}};
     auto next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);
     publish();
@@ -307,7 +330,65 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         for(auto index:source_indices)source_edge=std::min(source_edge,next_source_breakpoint(ir.stamps[index].component,time));
         end=std::min(end,source_edge);
         if(end<=time) throw Diagnostic("time_resolution",ir.project_id,"Time step cannot advance floating-point time",time);
-        const auto* values=&solve(end,end-time,false);
+        const std::vector<double>* values=nullptr;
+        if(!adaptive) values=&solve(end,end-time,false);
+        else {
+            const double boundary=end;
+            before_states=states;before_history=history;before_diodes=diode_states;before_latched=latched;
+            auto restore=[&]{states=before_states;history=before_history;diode_states=before_diodes;latched=before_latched;};
+            end=std::min(boundary,time+proposed_step);
+            unsigned attempts=0;
+            for(;;) {
+                restore();
+                if(cancel&&cancel->load()){result.cancelled=true;break;}
+                const double h=end-time, middle=time+h/2;
+                if(end>time&&end==boundary&&(middle<=time||middle>=end)) {
+                    // Adjacent representable event/grid timestamps have no
+                    // midpoint. Retain the exact boundary with one fixed step.
+                    values=&solve(end,h,false);
+                    break;
+                }
+                if(middle<=time||middle>=end)
+                    throw Diagnostic("time_resolution",ir.project_id,"Adaptive half-step cannot advance floating-point time",time);
+                StepError error;
+                std::string failure;
+                try {
+                    coarse_values=solve(end,h,false);
+                    coarse_states=states;coarse_latched=latched;
+                    restore();
+                    solve(middle,middle-time,false);
+                    values=&solve(end,end-middle,false);
+                    error=step_error(ir,accepted_values,coarse_values,*values,coarse_states,states);
+                    if(coarse_latched!=latched&&error.ratio<2) {
+                        error.ratio=2;
+                        for(auto i:thyristor_indices)if(coarse_latched[i]!=latched[i]){error.object=ir.stamps[i].component.id;break;}
+                    }
+                } catch(const Diagnostic& diagnostic) {
+                    if(diagnostic.code!="nonlinear_convergence"&&diagnostic.code!="invalid_charge_state")throw;
+                    failure=diagnostic.code;error={std::numeric_limits<double>::infinity(),diagnostic.object};
+                }
+                const double factor=next_step_factor(ir.profile.method,error.ratio);
+                if(error.ratio<=1) {
+                    result.max_local_error=std::max(result.max_local_error,error.ratio);
+                    proposed_step=std::clamp(h*factor,ir.profile.step_control.minimum_step,ir.profile.step);
+                    break;
+                }
+                ++result.rejected_steps;
+                result.step_reduction_reason=failure.empty()?"local_error":failure;
+                const double reduced=std::max(ir.profile.step_control.minimum_step,h*std::min(.5,factor));
+                if(reduced>=h||++attempts>=64) {
+                    std::ostringstream message;
+                    message<<"Adaptive step cannot meet tolerance at h="<<h<<" s; error/tolerance="<<error.ratio
+                           <<". Reason: "<<result.step_reduction_reason<<". Check the model, minimum step and tolerances.";
+                    throw Diagnostic("adaptive_step_limit",error.object.empty()?ir.project_id:error.object,message.str(),time);
+                }
+                end=std::min(boundary,time+reduced);
+            }
+            if(result.cancelled)break;
+        }
+        const double accepted_h=end-time;
+        result.min_accepted_step=result.accepted_steps?std::min(result.min_accepted_step,accepted_h):accepted_h;
+        result.max_accepted_step=std::max(result.max_accepted_step,accepted_h);
         ++result.accepted_steps;
         time=end;
         if(time==grid_time) ++grid;
@@ -315,6 +396,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         // gates before solving algebraic variables with continuous C/L states.
         const bool gate_event=apply_events(time);
         if(gate_event||time==source_edge) values=&solve(time,0,true);
+        if(adaptive){accepted_values=*values;values=&accepted_values;}
         record(time,*values);
         final_values=values;
         if(stream && result.accepted_steps%1024==0 && std::chrono::steady_clock::now()>=next_publish){publish();next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);}
@@ -323,6 +405,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         SimulationSnapshot checkpoint;
         checkpoint.project_id=ir.project_id;checkpoint.contract=snapshot_contract(ir,time);
         checkpoint.time=time;checkpoint.next_grid=grid;
+        checkpoint.next_step=adaptive?proposed_step:0;
         checkpoint.states=std::move(states);checkpoint.history=std::move(history);
         checkpoint.gates=std::move(gates);checkpoint.diodes=std::move(diode_states);
         checkpoint.latched=std::move(latched);checkpoint.signal_values=std::move(signal_values);

@@ -274,6 +274,7 @@ class EditorWindow : public QMainWindow {
     bool save_simulation_snapshot(const QString &path);
     bool load_simulation_snapshot(const QString &path);
     void show_initial_settings();
+    void show_step_settings();
     const std::optional<SimulationSnapshot> &simulation_snapshot() const { return continuation_; }
     void undo();
     void redo();
@@ -338,7 +339,7 @@ class EditorWindow : public QMainWindow {
     void update_run_button();
     void launch_simulation(std::optional<SimulationSnapshot> state, size_t max_steps = 0);
     std::optional<SimulationSnapshot> continuation_;
-    size_t continuation_steps_ = 0;
+    Result continuation_statistics_;
     std::atomic<double> simulated_time_{0};
     std::atomic_bool preparing_{false};
     QElapsedTimer simulation_timer_;

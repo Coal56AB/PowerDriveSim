@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 13;
+inline constexpr unsigned project_schema = 14;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -48,6 +48,13 @@ Method parse_method(const std::string& name);
 enum class InitialState { specified, zero, dc_operating_point };
 std::string initial_state_name(InitialState state);
 InitialState parse_initial_state(const std::string &name);
+struct StepControl {
+    bool adaptive = false;
+    double minimum_step = 1e-12;
+    double relative_tolerance = 1e-4;
+    double voltage_tolerance = 1e-6, current_tolerance = 1e-8, charge_tolerance = 1e-12;
+    bool operator==(const StepControl &) const = default;
+};
 struct Profile {
     double stop = 0.01, step = 0.00001;
     Method method = Method::backward_euler;
@@ -55,8 +62,10 @@ struct Profile {
     double voltage_tolerance = 1e-9, current_tolerance = 1e-12, relative_tolerance = 1e-9;
     InitialState initial_state = InitialState::specified;
     double warmup = 0; // Unrecorded interval [0, warmup); time remains absolute.
+    StepControl step_control;
     bool operator==(const Profile&) const = default;
 };
+void validate_step_control(const Profile &profile, const std::string &object);
 struct Endpoint {
     std::string object, port;
     bool operator==(const Endpoint&) const = default;

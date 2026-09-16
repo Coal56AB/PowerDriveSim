@@ -18,7 +18,7 @@
 #include <set>
 namespace pds::desktop {
 void EditorWindow::append_simulation_result(Result batch) {
-    batch.accepted_steps += continuation_steps_;
+    accumulate_statistics(batch, continuation_statistics_);
     if (!result_) {
         result_ = std::move(batch);
         return;

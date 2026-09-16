@@ -71,7 +71,8 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
    Desktop поддерживает save/load/continue/step через меню и верхние значки,
    сохраняет историю при последовательных шагах. [Начальные режимы](initial-conditions.md):
    заданное/нулевое состояние, DC operating point и предварительный прогон без записи.
-   Следом — улучшения шага с учётом событий.
+   [Адаптивный шаг](adaptive-stepping.md) добавлен для BE/Trapezoidal:
+   контроль ошибки, откат проб, точные события, воспроизводимые снимки и статистика.
 4. Расширенный анализ Scope: FFT/THD и измерения энергии; scenario/parameter sweep.
 5. Документация компонентов, energy balance/steady-state/fault assertions,
    общая проверка критериев M2. Ускоренные варианты сравнивать с generic там, где реализованы.

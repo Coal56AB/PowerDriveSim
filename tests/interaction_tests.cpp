@@ -1790,6 +1790,73 @@ class InteractionTests : public QObject {
         next.show_shortcuts();
         QVERIFY(loaded);
     }
+    void adaptive_step_settings_and_run() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        ready(w);
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        w.set_scope_enabled(true);
+        auto *channels = w.findChild<QListWidget *>("channels");
+        channels->item(0)->setCheckState(Qt::Checked);
+        bool edited = false;
+        QTimer::singleShot(0, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("step_settings_dialog");
+            QVERIFY(dialog);
+            QTimer::singleShot(3000, dialog, &QDialog::reject);
+            auto *adaptive = dialog->findChild<QCheckBox *>("adaptive_enabled");
+            auto *maximum = dialog->findChild<QLineEdit *>("step_maximum");
+            auto *minimum = dialog->findChild<QLineEdit *>("step_minimum");
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            QVERIFY(!minimum->isEnabled());
+            adaptive->setChecked(true);
+            QVERIFY(minimum->isEnabled());
+            maximum->setText("1 ms"); minimum->setText("1 s");
+            buttons->button(QDialogButtonBox::Ok)->click();
+            QVERIFY(!dialog->findChild<QLabel *>("step_error")->text().isEmpty());
+            minimum->setText("1 ns");
+            dialog->findChild<QLineEdit *>("step_relative")->setText("1e-5");
+            if (!qEnvironmentVariableIsEmpty("PDS_ADAPTIVE_SCREENSHOT"))
+                QVERIFY(dialog->grab().save(qEnvironmentVariable("PDS_ADAPTIVE_SCREENSHOT")));
+            buttons->button(QDialogButtonBox::Ok)->click();
+            edited = true;
+        });
+        w.show_step_settings();
+        QVERIFY(edited);
+        QVERIFY(w.project().profile.step_control.adaptive);
+        QCOMPARE(w.project().profile.step, .001);
+        QCOMPARE(w.findChild<QLineEdit *>("sim_step")->text(), QString("0.001"));
+        w.undo(); QVERIFY(!w.project().profile.step_control.adaptive);
+        w.redo(); QVERIFY(w.project().profile.step_control.adaptive);
+        w.step_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.result().rejected_steps > 0);
+        const auto rejections = w.result().rejected_steps, solves = w.result().linear_solves;
+        w.step_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QCOMPARE(w.result().accepted_steps, size_t(2));
+        QVERIFY(w.result().rejected_steps >= rejections && w.result().linear_solves > solves);
+        w.continue_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.result().accepted_steps > 5 && w.result().max_local_error <= 1);
+        QVERIFY(w.save_project(dir.filePath("adaptive.pds")));
+        QVERIFY(w.open_project(dir.filePath("adaptive.pds")));
+        QVERIFY(w.project().profile.step_control.adaptive);
+        QCOMPARE(w.project().profile.step_control.minimum_step, 1e-9);
+        QTimer::singleShot(0, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("step_settings_dialog");
+            QVERIFY(dialog);
+            QTimer::singleShot(3000, dialog, &QDialog::reject);
+            dialog->findChild<QLineEdit *>("step_minimum")->setText("-1");
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            buttons->button(QDialogButtonBox::Ok)->click();
+            QVERIFY(!dialog->findChild<QLabel *>("step_error")->text().isEmpty());
+            dialog->findChild<QCheckBox *>("adaptive_enabled")->setChecked(false);
+            buttons->button(QDialogButtonBox::Ok)->click();
+        });
+        w.show_step_settings();
+        QVERIFY(!w.project().profile.step_control.adaptive);
+        QCOMPARE(w.project().profile.step_control.minimum_step, 1e-9);
+    }
     void initial_state_settings_and_run() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

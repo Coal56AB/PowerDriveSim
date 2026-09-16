@@ -69,6 +69,10 @@ int main(int argc, char **argv) {
                   << " | steps=" << result.accepted_steps << " | linear_solves=" << result.linear_solves
                   << " | samples=" << result.samples.size() << " | residual=" << result.max_scaled_residual
                   << " | time=" << result.last_time << '\n';
+        if (result.profile.step_control.adaptive)
+            std::cout << "Adaptive | rejected=" << result.rejected_steps << " | min_step=" << result.min_accepted_step
+                      << " | max_step=" << result.max_accepted_step << " | max_error_ratio=" << result.max_local_error
+                      << " | reduction=" << result.step_reduction_reason << '\n';
         return 0;
     } catch (const pds::Diagnostic &e) {
         std::cerr << e.code << " object=" << e.object << " time=" << e.time << ": " << e.what() << '\n';

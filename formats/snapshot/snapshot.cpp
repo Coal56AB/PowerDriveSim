@@ -31,8 +31,8 @@ struct StreamFormat {
     throw Diagnostic("snapshot_format", "", "Invalid or unsupported state file");
 }
 void check_header(const SimulationSnapshot &s) {
-    if (s.version != 1 || !valid_uuid(s.project_id) || !valid_uuid(s.contract) || !std::isfinite(s.time) ||
-        s.time < 0 || s.next_grid == 0)
+    if ((s.version != 1 && s.version != 2) || !valid_uuid(s.project_id) || !valid_uuid(s.contract) || !std::isfinite(s.time) ||
+        s.time < 0 || s.next_grid == 0 || !std::isfinite(s.next_step) || s.next_step < 0 || (s.version == 1 && s.next_step != 0))
         invalid();
 }
 } // namespace
@@ -42,6 +42,7 @@ void write_snapshot(const SimulationSnapshot &s, std::ostream &stream) {
     stream << "PowerDriveSimSnapshot " << s.version << "\nproject " << std::quoted(s.project_id)
            << "\ncontract " << std::quoted(s.contract) << "\ntime " << s.time << "\ngrid " << s.next_grid
            << '\n';
+    if (s.version >= 2) stream << "next_step " << s.next_step << '\n';
     const auto values = [&](const char *key, const auto &items) {
         if (items.size() > maximum_values)
             invalid();
@@ -73,7 +74,7 @@ SimulationSnapshot read_snapshot(std::istream &stream) {
     };
     SimulationSnapshot s;
     token("PowerDriveSimSnapshot");
-    if (!(stream >> s.version) || s.version != 1)
+    if (!(stream >> s.version) || (s.version != 1 && s.version != 2))
         invalid();
     token("project");
     stream >> std::quoted(s.project_id);
@@ -83,6 +84,10 @@ SimulationSnapshot read_snapshot(std::istream &stream) {
     stream >> s.time;
     token("grid");
     stream >> s.next_grid;
+    if (s.version >= 2) {
+        token("next_step");
+        stream >> s.next_step;
+    }
     if (!stream)
         invalid();
     check_header(s);

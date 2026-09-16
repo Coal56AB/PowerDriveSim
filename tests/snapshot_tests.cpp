@@ -74,8 +74,16 @@ int main(int argc, char **argv) try {
             invalid_file(state_file.str().substr(0, state_file.str().size() / 2));
             invalid_file(state_file.str() + "unexpected");
             auto version = state_file.str();
-            version.replace(version.find("Snapshot 1"), 10, "Snapshot 2");
+            version.replace(0, version.find('\n'), "PowerDriveSimSnapshot 99");
             invalid_file(version);
+            auto legacy = *checkpoint;
+            legacy.version = 1;
+            std::ostringstream old_file;
+            write_snapshot(legacy, old_file);
+            std::istringstream old_input(old_file.str());
+            const auto old_state = read_snapshot(old_input);
+            check(old_state == legacy, "Version 1 checkpoint migration");
+            validate_snapshot(old_state, ir);
             auto shortened = ir;
             shortened.profile.stop = expected.samples[97].time;
             const auto first = run(shortened, nullptr, 0);

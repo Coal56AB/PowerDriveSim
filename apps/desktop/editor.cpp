@@ -859,6 +859,7 @@ void EditorWindow::build_ui() {
     });
     simulation_menu->addSeparator();
     action(simulation_menu, "initial_settings", {}, [this] { show_initial_settings(); });
+    action(simulation_menu, "step_settings", {}, [this] { show_step_settings(); });
     auto *examples = menuBar()->addMenu(text("examples"));
     QDir dir(QCoreApplication::applicationDirPath() + "/examples");
     for (const auto &file : dir.entryList({"*.pds"}, QDir::Files))
@@ -2057,7 +2058,8 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
         }
         const bool append = state && result_ && result_->snapshot == state &&
                             recorded == std::set<std::string>(keys.begin(), keys.end());
-        continuation_steps_ = append ? result_->accepted_steps : 0;
+        continuation_statistics_ = append ? select_result(*result_, {}) : Result{};
+        continuation_statistics_.snapshot.reset();
         if (!append)
             clear_result();
         if (!state)
@@ -2178,8 +2180,9 @@ void EditorWindow::finish_simulation() {
     append_simulation_result(std::move(*outcome.result));
     continuation_ = result_->snapshot;
     update_command_state();
+    const bool stepped = !result_->cancelled && result_->last_time < result_->profile.stop;
     findChild<QLabel *>("diagnostic_status")
-        ->setText(text(result_->cancelled ? "cancelled" : "diagnostics_ok") + " · " +
+        ->setText(text(result_->cancelled ? "cancelled" : stepped ? "step_complete" : "diagnostics_ok") + " · " +
                   QString::number(result_->accepted_steps) + " " + text("steps"));
     choose_channels();
     update_graphs();
@@ -2188,13 +2191,21 @@ void EditorWindow::finish_simulation() {
     for (auto &[id, view] : plot_views_)
         if (view)
             view->set_live(false);
-    banner_->setText(text(result_->cancelled ? "cancelled" : "complete") + " · " +
+    banner_->setText(text(result_->cancelled ? "cancelled" : stepped ? "step_complete" : "complete") + " · " +
                      QString::number(result_->accepted_steps) + " " + text("steps") + " · " +
+                     text("simulated_at").arg(result_->last_time, 0, 'g', 8) + " · " +
                      text("elapsed").arg(simulation_timer_.elapsed() / 1000., 0, 'f', 2) +
                      (result_->samples.empty() ? " · " + text("no_recording") : QString()));
     banner_->setToolTip(text("simulation_timing")
                             .arg(outcome.preparation_seconds, 0, 'f', 3)
                             .arg(outcome.execution_seconds, 0, 'f', 3));
+    if (result_->profile.step_control.adaptive) {
+        banner_->setText(banner_->text() + " · " + text("adaptive_rejected").arg(result_->rejected_steps));
+        banner_->setToolTip(banner_->toolTip() + "\n" + text("adaptive_statistics")
+            .arg(result_->min_accepted_step, 0, 'g', 6).arg(result_->max_accepted_step, 0, 'g', 6)
+            .arg(result_->max_local_error, 0, 'g', 4)
+            .arg(text(("step_reason_" + (result_->step_reduction_reason.empty() ? std::string("none") : result_->step_reduction_reason)).c_str())));
+    }
     update_title();
 }
 void EditorWindow::choose_channels() {
