@@ -95,6 +95,7 @@ void Document::set_view_options(const ViewOptions& options) {
 bool same_simulation(const Project& a,const Project& b) {
     auto normalize=[](Project p){
         p.name.clear();
+        p.experiments.clear();
         auto strip=[](auto& objects){for(auto& o:objects){o.name.clear();o.x=0;o.y=0;o.orientation={};}};
         auto schematic=[&](Schematic& s){
             strip(s.components);strip(s.nodes);strip(s.patterns);strip(s.plots);strip(s.instances);
@@ -109,6 +110,14 @@ bool same_simulation(const Project& a,const Project& b) {
         return p;
     };
     return normalize(a)==normalize(b);
+}
+void Document::set_experiments(const std::vector<Experiment>& experiments) {
+    std::set<std::string> ids;
+    for(const auto& e:experiments) {
+        (void)experiment_size(e);
+        if(!ids.insert(e.id).second)throw Diagnostic("invalid_uuid",e.id,"Duplicate experiment UUID");
+    }
+    apply_with_root("Edit experiments",[](Project&){},[&](Project& root){root.experiments=experiments;});
 }
 std::string Document::add_component(Kind kind,double x,double y) {
     auto id=new_uuid();

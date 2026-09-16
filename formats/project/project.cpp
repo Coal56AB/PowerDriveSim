@@ -1,9 +1,11 @@
 #include "formats/project/project.hpp"
+#include "formats/experiment/experiment.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
 #include <iomanip>
 #include <map>
+#include <set>
 #include <istream>
 #include <ostream>
 #include <sstream>
@@ -139,6 +141,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 p.profile.method=parse_method(method);
             }
             profile=true;
+        } else if(tag=="experiment" && p.schema>=15 && definitions_allowed) {
+            auto experiment = read_experiment(row);
+            if(std::any_of(p.experiments.begin(),p.experiments.end(),[&](const auto& e){return e.id==experiment.id;}))
+                throw Diagnostic("invalid_uuid",experiment.id,"Duplicate experiment UUID");
+            p.experiments.push_back(std::move(experiment));
         } else if(tag=="stepping" && p.schema>=14 && !stepping) {
             auto &control = p.profile.step_control;
             int adaptive = -1;
@@ -294,6 +301,11 @@ void write_project(const Project& p, std::ostream& out) {
             throw Diagnostic("invalid_text",object,"Project format strings must be single-line");
     };
     check_text(p.id,p.id); check_text(p.name,p.id);
+    std::set<std::string> experiment_ids;
+    for(const auto& e:p.experiments) {
+        (void)experiment_size(e);
+        if(!experiment_ids.insert(e.id).second)throw Diagnostic("invalid_uuid",e.id,"Duplicate experiment UUID");
+    }
     for(const auto& node:p.nodes) { check_text(node.id,node.id); check_text(node.name,node.id); }
     for(const auto& c:p.components) {
         check_text(c.id,c.id); check_text(c.name,c.id);
@@ -319,6 +331,7 @@ void write_project(const Project& p, std::ostream& out) {
     out << "stepping " << control.adaptive << ' ' << control.minimum_step << ' ' << control.relative_tolerance
         << ' ' << control.voltage_tolerance << ' ' << control.current_tolerance << ' ' << control.charge_tolerance << '\n';
     auto write_orientation=[&](const auto& object){if(object.orientation.quarter_turns>3)throw Diagnostic("invalid_orientation",object.id,"Rotation must contain 0..3 quarter turns");if(object.orientation.quarter_turns||object.orientation.mirrored)out<<"orientation "<<std::quoted(object.id)<<' '<<object.orientation.quarter_turns<<' '<<object.orientation.mirrored<<'\n';};
+    for(const auto& experiment:p.experiments) { out<<"experiment ";write_experiment(out,experiment);out<<'\n'; }
     for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
     for(const auto& i:p.instances)write_orientation(i);
     for(const auto& i:p.instances){out<<"instance "<<std::quoted(i.id)<<' '<<std::quoted(i.name)<<' '<<std::quoted(i.definition)<<' '<<i.x<<' '<<i.y<<' '<<i.parameters.size();for(const auto& [key,value]:i.parameters)out<<' '<<std::quoted(key)<<' '<<value;out<<'\n';}

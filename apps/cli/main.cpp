@@ -1,4 +1,5 @@
 #include "formats/project/project.hpp"
+#include "apps/cli/experiments.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include "results/csv.hpp"
 #include <charconv>
@@ -8,16 +9,19 @@
 int main(int argc, char **argv) {
     const auto usage = [] {
         std::cerr << "Usage: powerdrive-cli project.pds [output.csv] [--snapshot-in state.pdss] "
-                     "[--snapshot-out state.pdss] [--steps count]\n";
+                     "[--snapshot-out state.pdss] [--steps count] [--experiment name-or-UUID]\n";
         return 2;
     };
     if (argc < 2)
         return usage();
-    std::string csv, state_in, state_out;
+    std::string csv, state_in, state_out, experiment;
     size_t steps = 0;
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
-        if (option == "--snapshot-in" || option == "--snapshot-out") {
+        if (option == "--experiment") {
+            if (++i >= argc || !experiment.empty()) return usage();
+            experiment = argv[i];
+        } else if (option == "--snapshot-in" || option == "--snapshot-out") {
             if (++i >= argc)
                 return usage();
             auto &path = option == "--snapshot-in" ? state_in : state_out;
@@ -41,6 +45,10 @@ int main(int argc, char **argv) {
         if (!input)
             throw pds::Diagnostic("read_error", argv[1], "Cannot open project");
         auto project = pds::read_project(input);
+        if (!experiment.empty()) {
+            if (!state_in.empty() || !state_out.empty() || steps) return usage();
+            return run_cli_experiment(project, experiment, csv);
+        }
         std::optional<pds::SimulationSnapshot> snapshot;
         if (!state_in.empty()) {
             std::ifstream file(state_in);

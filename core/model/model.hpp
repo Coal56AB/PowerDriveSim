@@ -1,10 +1,11 @@
 #pragma once
+#include "core/model/experiment.hpp"
 #include <utility>
 #include <stdexcept>
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 14;
+inline constexpr unsigned project_schema = 15;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -165,6 +166,7 @@ struct Project : Schematic {
     unsigned schema = project_schema;
     std::string id, name;
     Profile profile;
+    std::vector<Experiment> experiments;
     std::vector<Definition> definitions;
     bool scope_enabled=false;
     std::vector<std::string> scope_channels;

@@ -24,6 +24,7 @@ public:
     // Viewing results is persisted, but is independent of the model command history.
     void set_view(const std::string& plot, double begin, double end, double a, double b);
     void set_view_options(const ViewOptions& options);
+    void set_experiments(const std::vector<Experiment>& experiments);
     std::string add_component(Kind kind,double x,double y);
     std::string add_node(bool ground,double x,double y);
     std::string add_pattern(double x,double y);
