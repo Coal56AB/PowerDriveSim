@@ -232,9 +232,10 @@ void validate_hierarchy(const Project &p) {
         std::set<std::string> ids, names, bindings;
         for (const auto &port : d.ports) {
             if (!valid_uuid(port.id) || !ids.insert(port.id).second || port.name.empty() ||
-                !names.insert(port.name).second)
+                !names.insert(port.name).second ||
+                (port.has_position && (!std::isfinite(port.x) || !std::isfinite(port.y))))
                 throw Diagnostic("invalid_public_port", port.id,
-                                 "Public ports require unique UUIDs and names");
+                                 "Public ports require unique UUIDs, names and finite positions");
             auto type = port_type(body, port.terminal);
             if (type.domain != port.domain || type.direction != port.direction)
                 throw Diagnostic("incompatible_public_port", port.id,

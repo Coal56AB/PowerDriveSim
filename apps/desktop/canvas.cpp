@@ -44,8 +44,9 @@ Canvas::Canvas(QWidget *parent) : QGraphicsView(parent) {
 bool Canvas::editing_gesture() const {
     if (gesture_ == Gesture::panning)
         return resume_ != Gesture::idle && resume_ != Gesture::selecting;
-    return gesture_ == Gesture::moving || gesture_ == Gesture::scaling || gesture_ == Gesture::placing || gesture_ == Gesture::wiring ||
-           gesture_ == Gesture::routing || gesture_ == Gesture::reconnecting;
+    return gesture_ == Gesture::moving || gesture_ == Gesture::scaling || gesture_ == Gesture::moving_port ||
+           gesture_ == Gesture::placing || gesture_ == Gesture::wiring || gesture_ == Gesture::routing ||
+           gesture_ == Gesture::reconnecting;
 }
 void Canvas::set_grid_size(double size) {
     grid_size_ = std::clamp(size, 5.0, 100.0);
@@ -139,6 +140,32 @@ QGraphicsItem *Canvas::object_at(QPoint p) const {
             root = root->parentItem();
         if (root != ghost_ && root != wire_preview_ && !root->data(0).toString().isEmpty())
             return root;
+    }
+    return nullptr;
+}
+QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
+    if (port_at(point))
+        return nullptr;
+    const auto scene_point = mapToScene(point);
+    for (auto *root : scene()->selectedItems()) {
+        if (!root || root->data(1).toString() != "atom")
+            continue;
+        for (auto *child : root->childItems()) {
+            if (child->data(1).toString() != "port" || std::abs(child->pos().x()) < 90.0)
+                continue;
+            const QPointF port = child->scenePos();
+            const QPointF edge = root->mapToScene(QPointF(child->pos().x() < 0 ? -90.0 : 90.0, child->pos().y()));
+            QLineF lead(edge, port);
+            if (lead.length() < 1e-6)
+                continue;
+            const QPointF v = port - edge;
+            const QPointF w = scene_point - edge;
+            const double t = std::clamp(QPointF::dotProduct(v, w) / QPointF::dotProduct(v, v), 0.0, 1.0);
+            const QPointF closest = edge + v * t;
+            if (QLineF(scene_point, closest).length() <= 8.0 / transform().m11() &&
+                QLineF(scene_point, port).length() > 10.0 / transform().m11())
+                return child;
+        }
     }
     return nullptr;
 }
@@ -286,6 +313,11 @@ void Canvas::cancel_gesture() {
         if (movement)
             movement();
     }
+    if (gesture_ == Gesture::moving_port && port_anchor_) {
+        port_anchor_->setPos(port_start_);
+        if (movement)
+            movement();
+    }
     if (gesture_ == Gesture::routing && route_item_) {
         QPainterPath p(original_route_.front());
         for (auto point : original_route_)
@@ -295,6 +327,7 @@ void Canvas::cancel_gesture() {
     positions_.clear();
     transforms_.clear();
     move_anchor_ = nullptr;
+    port_anchor_ = nullptr;
     guides_.clear();
     route_item_ = nullptr;
     cancel_wire();
@@ -350,6 +383,17 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
     }
     auto *object = object_at(e->pos());
     if (editable_) {
+        if (auto *pin = public_pin_at(e->pos())) {
+            positions_.clear();
+            transforms_.clear();
+            port_anchor_ = pin;
+            port_start_ = pin->pos();
+            press_scene_ = mapToScene(e->pos());
+            gesture_ = Gesture::moving_port;
+            scroll_timer_.start();
+            e->accept();
+            return;
+        }
         QGraphicsItem *resize_target = object;
         std::optional<ResizeHit> resize_origin;
         if (resize_target)
@@ -554,6 +598,18 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
         if (movement)
             movement();
         viewport()->update();
+    } else if (gesture_ == Gesture::moving_port && port_anchor_) {
+        auto *parent = port_anchor_->parentItem();
+        if (!parent)
+            return;
+        QPointF local = parent->mapFromScene(pos);
+        if (!free)
+            local = parent->mapFromScene(snap_point(parent->mapToScene(local)));
+        port_anchor_->setPos(QPointF(local.x() < 0 ? -100.0 : 100.0, local.y()));
+        port_anchor_->setData(9, true);
+        if (movement)
+            movement();
+        viewport()->update();
     } else if ((gesture_ == Gesture::wiring || gesture_ == Gesture::reconnecting) && wire_preview_) {
         auto target = anchor_at(point, true);
         auto end = QPointF(target.point.x, target.point.y);
@@ -627,7 +683,22 @@ void Canvas::mouseMoveEvent(QMouseEvent *e) {
         return;
     }
     QGraphicsView::mouseMoveEvent(e);
-    if (connect_mode_ || port_at(e->pos()))
+    std::optional<ResizeHit> resize_hit;
+    if (editable_) {
+        if (auto *object = object_at(e->pos()))
+            resize_hit = resize_corner(object, e->pos(), this);
+        if (!resize_hit)
+            for (auto *item : scene()->selectedItems())
+                if ((resize_hit = resize_corner(item, e->pos(), this)))
+                    break;
+    }
+    if (!editing_gesture() && editable_ && public_pin_at(e->pos()))
+        setCursor(Qt::SizeVerCursor);
+    else if (resize_hit)
+        setCursor(resize_hit->x && !resize_hit->y   ? Qt::SizeHorCursor
+                  : !resize_hit->x && resize_hit->y ? Qt::SizeVerCursor
+                                                     : Qt::SizeFDiagCursor);
+    else if (connect_mode_ || port_at(e->pos()))
         setCursor(Qt::CrossCursor);
     else
         unsetCursor();
@@ -677,7 +748,11 @@ void Canvas::mouseReleaseEvent(QMouseEvent *e) {
     }
     if (gesture_ == Gesture::moving)
         move_gesture(e->pos(), e->modifiers());
-    bool moved = (gesture_ == Gesture::moving || gesture_ == Gesture::scaling) && dragged_;
+    if (gesture_ == Gesture::moving_port)
+        move_gesture(e->pos(), e->modifiers());
+    bool moved = (gesture_ == Gesture::moving || gesture_ == Gesture::scaling ||
+                  gesture_ == Gesture::moving_port) &&
+                 dragged_;
     gesture_ = Gesture::idle;
     guides_.clear();
     QGraphicsView::mouseReleaseEvent(e);
@@ -686,6 +761,7 @@ void Canvas::mouseReleaseEvent(QMouseEvent *e) {
     positions_.clear();
     transforms_.clear();
     move_anchor_ = nullptr;
+    port_anchor_ = nullptr;
     move_transform_.reset();
     viewport()->update();
 }
@@ -758,6 +834,20 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
             for (auto corner : corners) {
                 const auto pos = mapFromScene(item->mapToScene(corner));
                 p->drawRoundedRect(QRectF(pos.x() - 5, pos.y() - 5, 10, 10), 2, 2);
+            }
+            const std::array<QPointF, 2> x_handles{QPointF(r.left(), r.center().y()),
+                                                   QPointF(r.right(), r.center().y())};
+            for (auto handle : x_handles) {
+                const auto pos = mapFromScene(item->mapToScene(handle));
+                p->drawRoundedRect(QRectF(pos.x() - 4, pos.y() - 8, 8, 16), 3, 3);
+                p->drawLine(QPointF(pos.x(), pos.y() - 4), QPointF(pos.x(), pos.y() + 4));
+            }
+            const std::array<QPointF, 2> y_handles{QPointF(r.center().x(), r.top()),
+                                                   QPointF(r.center().x(), r.bottom())};
+            for (auto handle : y_handles) {
+                const auto pos = mapFromScene(item->mapToScene(handle));
+                p->drawRoundedRect(QRectF(pos.x() - 8, pos.y() - 4, 16, 8), 3, 3);
+                p->drawLine(QPointF(pos.x() - 4, pos.y()), QPointF(pos.x() + 4, pos.y()));
             }
         }
     for (auto *item : scene()->selectedItems())

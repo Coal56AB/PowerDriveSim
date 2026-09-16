@@ -3,6 +3,7 @@
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <numbers>
 #include <optional>
@@ -17,6 +18,40 @@ constexpr const char *kThreePhaseSwitchRoff = "f34a470a-c84b-5d03-bbe3-437926541
 
 bool three_phase_source_definition(const std::string &id) {
     return id == kThreePhaseYDefinition || id == kThreePhaseDeltaDefinition;
+}
+std::string lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return char(std::tolower(c)); });
+    return value;
+}
+const Definition *find_definition(const Project &p, const std::string &id) {
+    auto found = std::find_if(p.definitions.begin(), p.definitions.end(),
+                              [&](const Definition &definition) { return definition.id == id; });
+    return found == p.definitions.end() ? nullptr : &*found;
+}
+bool three_phase_source_definition(const Project &p, const std::string &id) {
+    if (three_phase_source_definition(id))
+        return true;
+    const auto *d = find_definition(p, id);
+    if (!d)
+        return false;
+    if (lower_ascii(d->name).find("three-phase voltage source") != std::string::npos)
+        return true;
+    bool has_voltage = false, has_frequency = false;
+    for (const auto &parameter : d->parameters) {
+        has_voltage |= parameter.id == kThreePhaseVoltageParameter || parameter.field == "value";
+        has_frequency |= parameter.field == "source_frequency";
+    }
+    return has_voltage && has_frequency && d->ports.size() >= 4;
+}
+bool three_phase_delta_definition(const Project &p, const std::string &id) {
+    if (id == kThreePhaseDeltaDefinition)
+        return true;
+    const auto *d = find_definition(p, id);
+    if (!d)
+        return false;
+    const auto name = lower_ascii(d->name);
+    return name.find("delta") != std::string::npos || name.find("triangle") != std::string::npos;
 }
 bool synthetic_instance_parameter(const std::string &parameter) {
     return parameter == kThreePhaseSwitchRon || parameter == kThreePhaseSwitchRoff;
@@ -46,7 +81,7 @@ void set_instance_parameter(Instance &i, const std::string &parameter, double va
         found->second = value;
 }
 double three_phase_display_voltage(const Project &p, const Instance &i) {
-    const bool delta = i.definition == kThreePhaseDeltaDefinition;
+    const bool delta = three_phase_delta_definition(p, i.definition);
     const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
     const double internal = instance_parameter_value_or(p, i, kThreePhaseVoltageParameter, 310.0);
     const double phase_peak = delta ? internal / std::sqrt(3.0) : internal;
@@ -132,9 +167,9 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
     };
     for(const auto& i:p.instances)if(i.id==id) {
         if(auto v=common(i))return *v;
-        if (three_phase_source_definition(i.definition)) {
+        if (three_phase_source_definition(p, i.definition)) {
             if (key == "three_phase_connection")
-                return unsigned(i.definition == kThreePhaseDeltaDefinition ? 1 : 0);
+                return unsigned(three_phase_delta_definition(p, i.definition) ? 1 : 0);
             if (key == "three_phase_voltage_kind")
                 return unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
             if (key == "three_phase_voltage")
@@ -142,7 +177,7 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
         }
         if(key.rfind("parameter/",0)==0) {
             const auto parameter=key.substr(10);
-            if (three_phase_source_definition(i.definition)) {
+            if (three_phase_source_definition(p, i.definition)) {
                 if (parameter == kThreePhaseVoltageKindParameter)
                     return unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
                 if (parameter == kThreePhaseVoltageParameter)
@@ -232,7 +267,7 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
         if(key=="name"){i.name=std::get<std::string>(value);return;}
         if(key=="x"){i.x=std::get<double>(value);return;}
         if(key=="y"){i.y=std::get<double>(value);return;}
-        if (three_phase_source_definition(i.definition)) {
+        if (three_phase_source_definition(p, i.definition)) {
             if (key == "three_phase_connection") {
                 const double display = three_phase_display_voltage(p, i);
                 const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
@@ -249,7 +284,7 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
             }
             if (key == "three_phase_voltage") {
                 const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
-                const bool delta = i.definition == kThreePhaseDeltaDefinition;
+                const bool delta = three_phase_delta_definition(p, i.definition);
                 set_instance_parameter(i, kThreePhaseVoltageParameter,
                                        three_phase_internal_voltage(kind, delta, std::get<double>(value)));
                 return;
@@ -257,7 +292,7 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
         }
         if(key.rfind("parameter/",0)==0) {
             const auto parameter=key.substr(10);
-            if (three_phase_source_definition(i.definition)) {
+            if (three_phase_source_definition(p, i.definition)) {
                 if (parameter == kThreePhaseVoltageKindParameter) {
                     set_instance_parameter(i, kThreePhaseVoltageKindParameter,
                                            std::holds_alternative<unsigned>(value)
@@ -267,7 +302,7 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 }
                 if (parameter == kThreePhaseVoltageParameter) {
                     const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
-                    const bool delta = i.definition == kThreePhaseDeltaDefinition;
+                    const bool delta = three_phase_delta_definition(p, i.definition);
                     set_instance_parameter(i, kThreePhaseVoltageParameter,
                                            three_phase_internal_voltage(kind, delta, std::get<double>(value)));
                     return;

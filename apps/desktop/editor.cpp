@@ -80,9 +80,7 @@ static std::string serialized(const Project &p) {
     return out.str();
 }
 static QTransform orientation_transform(Orientation o) {
-    int c[] = {1, 0, -1, 0}, sn[] = {0, 1, 0, -1};
     const unsigned t = o.quarter_turns % 4;
-    const double sign = o.mirrored ? -1 : 1;
     QTransform transform;
     transform.scale(o.scale * o.scale_x, o.scale * o.scale_y);
     if (o.mirrored)
@@ -104,18 +102,29 @@ class PortDot final : public QGraphicsItem {
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) override {
         if (parentItem() && parentItem()->data(4).isValid())
             return; // Junctions are drawn once by the parent, not as component terminals.
+        const auto transform = painter->worldTransform();
+        const auto center = transform.map(QPointF());
+        const double sx = std::hypot(transform.m11(), transform.m12());
+        const double sy = std::hypot(transform.m21(), transform.m22());
+        const double scale = std::min(sx, sy);
         if (hovered_) {
             painter->setPen(Qt::NoPen);
             auto halo = themed_signal(color_);
             halo.setAlpha(35);
             painter->setBrush(halo);
-            painter->drawEllipse(QPointF(), 6, 6);
+            painter->save();
+            painter->resetTransform();
+            painter->drawEllipse(center, 6 * scale, 6 * scale);
+            painter->restore();
         }
         auto pen = QPen(themed_signal(color_), 1.2);
         pen.setCosmetic(true);
+        painter->save();
+        painter->resetTransform();
         painter->setPen(pen);
         painter->setBrush(theme_colors().surface);
-        painter->drawEllipse(QPointF(), hovered_ ? 2.8 : 2.0, hovered_ ? 2.8 : 2.0);
+        painter->drawEllipse(center, (hovered_ ? 2.8 : 2.0) * scale, (hovered_ ? 2.8 : 2.0) * scale);
+        painter->restore();
     }
     void hoverEnterEvent(QGraphicsSceneHoverEvent *) override {
         hovered_ = true;
@@ -185,6 +194,28 @@ class Atom final : public QGraphicsItem {
     }
     void set_definition(const Definition &definition) {
         library_icon_id = definition_icon_id(definition.id);
+        if (library_icon_id < 0) {
+            const auto lower = QString::fromStdString(definition.name).toLower();
+            if (lower.contains("three-phase voltage source"))
+                library_icon_id = lower.contains("delta") ? 281 : 280;
+            else if (lower.contains("three-phase ac voltage controller"))
+                library_icon_id = 251;
+            else if (lower.contains("ac voltage controller"))
+                library_icon_id = 250;
+            else if (lower.contains("two-level") || lower.contains("2l") || lower.contains("2-level"))
+                library_icon_id = 260;
+            else if (lower.contains("three-level") || lower.contains("3l") || lower.contains("3-level") ||
+                     lower.contains("npc"))
+                library_icon_id = 261;
+            else if (lower.contains("full bridge"))
+                library_icon_id = 231;
+            else if (lower.contains("half bridge"))
+                library_icon_id = 230;
+            else if (lower.contains("diode bridge"))
+                library_icon_id = 210;
+            else if (lower.contains("thyristor bridge"))
+                library_icon_id = 212;
+        }
         if (definition_ports == definition.ports)
             return;
         prepareGeometryChange();
@@ -193,9 +224,18 @@ class Atom final : public QGraphicsItem {
         for (auto *child : childItems())
             delete child;
         std::vector<const PublicPort *> left, right;
+        auto add_public_port = [&](const PublicPort &external, QPointF pt) {
+            public_ports.push_back({q(external.name), pt});
+            port(q(external.id), pt,
+                 QColor(external.domain == Domain::gate     ? "#17866d"
+                        : external.domain == Domain::signal ? "#8c67c8"
+                                                            : "#146cca"),
+                 q(external.name));
+        };
         const bool three_phase_source =
             definition.id == "1a963f2c-ceb8-5cce-b927-44d735ec9e80" ||
-            definition.id == "eb613164-faf4-5b03-9014-806885fef344";
+            definition.id == "eb613164-faf4-5b03-9014-806885fef344" ||
+            QString::fromStdString(definition.name).toLower().contains("three-phase voltage source");
         if (three_phase_source) {
             for (const auto &port : definition.ports) {
                 if (port.name == "N")
@@ -216,13 +256,8 @@ class Atom final : public QGraphicsItem {
         auto side = [&](const auto &group, double x) {
             for (size_t n = 0; n < group.size(); ++n) {
                 const double y = (double(n) - double(group.size() - 1) / 2.0) * spacing;
-                QPointF pt(x, y);
-                const auto &external = *group[n];
-                public_ports.push_back({q(external.name), pt});
-                port(q(external.id), pt,
-                     QColor(external.domain == Domain::gate     ? "#17866d"
-                            : external.domain == Domain::signal ? "#8c67c8"
-                                                                : "#146cca"));
+                QPointF pt = group[n]->has_position ? QPointF(group[n]->x, group[n]->y) : QPointF(x, y);
+                add_public_port(*group[n], pt);
             }
         };
         side(left, -100);
@@ -233,11 +268,17 @@ class Atom final : public QGraphicsItem {
                     child->setToolTip(q(port.name));
     }
     double port_spacing() const {
-        return input_count > 18 ? 8.0 : input_count > 12 ? 10.0 : input_count > 8 ? 12.0 : 20.0;
+        return input_count > 18 ? 14.0 : input_count > 12 ? 18.0 : input_count > 8 ? 22.0 : 28.0;
     }
     double body_half_height() const {
-        if (type == 4)
-            return std::max(42.0, (std::max(1u, input_count) - 1) * port_spacing() / 2.0 + 24.0);
+        if (type == 4) {
+            double extent = (std::max(1u, input_count) - 1) * port_spacing() / 2.0;
+            for (const auto &[port_name, point] : public_ports) {
+                (void)port_name;
+                extent = std::max(extent, std::abs(point.y()));
+            }
+            return std::max(42.0, extent + 24.0);
+        }
         if (type == 3)
             return std::max(40.0, input_count * 20.0);
         return 40.0;
@@ -286,13 +327,14 @@ class Atom final : public QGraphicsItem {
         }
         return path;
     }
-    void port(const QString &port_name, QPointF location, const QColor &color) {
+    void port(const QString &port_name, QPointF location, const QColor &color, const QString &label = {}) {
         auto *item = new PortDot(color, this);
         item->setPos(location);
         item->setData(0, q(id));
         item->setData(1, "port");
         item->setData(2, port_name);
-        item->setToolTip(port_name);
+        item->setData(8, label.isEmpty() ? port_name : label);
+        item->setToolTip(label.isEmpty() ? port_name : label);
     }
     void snap_ports_to_grid(double grid) {
         auto snap = [&](QPointF point) {
@@ -324,6 +366,24 @@ class Atom final : public QGraphicsItem {
         p->drawText(QRectF(-rect.width() / 2, -rect.height() / 2, rect.width(), rect.height()), flags, value);
         p->restore();
     }
+    static void fixed_aspect_icon(QPainter *p, int icon_id, QRectF rect) {
+        const auto transform = p->worldTransform();
+        const auto center = transform.map(rect.center());
+        const double sx = std::hypot(transform.m11(), transform.m12());
+        const double sy = std::hypot(transform.m21(), transform.m22());
+        const double scale = std::min(sx, sy);
+        if (scale <= 0)
+            return;
+        const double side = std::min(rect.width(), rect.height());
+        const double angle = std::atan2(transform.m12(), transform.m11()) * 180.0 / std::acos(-1.0);
+        p->save();
+        p->resetTransform();
+        p->translate(center);
+        p->rotate(angle);
+        p->scale(transform.determinant() < 0 ? -scale : scale, scale);
+        component_icon(icon_id).paint(p, QRectF(-side / 2.0, -side / 2.0, side, side).toAlignedRect());
+        p->restore();
+    }
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
         const bool channel_highlight = data(channel_highlight_role).toBool();
         auto main_pen = QPen(channel_highlight ? QColor("#b34cce")
@@ -340,15 +400,20 @@ class Atom final : public QGraphicsItem {
             auto font = p->font();
             font.setPointSize(8);
             p->setFont(font);
-            for (const auto &[port_name, point] : public_ports) {
-                p->drawLine(point, QPointF(point.x() < 0 ? -90 : 90, point.y()));
-                label(p, QRectF(point.x() < 0 ? -86 : 6, point.y() - 10, 80, 20),
+            for (auto *child : childItems()) {
+                if (child->data(1).toString() != "port")
+                    continue;
+                const auto port_name = child->data(8).toString();
+                const auto point = child->pos();
+                const bool left = point.x() < 0;
+                p->drawLine(point, QPointF(left ? -90 : 90, point.y()));
+                label(p, QRectF(left ? -86 : 50, point.y() - 10, 36, 20),
                       point.x() < 0 ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
-                      QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 65));
+                      QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 34));
             }
             if (library_icon_id >= 0) {
-                const int icon_h = int(std::min(96.0, std::max(50.0, 2.0 * h - 22.0)));
-                component_icon(library_icon_id).paint(p, QRect(-64, -icon_h / 2, 128, icon_h));
+                const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
+                fixed_aspect_icon(p, library_icon_id, QRectF(-44, -icon_h / 2, 88, icon_h));
             } else {
                 font.setPointSize(11);
                 font.setBold(true);
@@ -2225,6 +2290,43 @@ void EditorWindow::commit_positions() {
         return;
     if (commit_label_positions())
         return;
+    struct PortMove {
+        std::string definition;
+        std::string port;
+        double x = 0, y = 0;
+    };
+    std::vector<PortMove> port_moves;
+    for (const auto &instance : project().instances) {
+        auto atom = atoms_.find(instance.id);
+        if (atom == atoms_.end())
+            continue;
+        for (auto *child : atom->second->childItems()) {
+            if (child->data(1).toString() != "port" || !child->data(9).toBool())
+                continue;
+            const auto point = child->pos();
+            port_moves.push_back({instance.definition, child->data(2).toString().toStdString(), point.x(), point.y()});
+        }
+    }
+    if (!port_moves.empty()) {
+        document_->apply("Move public ports", [&](Project &p) {
+            for (const auto &move : port_moves) {
+                auto def = std::find_if(p.definitions.begin(), p.definitions.end(),
+                                        [&](const auto &d) { return d.id == move.definition; });
+                if (def == p.definitions.end())
+                    continue;
+                auto port = std::find_if(def->ports.begin(), def->ports.end(),
+                                         [&](const auto &candidate) { return candidate.id == move.port; });
+                if (port == def->ports.end())
+                    continue;
+                port->has_position = true;
+                port->x = move.x;
+                port->y = move.y;
+            }
+        });
+        refresh_canvas(true, false);
+        auto_connect_nearby_pins();
+        return;
+    }
     bool moved = false;
     auto orientation = [](QGraphicsItem *item) {
         const auto t = item->transform();

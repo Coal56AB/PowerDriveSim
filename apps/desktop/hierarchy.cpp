@@ -36,6 +36,19 @@ constexpr const char *kThreePhaseVoltageKindParameter = "9e07a7ea-8295-5fd0-92c6
 bool three_phase_source_definition(const std::string &id) {
     return id == kThreePhaseYDefinition || id == kThreePhaseDeltaDefinition;
 }
+bool three_phase_source_definition(const Definition &definition) {
+    if (three_phase_source_definition(definition.id))
+        return true;
+    const auto name = QString::fromStdString(definition.name).toLower();
+    if (name.contains("three-phase voltage source"))
+        return true;
+    bool has_voltage = false, has_frequency = false;
+    for (const auto &parameter : definition.parameters) {
+        has_voltage |= parameter.id == kThreePhaseVoltageParameter || parameter.field == "value";
+        has_frequency |= parameter.field == "source_frequency";
+    }
+    return has_voltage && has_frequency && definition.ports.size() >= 4;
+}
 } // namespace
 
 void EditorWindow::update_instance_specs() {
@@ -65,7 +78,7 @@ void EditorWindow::update_instance_specs() {
     for (const auto &d : root_project().definitions) {
         QJsonArray fields{
             QJsonObject{{"key", "name"}, {"editor", "text"}, {"label", "name"}, {"inline", "name"}}};
-        if (three_phase_source_definition(d.id)) {
+        if (three_phase_source_definition(d)) {
             fields.append(QJsonObject{
                 {"key", "three_phase_connection"},
                 {"editor", "enum"},
@@ -87,7 +100,7 @@ void EditorWindow::update_instance_specs() {
                                       {"min", 0}});
         }
         for (const auto &p : d.parameters) {
-            if (three_phase_source_definition(d.id) &&
+            if (three_phase_source_definition(d) &&
                 (p.id == kThreePhaseVoltageParameter || p.id == kThreePhaseVoltageKindParameter))
                 continue;
             QJsonObject field = binding_field(d, p);
@@ -621,9 +634,17 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             for (int row = 0; row < ports.rowCount(); ++row) {
                 auto *combo = qobject_cast<QComboBox *>(ports.cellWidget(row, 1));
                 const auto &t = terminals.at(size_t(combo->currentIndex()));
-                updated.ports.push_back({ports.item(row, 0)->data(Qt::UserRole).toString().toStdString(),
-                                         ports.item(row, 0)->text().trimmed().toStdString(), t.endpoint,
-                                         t.type.domain, t.type.direction});
+                PublicPort port{ports.item(row, 0)->data(Qt::UserRole).toString().toStdString(),
+                                ports.item(row, 0)->text().trimmed().toStdString(), t.endpoint,
+                                t.type.domain, t.type.direction};
+                auto previous = std::find_if(edited.ports.begin(), edited.ports.end(),
+                                             [&](const auto &old) { return old.id == port.id; });
+                if (previous != edited.ports.end()) {
+                    port.has_position = previous->has_position;
+                    port.x = previous->x;
+                    port.y = previous->y;
+                }
+                updated.ports.push_back(port);
             }
             for (int row = 0; row < parameters.rowCount(); ++row) {
                 auto *combo = qobject_cast<QComboBox *>(parameters.cellWidget(row, 1));

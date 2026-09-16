@@ -91,7 +91,7 @@ class Canvas : public QGraphicsView {
     void keyPressEvent(QKeyEvent *) override;
 
   private:
-    enum class Gesture { idle, selecting, moving, placing, wiring, routing, reconnecting, panning, scaling };
+    enum class Gesture { idle, selecting, moving, placing, wiring, routing, reconnecting, panning, scaling, moving_port };
     Gesture gesture_ = Gesture::idle, resume_ = Gesture::idle;
     bool editable_ = true, dragged_ = false, connect_mode_ = false;
     double grid_size_ = 20.0;
@@ -104,6 +104,8 @@ class Canvas : public QGraphicsView {
     std::map<QGraphicsItem *, QPointF> positions_;
     std::map<QGraphicsItem *, QTransform> transforms_;
     QGraphicsItem *move_anchor_ = nullptr;
+    QGraphicsItem *port_anchor_ = nullptr;
+    QPointF port_start_;
     QTransform move_transform_, move_base_;
     QPointF scale_origin_;
     double scale_start_distance_ = 1.0;
@@ -116,6 +118,7 @@ class Canvas : public QGraphicsView {
     WireAnchor anchor_at(QPoint point, bool compatible_only) const;
     QGraphicsPathItem *wire_at(QPoint point) const;
     QGraphicsItem *object_at(QPoint point) const;
+    QGraphicsItem *public_pin_at(QPoint point) const;
     void begin_wire(WireAnchor source);
     QPointF wire_origin_;
     QGraphicsPathItem *wire_preview_ = nullptr;

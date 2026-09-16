@@ -54,11 +54,30 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 if(kind=="public_port") {
                     PublicPort port;unsigned domain=0,direction=0;
                     meta>>std::quoted(port.id)>>std::quoted(port.name)>>std::quoted(port.terminal.object)>>std::quoted(port.terminal.port)>>domain>>direction;
-                    if(domain>unsigned(Domain::signal)||direction>unsigned(Direction::output))meta.setstate(std::ios::failbit);
+                    if(meta.fail()||domain>unsigned(Domain::signal)||direction>unsigned(Direction::output))
+                        throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
+                    std::string tail;
+                    std::getline(meta,tail);
+                    std::istringstream position(tail);
+                    position>>std::ws;
+                    if(!position.eof()) {
+                        position>>port.x>>port.y;
+                        if(position.fail())
+                            throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
+                        position.clear();
+                        position>>std::ws;
+                        if(!position.eof())
+                            throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
+                        port.has_position=true;
+                    }
                     port.domain=Domain(domain);port.direction=Direction(direction);d.ports.push_back(port);
+                    continue;
                 } else if(kind=="public_parameter") {
                     PublicParameter param;meta>>std::quoted(param.id)>>std::quoted(param.name)>>std::quoted(param.unit)>>std::quoted(param.object)>>std::quoted(param.field)>>param.value;
                     d.parameters.push_back(param);
+                    if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
+                    meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata: "+line);
+                    continue;
                 } else throw Diagnostic("parse_error",d.id,"Unknown definition metadata: "+kind);
                 if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata");
                 meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata");
@@ -443,7 +462,9 @@ void write_project(const Project& p, std::ostream& out) {
         out<<"definition "<<std::quoted(d.id)<<' '<<std::quoted(d.name)<<'\n';
         for(const auto& port:d.ports) {
             for(const auto* value:{&port.id,&port.name,&port.terminal.object,&port.terminal.port})check_text(*value,d.id);
-            out<<"public_port "<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.terminal.object)<<' '<<std::quoted(port.terminal.port)<<' '<<unsigned(port.domain)<<' '<<unsigned(port.direction)<<'\n';
+            out<<"public_port "<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.terminal.object)<<' '<<std::quoted(port.terminal.port)<<' '<<unsigned(port.domain)<<' '<<unsigned(port.direction);
+            if(port.has_position)out<<' '<<port.x<<' '<<port.y;
+            out<<'\n';
         }
         for(const auto& v:d.parameters) {
             for(const auto* value:{&v.id,&v.name,&v.unit,&v.object,&v.field})check_text(*value,d.id);

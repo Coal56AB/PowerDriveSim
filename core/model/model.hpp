@@ -152,6 +152,8 @@ struct PublicPort {
     Endpoint terminal;
     Domain domain=Domain::electrical;
     Direction direction=Direction::conserving;
+    bool has_position=false;
+    double x=0,y=0;
     bool operator==(const PublicPort&) const = default;
 };
 struct PublicParameter {
