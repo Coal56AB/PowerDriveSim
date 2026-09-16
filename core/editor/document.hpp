@@ -48,6 +48,8 @@ private:
     std::vector<std::string> location_;
     void rebuild_view();
     Project merge_view(const Project& view) const;
+    void apply_with_root(const std::string& label,const std::function<void(Project&)>& change,
+                         const std::function<void(Project&)>& finalize);
     std::vector<Change> undo_,redo_;
 };
 bool same_simulation(const Project& a, const Project& b);

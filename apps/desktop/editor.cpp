@@ -1247,13 +1247,6 @@ void EditorWindow::refresh(bool invalidate) {
     if (scene_path_ != hierarchy_path()) {
         canvas_->cancel_gesture();
         cancel_inline_edit();
-        for (auto &[id, window] : plot_windows_) {
-            (void)id;
-            if (window)
-                delete window;
-        }
-        plot_windows_.clear();
-        plot_views_.clear();
         atoms_.clear();
         wires_.clear();
         labels_.clear();

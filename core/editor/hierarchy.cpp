@@ -123,170 +123,159 @@ void Document::edit_definition(const std::string &id, const std::function<void(D
 }
 std::string Document::create_definition(const std::vector<std::string> &selected, const std::string &name) {
     const auto instance = new_uuid();
-    apply("Create subcircuit", [&](Project &p) {
-        std::set<std::string> ids(selected.begin(), selected.end());
-        Definition d;
-        d.id = new_uuid();
-        d.name = name;
-        d.wired = true;
-        double x = 0, y = 0;
-        size_t count = 0;
-        auto center = [&](const auto &objects) {
-            for (const auto &o : objects)
-                if (ids.count(o.id)) {
-                    x += o.x;
-                    y += o.y;
-                    ++count;
-                }
-        };
-        center(p.nodes);
-        center(p.components);
-        center(p.patterns);
-        center(p.plots);
-        center(p.instances);
-        if (!count || name.empty())
-            throw Diagnostic("invalid_selection", p.id, "Select objects and supply a subcircuit name");
-        x /= count;
-        y /= count;
-        const auto before = resolve_connections(current_).nets;
-        const auto original = flatten(current_);
-        std::map<std::string, std::string> public_ports;
-        auto expose = [&](Endpoint endpoint) {
-            auto key = endpoint_key(endpoint);
-            if (!public_ports.count(key)) {
-                auto type = port_type(p, endpoint);
-                auto id = new_uuid();
-                auto port_name = endpoint.port;
-                for (const auto &nested : p.instances)
-                    if (nested.id == endpoint.object)
-                        for (const auto &port : definition(p, nested.definition).ports)
-                            if (port.id == endpoint.port)
-                                port_name = port.name;
-                auto base =
-                    std::get<std::string>(read_property(p, endpoint.object, "name")) + "." + port_name;
-                port_name = base;
-                unsigned suffix = 2;
-                while (std::any_of(d.ports.begin(), d.ports.end(),
-                                   [&](const auto &port) { return port.name == port_name; }))
-                    port_name = base + std::to_string(suffix++);
-                d.ports.push_back({id, port_name, endpoint, type.domain, type.direction});
-                public_ports[key] = id;
-            }
-            return Endpoint{instance, public_ports.at(key)};
-        };
-        for (auto &parent : p.definitions)
-            if (parent.id == current_definition()) {
-                for (auto &port : parent.ports)
-                    if (ids.count(port.terminal.object))
-                        port.terminal = expose(port.terminal);
-                for (auto &param : parent.parameters)
-                    if (ids.count(param.object)) {
-                        d.parameters.push_back(param);
-                        param.object = instance;
-                        param.field = d.parameters.back().id;
+    std::map<std::string, std::string> channels;
+    const auto original_views = current_.view_options;
+    apply_with_root(
+        "Create subcircuit",
+        [&](Project &p) {
+            std::set<std::string> ids(selected.begin(), selected.end());
+            Definition d;
+            d.id = new_uuid();
+            d.name = name;
+            d.wired = true;
+            double x = 0, y = 0;
+            size_t count = 0;
+            auto center = [&](const auto &objects) {
+                for (const auto &o : objects)
+                    if (ids.count(o.id)) {
+                        x += o.x;
+                        y += o.y;
+                        ++count;
                     }
-            }
-        for (auto &wire : p.wires) {
-            const bool from = ids.count(wire.from.object) != 0, to = ids.count(wire.to.object) != 0;
-            if (from == to)
-                continue;
-            auto &endpoint = from ? wire.from : wire.to;
-            endpoint = expose(endpoint);
-            wire.bends.clear();
-        }
-        auto move = [&](auto &from, auto &to) {
-            for (auto o : from)
-                if (ids.count(o.id)) {
-                    o.x -= x;
-                    o.y -= y;
-                    to.push_back(std::move(o));
+            };
+            center(p.nodes);
+            center(p.components);
+            center(p.patterns);
+            center(p.plots);
+            center(p.instances);
+            if (!count || name.empty())
+                throw Diagnostic("invalid_selection", p.id, "Select objects and supply a subcircuit name");
+            x /= count;
+            y /= count;
+            const auto before = resolve_connections(current_).nets;
+            const auto original = flatten(current_);
+            std::map<std::string, std::string> public_ports;
+            auto expose = [&](Endpoint endpoint) {
+                auto key = endpoint_key(endpoint);
+                if (!public_ports.count(key)) {
+                    auto type = port_type(p, endpoint);
+                    auto id = new_uuid();
+                    auto port_name = endpoint.port;
+                    for (const auto &nested : p.instances)
+                        if (nested.id == endpoint.object)
+                            for (const auto &port : definition(p, nested.definition).ports)
+                                if (port.id == endpoint.port)
+                                    port_name = port.name;
+                    auto base =
+                        std::get<std::string>(read_property(p, endpoint.object, "name")) + "." + port_name;
+                    port_name = base;
+                    unsigned suffix = 2;
+                    while (std::any_of(d.ports.begin(), d.ports.end(),
+                                       [&](const auto &port) { return port.name == port_name; }))
+                        port_name = base + std::to_string(suffix++);
+                    d.ports.push_back({id, port_name, endpoint, type.domain, type.direction});
+                    public_ports[key] = id;
                 }
-            std::erase_if(from, [&](const auto &o) { return ids.count(o.id); });
-        };
-        move(p.nodes, d.nodes);
-        move(p.components, d.components);
-        move(p.patterns, d.patterns);
-        move(p.plots, d.plots);
-        move(p.instances, d.instances);
-        for (auto wire : p.wires)
-            if (ids.count(wire.from.object) && ids.count(wire.to.object)) {
-                for (auto &pt : wire.bends) {
-                    pt.x -= x;
-                    pt.y -= y;
+                return Endpoint{instance, public_ports.at(key)};
+            };
+            for (auto &parent : p.definitions)
+                if (parent.id == current_definition()) {
+                    for (auto &port : parent.ports)
+                        if (ids.count(port.terminal.object))
+                            port.terminal = expose(port.terminal);
+                    for (auto &param : parent.parameters)
+                        if (ids.count(param.object)) {
+                            d.parameters.push_back(param);
+                            param.object = instance;
+                            param.field = d.parameters.back().id;
+                        }
                 }
-                d.wires.push_back(std::move(wire));
+            for (auto &wire : p.wires) {
+                const bool from = ids.count(wire.from.object) != 0, to = ids.count(wire.to.object) != 0;
+                if (from == to)
+                    continue;
+                auto &endpoint = from ? wire.from : wire.to;
+                endpoint = expose(endpoint);
+                wire.bends.clear();
             }
-        std::erase_if(p.wires,
-                      [&](const auto &w) { return ids.count(w.from.object) && ids.count(w.to.object); });
-        for (const auto &e : p.events)
-            if (ids.count(e.target))
-                d.events.push_back(e);
-        std::erase_if(p.events, [&](const auto &e) { return ids.count(e.target); });
-        for (const auto &l : p.labels)
-            if (ids.count(l.object))
-                d.labels.push_back(l);
-        std::erase_if(p.labels, [&](const auto &l) { return ids.count(l.object); });
-        for (const auto &v : p.view_options)
-            if (ids.count(v.plot))
-                d.view_options.push_back(v);
-        std::erase_if(p.view_options, [&](const auto &v) { return ids.count(v.plot); });
-        p.instances.push_back({instance, name, d.id, x, y});
-        p.definitions.push_back(std::move(d));
-        for (auto &parent : p.definitions)
-            if (parent.id == current_definition())
-                static_cast<Schematic &>(parent) = p;
-        const auto after = resolve_connections(merge_view(p)).nets;
-        std::map<std::string, std::string> channels;
-        const auto edited_definition = current_definition();
-        for (const auto &[id, origin] : original.origins) {
-            auto path = origin.instances;
-            std::vector<std::string> prefix;
-            for (size_t level = 0; level <= origin.instances.size(); ++level) {
-                if (definition_at(current_, prefix) == edited_definition) {
-                    const auto candidate =
-                        level < origin.instances.size() ? origin.instances[level] : origin.object;
-                    if (ids.count(candidate)) {
-                        path.insert(path.begin() + static_cast<std::ptrdiff_t>(level), instance);
-                        break;
+            auto move = [&](auto &from, auto &to) {
+                for (auto o : from)
+                    if (ids.count(o.id)) {
+                        o.x -= x;
+                        o.y -= y;
+                        to.push_back(std::move(o));
                     }
+                std::erase_if(from, [&](const auto &o) { return ids.count(o.id); });
+            };
+            move(p.nodes, d.nodes);
+            move(p.components, d.components);
+            move(p.patterns, d.patterns);
+            move(p.plots, d.plots);
+            move(p.instances, d.instances);
+            for (auto wire : p.wires)
+                if (ids.count(wire.from.object) && ids.count(wire.to.object)) {
+                    for (auto &pt : wire.bends) {
+                        pt.x -= x;
+                        pt.y -= y;
+                    }
+                    d.wires.push_back(std::move(wire));
                 }
-                if (level < origin.instances.size())
-                    prefix.push_back(origin.instances[level]);
+            std::erase_if(p.wires,
+                          [&](const auto &w) { return ids.count(w.from.object) && ids.count(w.to.object); });
+            for (const auto &e : p.events)
+                if (ids.count(e.target))
+                    d.events.push_back(e);
+            std::erase_if(p.events, [&](const auto &e) { return ids.count(e.target); });
+            for (const auto &l : p.labels)
+                if (ids.count(l.object))
+                    d.labels.push_back(l);
+            std::erase_if(p.labels, [&](const auto &l) { return ids.count(l.object); });
+            for (const auto &v : p.view_options)
+                if (ids.count(v.plot))
+                    d.view_options.push_back(v);
+            std::erase_if(p.view_options, [&](const auto &v) { return ids.count(v.plot); });
+            p.instances.push_back({instance, name, d.id, x, y});
+            p.definitions.push_back(std::move(d));
+            for (auto &parent : p.definitions)
+                if (parent.id == current_definition())
+                    static_cast<Schematic &>(parent) = p;
+            const auto after = resolve_connections(merge_view(p)).nets;
+            const auto edited_definition = current_definition();
+            for (const auto &[id, origin] : original.origins) {
+                auto path = origin.instances;
+                std::vector<std::string> prefix;
+                for (size_t level = 0; level <= origin.instances.size(); ++level) {
+                    if (definition_at(current_, prefix) == edited_definition) {
+                        const auto candidate =
+                            level < origin.instances.size() ? origin.instances[level] : origin.object;
+                        if (ids.count(candidate)) {
+                            path.insert(path.begin() + static_cast<std::ptrdiff_t>(level), instance);
+                            break;
+                        }
+                    }
+                    if (level < origin.instances.size())
+                        prefix.push_back(origin.instances[level]);
+                }
+                channels[id] = expanded_uuid(path, origin.object);
+                channels["gate/" + id] = "gate/" + channels[id];
             }
-            channels[id] = expanded_uuid(path, origin.object);
-            channels["gate/" + id] = "gate/" + channels[id];
-        }
-        for (const auto &[endpoint, net] : before) {
-            const auto slash = endpoint.find('/');
-            const auto object = endpoint.substr(0, slash);
-            const auto key = channels.count(object) ? channels.at(object) + endpoint.substr(slash) : endpoint;
-            if (auto found = after.find(key); found != after.end())
-                channels[net] = found->second;
-        }
-        for (auto &key : p.scope_channels)
-            if (channels.count(key))
-                key = channels.at(key);
-        for (auto &view : p.view_options) {
-            auto remap = [&](std::string &key) {
+            for (const auto &[endpoint, net] : before) {
+                const auto slash = endpoint.find('/');
+                const auto object = endpoint.substr(0, slash);
+                const auto key =
+                    channels.count(object) ? channels.at(object) + endpoint.substr(slash) : endpoint;
+                if (auto found = after.find(key); found != after.end())
+                    channels[net] = found->second;
+            }
+            for (auto &key : p.scope_channels)
                 if (channels.count(key))
                     key = channels.at(key);
-            };
-            remap(view.cursor_channel_a);
-            remap(view.cursor_channel_b);
-            for (auto &key : view.hidden_channels)
-                remap(key);
-            for (auto &style : view.curve_styles)
-                remap(style.channel);
-            for (auto &[key, value] : view.signal_displays) {
-                (void)value;
-                remap(key);
-            }
-            for (auto &[key, value] : view.curve_names) {
-                (void)value;
-                remap(key);
-            }
-        }
-    });
+        },
+        [&](Project &root) {
+            root.view_options = original_views;
+            for (auto &view : root.view_options)
+                remap_view_options(view, channels);
+        });
     return instance;
 }
 void Document::detach_instance(const std::string &id) {
@@ -369,7 +358,10 @@ void Document::expand_instance(const std::string &id) {
         append(p.wires, expanded.project.wires);
         append(p.events, expanded.project.events);
         append(p.labels, expanded.project.labels);
-        append(p.view_options, expanded.project.view_options);
+        for (const auto &view : expanded.project.view_options)
+            if (std::none_of(p.view_options.begin(), p.view_options.end(),
+                             [&](const auto &prior) { return prior.plot == view.plot; }))
+                p.view_options.push_back(view);
         std::erase_if(p.instances, [&](const auto &i) { return i.id == id; });
         std::erase_if(p.labels, [&](const auto &l) { return l.object == id; });
     });

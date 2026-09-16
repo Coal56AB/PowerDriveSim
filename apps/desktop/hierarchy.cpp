@@ -1,7 +1,9 @@
 #include "core/model/hierarchy.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "core/editor/properties.hpp"
 #include <QAction>
+#include <QApplication>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -12,25 +14,46 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <set>
 namespace pds::desktop {
 void EditorWindow::update_instance_specs() {
     bool changed = false;
+    std::function<QJsonObject(const Definition &, const PublicParameter &)> binding_field;
+    binding_field = [&](const Definition &d, const PublicParameter &p) {
+        for (const auto &child : d.instances)
+            if (child.id == p.object) {
+                const auto &nested = definition(root_project(), child.definition);
+                for (const auto &parameter : nested.parameters)
+                    if (parameter.id == p.field)
+                        return binding_field(nested, parameter);
+            }
+        std::string type;
+        for (const auto &c : d.components)
+            if (c.id == p.object)
+                type = kind_name(c.kind);
+        for (const auto &g : d.patterns)
+            if (g.id == p.object)
+                type = g.pwm ? "pwm" : "pattern";
+        if (component_specs_.count(type))
+            for (const auto &entry : component_specs_.at(type).value("fields").toArray())
+                if (entry.toObject().value("key").toString() == QString::fromStdString(p.field))
+                    return entry.toObject();
+        return QJsonObject{};
+    };
     for (const auto &d : root_project().definitions) {
         QJsonArray fields{
             QJsonObject{{"key", "name"}, {"editor", "text"}, {"label", "name"}, {"inline", "name"}}};
         for (const auto &p : d.parameters) {
-            QJsonObject field;
-            for (const auto &c : d.components)
-                if (c.id == p.object && component_specs_.count(kind_name(c.kind)))
-                    for (const auto &entry : component_specs_.at(kind_name(c.kind)).value("fields").toArray())
-                        if (entry.toObject().value("key").toString() == QString::fromStdString(p.field))
-                            field = entry.toObject();
+            QJsonObject field = binding_field(d, p);
             field.remove("inline");
             field.remove("inlinePart");
             field.remove("condition");
@@ -228,21 +251,54 @@ void EditorWindow::refresh_hierarchy() {
                     note->setPos(5, -20);
                 }
             }
-    hierarchy_->clear();
-    auto *root_item = new QTreeWidgetItem(hierarchy_, {QString::fromStdString(root.name)});
-    root_item->setData(0, Qt::UserRole, QStringList{});
-    std::function<void(QTreeWidgetItem *, const Schematic &, QStringList)> children =
-        [&](QTreeWidgetItem *parent, const Schematic &schematic, QStringList path) {
-            for (const auto &i : schematic.instances) {
-                auto steps = path;
-                steps.push_back(QString::fromStdString(i.id));
-                auto *item = new QTreeWidgetItem(parent, {QString::fromStdString(i.name)});
-                item->setData(0, Qt::UserRole, steps);
-                children(item, definition(root, i.definition), steps);
+    QStringList structure{QString::fromStdString(root.id), QString::fromStdString(root.name)};
+    auto describe = [&](const Schematic &s) {
+        for (const auto &i : s.instances)
+            structure << QString::fromStdString(i.id) << QString::fromStdString(i.name)
+                      << QString::fromStdString(i.definition);
+    };
+    describe(root);
+    for (const auto &d : root.definitions) {
+        structure << QString::fromStdString(d.id);
+        describe(d);
+    }
+    const bool rebuild = hierarchy_->property("structure").toStringList() != structure;
+    if (rebuild) {
+        std::set<QString> expanded;
+        for (QTreeWidgetItemIterator it(hierarchy_); *it; ++it)
+            if ((*it)->isExpanded())
+                expanded.insert((*it)->data(0, Qt::UserRole).toStringList().join('/'));
+        hierarchy_->clear();
+        auto *root_item = new QTreeWidgetItem(hierarchy_, {QString::fromStdString(root.name)});
+        root_item->setData(0, Qt::UserRole, QStringList{});
+        root_item->setExpanded(true);
+        std::function<void(QTreeWidgetItem *, const Schematic &, QStringList)> children =
+            [&](QTreeWidgetItem *parent, const Schematic &schematic, QStringList path) {
+                for (const auto &i : schematic.instances) {
+                    auto steps = path;
+                    steps.push_back(QString::fromStdString(i.id));
+                    auto *item = new QTreeWidgetItem(parent, {QString::fromStdString(i.name)});
+                    item->setData(0, Qt::UserRole, steps);
+                    item->setExpanded(expanded.count(steps.join('/')) != 0);
+                    children(item, definition(root, i.definition), steps);
+                }
+            };
+        children(root_item, root, {});
+        hierarchy_->setProperty("structure", structure);
+    }
+    QStringList current_path;
+    for (const auto &step : hierarchy_path())
+        current_path << QString::fromStdString(step);
+    if (rebuild || hierarchy_->property("viewPath").toStringList() != current_path) {
+        for (QTreeWidgetItemIterator it(hierarchy_); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole).toStringList() == current_path) {
+                hierarchy_->setCurrentItem(*it);
+                for (auto *parent = (*it)->parent(); parent; parent = parent->parent())
+                    parent->setExpanded(true);
+                break;
             }
-        };
-    children(root_item, root, {});
-    hierarchy_->expandAll();
+        hierarchy_->setProperty("viewPath", current_path);
+    }
     const bool instance = std::any_of(project().instances.begin(), project().instances.end(),
                                       [&](const auto &i) { return i.id == selected_; });
     commands_.at("group_subcircuit")->setEnabled(editing_allowed() && !selected_ids().empty());
@@ -254,6 +310,11 @@ void EditorWindow::refresh_hierarchy() {
     commands_.at("public_interface")
         ->setEnabled(editing_allowed() && (instance || !hierarchy_path().empty()));
     commands_.at("insert_subcircuit")->setEnabled(editing_allowed() && !root.definitions.empty());
+    auto *focus = QApplication::focusWidget();
+    if (qobject_cast<QLineEdit *>(focus) || qobject_cast<QPlainTextEdit *>(focus) ||
+        qobject_cast<QSpinBox *>(focus))
+        for (const auto *key : {"group_subcircuit", "open_internals", "hierarchy_up"})
+            commands_.at(key)->setEnabled(false);
     canvas_->set_editable(editing_allowed());
     library_->setEnabled(editing_allowed());
 }
@@ -286,6 +347,9 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     }
     for (const auto &g : body.patterns)
         terminal(g.id, g.name, "out");
+    for (const auto &plot : body.plots)
+        for (unsigned input = 1; input <= plot.inputs; ++input)
+            terminal(plot.id, plot.name, "in" + std::to_string(input));
     for (const auto &i : body.instances)
         for (const auto &port : definition(body, i.definition).ports) {
             terminal(i.id, i.name, port.id);
@@ -294,18 +358,31 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     struct Binding {
         QString name;
         std::string object, field, unit;
-        double value;
+        double value, scale = 1;
     };
     std::vector<Binding> bindings;
-    for (const auto &c : body.components) {
-        if (c.kind == Kind::resistor || c.kind == Kind::capacitor || c.kind == Kind::inductor ||
-            c.kind == Kind::voltage || c.kind == Kind::current)
-            bindings.push_back({QString::fromStdString(c.name) + " / " + text("value"), c.id, "value",
-                                component_unit(c.kind), c.value});
-        if (c.kind == Kind::capacitor || c.kind == Kind::inductor)
-            bindings.push_back({QString::fromStdString(c.name) + " / " + text("initial"), c.id, "initial",
-                                c.kind == Kind::capacitor ? "V" : "A", c.initial});
-    }
+    auto fields = [&](const auto &objects) {
+        for (const auto &object : objects) {
+            auto spec = component_specs_.find(object_type(body, object.id));
+            if (spec == component_specs_.end())
+                continue;
+            for (const auto &entry : spec->second.value("fields").toArray()) {
+                const auto field = entry.toObject();
+                if (field.value("editor").toString() != "number")
+                    continue;
+                const auto key = field.value("key").toString().toStdString();
+                const auto value = read_property(body, object.id, key);
+                if (!std::holds_alternative<double>(value))
+                    continue;
+                bindings.push_back({QString::fromStdString(object.name) + " / " +
+                                        text(field.value("label").toString().toUtf8().constData()),
+                                    object.id, key, field.value("unit").toString().toStdString(),
+                                    std::get<double>(value), field.value("scale").toDouble(1)});
+            }
+        }
+    };
+    fields(body.components);
+    fields(body.patterns);
     for (const auto &i : body.instances)
         for (const auto &p : definition(body, i.definition).parameters)
             bindings.push_back(
@@ -374,11 +451,12 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         }
         combo->setCurrentIndex(selected);
         parameters.setCellWidget(row, 1, combo);
-        auto *value = new QLineEdit(QString::number(p.value, 'g', 12));
+        auto *value = new QLineEdit(QString::number(p.value * bindings.at(size_t(selected)).scale, 'g', 12));
         normalize_decimal_point(value);
         parameters.setCellWidget(row, 2, value);
         connect(combo, &QComboBox::activated, &dialog, [&, value](int n) {
-            value->setText(QString::number(bindings.at(size_t(n)).value, 'g', 12));
+            value->setText(
+                QString::number(bindings.at(size_t(n)).value * bindings.at(size_t(n)).scale, 'g', 12));
         });
     };
     page(ports, text("public_ports"), [&] {
@@ -426,7 +504,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                 updated.parameters.push_back(
                     {parameters.item(row, 0)->data(Qt::UserRole).toString().toStdString(),
                      parameters.item(row, 0)->text().trimmed().toStdString(), b.unit, b.object, b.field,
-                     value});
+                     value / b.scale});
             }
             document_->edit_definition(definition_id, [&](Definition &d) {
                 d.ports = updated.ports;

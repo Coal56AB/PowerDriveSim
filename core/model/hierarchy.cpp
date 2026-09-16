@@ -6,6 +6,27 @@
 #include <set>
 
 namespace pds {
+void remap_view_options(ViewOptions &view, const std::map<std::string, std::string> &identities) {
+    auto remap = [&](std::string &id) {
+        if (auto item = identities.find(id); item != identities.end())
+            id = item->second;
+    };
+    remap(view.plot);
+    remap(view.cursor_channel_a);
+    remap(view.cursor_channel_b);
+    for (auto &key : view.hidden_channels)
+        remap(key);
+    for (auto &style : view.curve_styles)
+        remap(style.channel);
+    for (auto &[key, display] : view.signal_displays) {
+        (void)display;
+        remap(key);
+    }
+    for (auto &[key, name] : view.curve_names) {
+        (void)name;
+        remap(key);
+    }
+}
 const Definition &definition(const Project &p, const std::string &id) {
     auto found =
         std::find_if(p.definitions.begin(), p.definitions.end(), [&](const auto &d) { return d.id == id; });
@@ -200,6 +221,7 @@ FlattenedProject flatten(const Project &source) {
     result.project.wired = true;
     result.project.extensions = source.extensions;
     size_t count = 0;
+    std::map<std::string, std::map<std::string, Endpoint>> view_net_targets;
     std::function<std::map<std::string, Endpoint>(const Schematic &, const std::vector<std::string> &,
                                                   const std::string &, Point, Orientation)>
         expand;
@@ -295,11 +317,30 @@ FlattenedProject flatten(const Project &source) {
             else
                 key = id(key);
         };
+        std::map<std::string, Endpoint> net_targets;
+        if (!path.empty() && !s.view_options.empty()) {
+            // Resolve local implicit nets without recursively processing display settings.
+            Project local = source;
+            static_cast<Schematic &>(local) = s;
+            local.id = derived_uuid("view-schematic:" + id(source.id));
+            local.view_options.clear();
+            for (auto &d : local.definitions)
+                d.view_options.clear();
+            for (const auto &[key, net] : resolve_connections(local).nets) {
+                const auto slash = key.find('/');
+                Endpoint terminal{id(key.substr(0, slash)), key.substr(slash + 1)};
+                if (auto alias = result.terminals.find(endpoint_key(terminal));
+                    alias != result.terminals.end())
+                    terminal = alias->second;
+                net_targets[id(net)] = terminal;
+            }
+        }
         for (auto view : s.view_options) {
             if (view.plot.empty() && !path.empty())
                 continue;
             if (!view.plot.empty())
                 view.plot = id(view.plot);
+            view_net_targets[view.plot] = net_targets;
             channel(view.cursor_channel_a);
             channel(view.cursor_channel_b);
             for (auto &[key, display] : view.signal_displays) {
@@ -314,11 +355,27 @@ FlattenedProject flatten(const Project &source) {
                 (void)alias;
                 channel(key);
             }
-            flat.view_options.push_back(std::move(view));
+            auto prior = std::find_if(flat.view_options.begin(), flat.view_options.end(),
+                                      [&](const auto &v) { return v.plot == view.plot; });
+            if (prior == flat.view_options.end())
+                flat.view_options.push_back(std::move(view));
+            else
+                *prior = std::move(view);
         }
         return endpoints;
     };
     expand(source, {}, "", {}, {});
+    if (std::any_of(view_net_targets.begin(), view_net_targets.end(),
+                    [](const auto &item) { return !item.second.empty(); })) {
+        const auto nets = resolve_connections(result.project).nets;
+        for (auto &view : result.project.view_options) {
+            std::map<std::string, std::string> channels;
+            for (const auto &[channel, terminal] : view_net_targets[view.plot])
+                if (auto found = nets.find(endpoint_key(terminal)); found != nets.end())
+                    channels[channel] = found->second;
+            remap_view_options(view, channels);
+        }
+    }
     return result;
 }
 } // namespace pds

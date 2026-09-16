@@ -76,6 +76,9 @@ struct ViewOptions {
     std::string plot, cursor_channel_a, cursor_channel_b;
     double y_low=-1,y_high=1,cursor_y_a=0,cursor_y_b=0,time_span=0,line_width=1.8;
     bool manual_y=false,free_cursors=false,separate_axes=false,grid=true,legend=false;
+    // Per-instance viewport override; absent values inherit the plot's defaults.
+    bool viewport=false;
+    double begin=0,end=-1,cursor_a=-1,cursor_b=-1;
     bool operator==(const ViewOptions&) const = default;
 };
 struct Instance {

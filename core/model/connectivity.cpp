@@ -4,6 +4,18 @@
 #include <cmath>
 #include <set>
 namespace pds {
+namespace {
+bool plot_input(const Project& catalog,const Schematic& level,const Endpoint& endpoint,unsigned depth=0) {
+    if(depth>64)return false;
+    for(const auto& plot:level.plots)if(plot.id==endpoint.object)
+        for(unsigned input=1;input<=plot.inputs;++input)if(endpoint.port=="in"+std::to_string(input))return true;
+    for(const auto& instance:level.instances)if(instance.id==endpoint.object) {
+        const auto& body=definition(catalog,instance.definition);
+        for(const auto& port:body.ports)if(port.id==endpoint.port)return plot_input(catalog,body,port.terminal,depth+1);
+    }
+    return false;
+}
+}
 std::string endpoint_key(const Endpoint& e) { return e.object+"/"+e.port; }
 PortType port_type(const Project& p,const Endpoint& e) {
     for(const auto& i:p.instances)if(i.id==e.object) {
@@ -23,8 +35,7 @@ PortType port_type(const Project& p,const Endpoint& e) {
 void validate_wire(const Project& p,const Wire& w) {
     auto a=port_type(p,w.from),b=port_type(p,w.to);
     if(w.from==w.to) throw Diagnostic("invalid_connection",w.id,"Cannot connect a port to itself");
-    auto plot_input=[&](const Endpoint& e){return std::any_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& plot){return plot.id==e.object;});};
-    bool gate_to_plot=((a.domain==Domain::gate||a.domain==Domain::electrical)&&plot_input(w.to))||((b.domain==Domain::gate||b.domain==Domain::electrical)&&plot_input(w.from));
+    bool gate_to_plot=((a.domain==Domain::gate||a.domain==Domain::electrical)&&plot_input(p,p,w.to))||((b.domain==Domain::gate||b.domain==Domain::electrical)&&plot_input(p,p,w.from));
     if((a.domain!=b.domain&&!gate_to_plot) || (a.domain!=Domain::electrical && a.direction==b.direction))
         throw Diagnostic("incompatible_port",w.id,"Connect electrical terminals together or a matching output to an input");
     for(const auto& point:w.bends)

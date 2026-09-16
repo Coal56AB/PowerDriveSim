@@ -106,6 +106,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 }
                 parsed=!row.fail();row>>std::ws;
             }
+            if(parsed&&!row.eof()) {
+                int viewport=-1;row>>viewport>>v.begin>>v.end>>v.cursor_a>>v.cursor_b;
+                if(row.fail()||(viewport!=0&&viewport!=1)||!std::isfinite(v.begin)||!std::isfinite(v.end)||!std::isfinite(v.cursor_a)||!std::isfinite(v.cursor_b)||(viewport&&v.end!=-1&&v.end<=v.begin))throw Diagnostic("parse_error",std::to_string(number),"Invalid plot viewport");
+                v.viewport=viewport==1;parsed=!row.fail();row>>std::ws;
+            }
             if(!parsed||!row.eof()||!std::isfinite(v.y_low)||!std::isfinite(v.y_high)||v.y_low>=v.y_high||!std::isfinite(v.time_span)||v.time_span<0||!std::isfinite(v.line_width)||v.line_width<=0||v.line_width>10||!std::isfinite(v.cursor_y_a)||!std::isfinite(v.cursor_y_b)||manual<0||manual>1||free<0||free>1||separate<0||separate>1||grid<0||grid>1||legend<0||legend>1||std::any_of(p.view_options.begin(),p.view_options.end(),[&](const ViewOptions& o){return o.plot==v.plot;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid view settings");
             v.manual_y=manual;v.free_cursors=free;v.separate_axes=separate;v.grid=grid;v.legend=legend;p.view_options.push_back(v);continue;
         }
@@ -201,12 +206,19 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
     p.schema=7;
-    for(const auto& v:p.view_options)if(!v.plot.empty()&&std::none_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& plot){return plot.id==v.plot;}))throw Diagnostic("missing_view_target",v.plot,"View target does not exist");
     for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
 Project read_project(std::istream& in) {
-    auto p=read_project_impl(in,true);validate_hierarchy(p);return p;
+    auto p=read_project_impl(in,true);validate_hierarchy(p);
+    auto check_views=[](const Project& project) {
+        if(project.view_options.empty())return;
+        const auto plots=flatten(project).project.plots;
+        for(const auto& v:project.view_options)if(!v.plot.empty()&&std::none_of(plots.begin(),plots.end(),[&](const PlotBlock& plot){return plot.id==v.plot;}))throw Diagnostic("missing_view_target",v.plot,"View target does not exist");
+    };
+    check_views(p);
+    for(const auto& d:p.definitions)check_views(definition_project(p,d.id));
+    return p;
 }
 void write_project(const Project& p, std::ostream& out) {
     if(p.schema!=7) throw Diagnostic("schema_version",p.id,"Cannot save unsupported schema");
@@ -257,7 +269,7 @@ void write_project(const Project& p, std::ostream& out) {
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';
     for(const auto& l:p.labels)out<<"x-label "<<std::quoted(l.object)<<' '<<std::quoted(l.role)<<' '<<l.x<<' '<<l.y<<' '<<l.orientation.quarter_turns<<' '<<(l.orientation.mirrored?1:0)<<'\n';
-    for(const auto& v:p.view_options){out<<"x-view "<<std::quoted(v.plot)<<' '<<v.y_low<<' '<<v.y_high<<' '<<v.manual_y<<' '<<v.free_cursors<<' '<<v.separate_axes<<' '<<v.grid<<' '<<v.legend<<' '<<v.line_width<<' '<<v.time_span<<' '<<std::quoted(v.cursor_channel_a)<<' '<<std::quoted(v.cursor_channel_b)<<' '<<v.cursor_y_a<<' '<<v.cursor_y_b<<' '<<v.display_columns<<' '<<v.signal_displays.size();for(const auto& binding:v.signal_displays)out<<' '<<std::quoted(binding.first)<<' '<<binding.second;out<<' '<<v.hidden_channels.size();for(const auto& channel:v.hidden_channels)out<<' '<<std::quoted(channel);out<<' '<<v.curve_styles.size();for(const auto& style:v.curve_styles)out<<' '<<std::quoted(style.channel)<<' '<<unsigned(style.line)<<' '<<style.width<<' '<<unsigned(style.marker)<<' '<<style.marker_size;out<<' '<<v.legend_positions.size();for(const auto& pos:v.legend_positions)out<<' '<<pos.display<<' '<<pos.x<<' '<<pos.y;out<<' '<<v.curve_names.size();for(const auto& name:v.curve_names)out<<' '<<std::quoted(name.first)<<' '<<std::quoted(name.second);out<<'\n';}
+    for(const auto& v:p.view_options){out<<"x-view "<<std::quoted(v.plot)<<' '<<v.y_low<<' '<<v.y_high<<' '<<v.manual_y<<' '<<v.free_cursors<<' '<<v.separate_axes<<' '<<v.grid<<' '<<v.legend<<' '<<v.line_width<<' '<<v.time_span<<' '<<std::quoted(v.cursor_channel_a)<<' '<<std::quoted(v.cursor_channel_b)<<' '<<v.cursor_y_a<<' '<<v.cursor_y_b<<' '<<v.display_columns<<' '<<v.signal_displays.size();for(const auto& binding:v.signal_displays)out<<' '<<std::quoted(binding.first)<<' '<<binding.second;out<<' '<<v.hidden_channels.size();for(const auto& channel:v.hidden_channels)out<<' '<<std::quoted(channel);out<<' '<<v.curve_styles.size();for(const auto& style:v.curve_styles)out<<' '<<std::quoted(style.channel)<<' '<<unsigned(style.line)<<' '<<style.width<<' '<<unsigned(style.marker)<<' '<<style.marker_size;out<<' '<<v.legend_positions.size();for(const auto& pos:v.legend_positions)out<<' '<<pos.display<<' '<<pos.x<<' '<<pos.y;out<<' '<<v.curve_names.size();for(const auto& name:v.curve_names)out<<' '<<std::quoted(name.first)<<' '<<std::quoted(name.second);out<<' '<<v.viewport<<' '<<v.begin<<' '<<v.end<<' '<<v.cursor_a<<' '<<v.cursor_b<<'\n';}
     for(const auto& e:p.extensions) {
         if(e.rfind("x-",0)!=0 || e.find_first_of("\r\n")!=std::string::npos)
             throw Diagnostic("extension_error",p.id,"Extensions must be single x- records");

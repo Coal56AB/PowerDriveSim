@@ -71,6 +71,47 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void hierarchy_graph_windows_remain_independent() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        auto p = w.project();
+        const auto graph = new_uuid();
+        p.plots.push_back({graph, "Output", 500, 0, 1});
+        p.wires.push_back({new_uuid(), {p.nodes[2].id, "node"}, {graph, "in1"}, {}});
+        Document document(p);
+        const auto first = document.create_definition({graph}, "Scope cell");
+        auto duplicate = document.paste(document.copy({first}), 0, 200);
+        const auto second = duplicate.front();
+        w.set_project(document.root_project());
+        w.open_subcircuit(first);
+        w.open_plot(graph);
+        const auto first_id = expanded_uuid({first}, graph), second_id = expanded_uuid({second}, graph);
+        auto *first_window = w.findChild<QDialog *>("plot_" + QString::fromStdString(first_id));
+        QVERIFY(first_window);
+        auto *first_scope = first_window->findChild<Scope *>("scope");
+        QVERIFY(first_scope);
+        first_scope->changed(.0001, .0004, .0002, .0003);
+        w.navigate_hierarchy({});
+        QVERIFY(first_window->isVisible());
+        w.open_subcircuit(second);
+        w.open_plot(graph);
+        auto *second_window = w.findChild<QDialog *>("plot_" + QString::fromStdString(second_id));
+        QVERIFY(second_window && second_window != first_window);
+        second_window->findChild<Scope *>("scope")->changed(.0005, .0009, .0006, .0008);
+        w.navigate_hierarchy({});
+        QVERIFY(first_window->isVisible() && second_window->isVisible());
+        QCOMPARE(w.root_project().view_options.size(), size_t(2));
+        QCOMPARE(w.root_project().view_options[0].begin, .0001);
+        QCOMPARE(w.root_project().view_options[1].begin, .0005);
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
+        QVERIFY(w.has_result());
+        QVERIFY(first_window->findChild<QPushButton *>("plot_export")->isEnabled());
+        QVERIFY(!second_window->findChild<QPushButton *>("plot_export")->isEnabled());
+        QVERIFY(w.save_project(dir.filePath("views.pds")));
+    }
     void hierarchy_edit_run_save_and_undo() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());

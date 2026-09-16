@@ -15,16 +15,29 @@ void preserve_views(Project& to,const Project& from) {
             if(item==target.view_options.end())target.view_options.push_back(options);else *item=options;
         }
     };
-    preserve(to,from);for(auto& d:to.definitions)for(const auto& old:from.definitions)if(d.id==old.id)preserve(d,old);
+    auto targets=flatten(to).project;
+    targets.view_options=to.view_options;
+    preserve(targets,from);
+    to.view_options=std::move(targets.view_options);
+    for(auto& plot:to.plots)for(const auto& old:from.plots)if(old.id==plot.id){plot.begin=old.begin;plot.end=old.end;plot.cursor_a=old.cursor_a;plot.cursor_b=old.cursor_b;}
+    for(auto& d:to.definitions)for(const auto& old:from.definitions)if(d.id==old.id)preserve(d,old);
 }
 }
 Document::Document(Project p):current_(make_wired(p)){}
 void Document::apply(const std::string& label,const std::function<void(Project&)>& change) {
+    apply_with_root(label,change,[](Project&){});
+}
+void Document::apply_with_root(const std::string& label,const std::function<void(Project&)>& change,const std::function<void(Project&)>& finalize) {
     auto edited=project();change(edited);
     auto next=merge_view(edited);
+    finalize(next);
     if(next == current_) return;
     // Connectivity is validated without solving an incomplete circuit.
     validate_hierarchy(next);
+    if(!next.view_options.empty()) {
+        const auto plots=flatten(next).project.plots;
+        std::erase_if(next.view_options,[&](const auto& view){return !view.plot.empty()&&std::none_of(plots.begin(),plots.end(),[&](const auto& plot){return plot.id==view.plot;});});
+    }
     (void)resolve_connections(next);
     undo_.push_back({label,current_,next,location_,location_});
     if(undo_.size()>100) undo_.erase(undo_.begin());
@@ -50,15 +63,34 @@ void Document::redo() {
 }
 void Document::set_view(const std::string& id,double begin,double end,double a,double b) {
     if(id.empty()){current_.scope_begin=begin;current_.scope_end=end;current_.cursor_a=a;current_.cursor_b=b;}
-    else {auto view=project();for(auto& plot:view.plots)if(plot.id==id){plot.begin=begin;plot.end=end;plot.cursor_a=a;plot.cursor_b=b;break;}current_=merge_view(view);}
+    else {
+        auto flat=flatten(current_).project;
+        if(std::none_of(flat.plots.begin(),flat.plots.end(),[&](const auto& plot){return plot.id==id;}))return;
+        auto plot=std::find_if(current_.plots.begin(),current_.plots.end(),[&](const auto& plot){return plot.id==id;});
+        if(plot!=current_.plots.end()){
+            plot->begin=begin;plot->end=end;plot->cursor_a=a;plot->cursor_b=b;
+            for(auto& view:current_.view_options)if(view.plot==id&&view.viewport){view.begin=begin;view.end=end;view.cursor_a=a;view.cursor_b=b;}
+        }
+        else {
+            ViewOptions view;view.plot=id;
+            for(const auto& prior:flat.view_options)if(prior.plot==id)view=prior;
+            view.viewport=true;view.begin=begin;view.end=end;view.cursor_a=a;view.cursor_b=b;
+            auto prior=std::find_if(current_.view_options.begin(),current_.view_options.end(),[&](const auto& v){return v.plot==id;});
+            if(prior==current_.view_options.end())current_.view_options.push_back(view);else *prior=view;
+        }
+    }
     rebuild_view();
 }
 void Document::set_view_options(const ViewOptions& options) {
-    auto view=project();
-    if(!options.plot.empty()&&std::none_of(view.plots.begin(),view.plots.end(),[&](const PlotBlock& p){return p.id==options.plot;}))return;
-    auto it=std::find_if(view.view_options.begin(),view.view_options.end(),[&](const ViewOptions& o){return o.plot==options.plot;});
-    if(it==view.view_options.end())view.view_options.push_back(options);else *it=options;
-    current_=merge_view(view);rebuild_view();
+    const auto flat=flatten(current_).project;
+    if(!options.plot.empty()&&std::none_of(flat.plots.begin(),flat.plots.end(),[&](const PlotBlock& p){return p.id==options.plot;}))return;
+    auto updated=options;
+    auto it=std::find_if(current_.view_options.begin(),current_.view_options.end(),[&](const ViewOptions& o){return o.plot==options.plot;});
+    if(it!=current_.view_options.end()&&it->viewport) {
+        updated.viewport=true;updated.begin=it->begin;updated.end=it->end;updated.cursor_a=it->cursor_a;updated.cursor_b=it->cursor_b;
+    }
+    if(it==current_.view_options.end())current_.view_options.push_back(updated);else *it=updated;
+    rebuild_view();
 }
 bool same_simulation(const Project& a,const Project& b) {
     auto normalize=[](Project p){
@@ -149,12 +181,30 @@ Project Document::copy(const std::vector<std::string>& list) const {
     if(!result.instances.empty())result.definitions=project().definitions;
     for(const auto& w:project().wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
     for(const auto& e:project().events)if(ids.count(e.target))result.events.push_back(e);
-    for(const auto& options:project().view_options)if(ids.count(options.plot))result.view_options.push_back(options);
+    const auto fragment=flatten(result);
+    const auto source=flatten(current_);
+    std::map<std::string,std::string> channels;
+    for(const auto& [local,origin]:fragment.origins) {
+        auto path=location_;path.insert(path.end(),origin.instances.begin(),origin.instances.end());
+        const auto global=expanded_uuid(path,origin.object);
+        channels[global]=local;channels["gate/"+global]="gate/"+local;
+    }
+    const auto before=resolve_connections(current_).nets,after=resolve_connections(result).nets;
+    for(const auto& [endpoint,net]:after) {
+        const auto slash=endpoint.find('/');
+        const auto global=expanded_uuid(location_,endpoint.substr(0,slash))+endpoint.substr(slash);
+        if(auto found=before.find(global);found!=before.end())channels[found->second]=net;
+    }
+    for(auto options:source.project.view_options)if(channels.count(options.plot)) {
+        remap_view_options(options,channels);result.view_options.push_back(std::move(options));
+    }
     for(const auto& label:project().labels)if(ids.count(label.object))result.labels.push_back(label);
     return result;
 }
 std::vector<std::string> Document::paste(const Project& source,double dx,double dy){
     auto fragment=make_wired(source);std::vector<std::string> added;
+    const auto original_fragment=flatten(fragment);
+    const auto original_nets=resolve_connections(fragment).nets;
     apply("Paste objects",[&](Project& p){
         std::map<std::string,std::string> definitions;
         const bool conflict=std::any_of(fragment.definitions.begin(),fragment.definitions.end(),[&](const auto& d){return std::any_of(p.definitions.begin(),p.definitions.end(),[&](const auto& existing){return existing.id==d.id&&existing!=d;});});
@@ -174,7 +224,30 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
         copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}
         for(auto event:fragment.events)if(ids.count(event.target)){event.target=ids.at(event.target);p.events.push_back(event);}
-        for(auto options:fragment.view_options)if(ids.count(options.plot)){options.plot=ids.at(options.plot);p.view_options.push_back(options);}
+        if(!fragment.view_options.empty()) {
+            std::map<std::string,std::string> channels;
+            for(const auto& [old,origin]:original_fragment.origins) {
+                auto path=origin.instances;
+                if(path.empty()) {
+                    if(!ids.count(origin.object))continue;
+                    channels[old]=ids.at(origin.object);
+                } else {
+                    if(!ids.count(path.front()))continue;
+                    path.front()=ids.at(path.front());channels[old]=expanded_uuid(path,origin.object);
+                }
+                channels["gate/"+old]="gate/"+channels[old];
+            }
+            const auto after=resolve_connections(p).nets;
+            for(const auto& [endpoint,net]:original_nets) {
+                const auto slash=endpoint.find('/');
+                const auto object=endpoint.substr(0,slash);
+                if(!channels.count(object))continue;
+                if(auto found=after.find(channels.at(object)+endpoint.substr(slash));found!=after.end())channels[net]=found->second;
+            }
+            for(auto options:fragment.view_options)if(channels.count(options.plot)) {
+                remap_view_options(options,channels);p.view_options.push_back(std::move(options));
+            }
+        }
         for(auto label:fragment.labels)if(ids.count(label.object)){label.object=ids.at(label.object);p.labels.push_back(label);}
     });return added;
 }

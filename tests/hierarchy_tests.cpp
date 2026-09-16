@@ -224,6 +224,101 @@ int main() try {
     require(plot_channels(gated, id(53)) == std::vector<std::string>{expanded_uuid({id(20)}, id(11))},
             "External graph observes a public electrical port");
     auto text = out.str();
+    Document graph_group(gated);
+    const auto graph_instance = graph_group.create_definition({id(53)}, "Measurement");
+    require(plot_channels(graph_group.root_project(), expanded_uuid({graph_instance}, id(53))) ==
+                plot_channels(gated, id(53)),
+            "Electrical tap crosses a public graph input");
+    graph_group.undo();
+    auto graph_gate = gated;
+    graph_gate.wires.back().from = {id(52), "out"};
+    Document gate_graph(graph_gate);
+    const auto gate_group = gate_graph.create_definition({id(53)}, "Gate measurement");
+    require(plot_channels(gate_graph.root_project(), expanded_uuid({gate_group}, id(53))) ==
+                std::vector<std::string>{"gate/" + id(52)},
+            "Gate signal crosses a public graph input");
+    auto graph_project = fixture();
+    graph_project.definitions[0].plots.push_back({id(60), "Internal scope", 0, 0, 1});
+    wire(graph_project.definitions[0], {id(11), "node"}, {id(60), "in1"});
+    Document graph_views(graph_project);
+    const auto first_plot = expanded_uuid({id(20)}, id(60)), second_plot = expanded_uuid({id(21)}, id(60));
+    graph_views.navigate({id(20)});
+    graph_views.set_view(first_plot, .0001, .0004, .0002, .0003);
+    ViewOptions first_view;
+    first_view.plot = first_plot;
+    first_view.manual_y = true;
+    first_view.y_low = 1;
+    first_view.y_high = 8;
+    first_view.curve_names = {{expanded_uuid({id(20)}, id(11)), "First output"}};
+    graph_views.set_view_options(first_view);
+    graph_views.navigate({id(21)});
+    graph_views.set_view(second_plot, .0005, .0009, .0006, .0008);
+    const auto &views = graph_views.root_project().view_options;
+    require(views.size() == 2 && views[0].begin == .0001 && views[1].begin == .0005 &&
+                views[0].curve_names == first_view.curve_names,
+            "Internal graph viewport and names are independent between instances");
+    require(graph_views.root_project().definitions[0].plots[0].end == -1 &&
+                graph_views.root_project().definitions[0].view_options.empty(),
+            "Instance view changes do not mutate shared definitions");
+    std::ostringstream graph_saved;
+    write_project(graph_views.root_project(), graph_saved);
+    std::istringstream graph_input(graph_saved.str());
+    require(read_project(graph_input) == graph_views.root_project(), "Instance graph views round trip");
+    graph_views.navigate({});
+    graph_views.erase({id(20)});
+    require(graph_views.root_project().view_options.size() == 1 &&
+                graph_views.root_project().view_options[0].plot == second_plot,
+            "Deleting an instance removes only its graph override");
+    graph_views.undo();
+    require(graph_views.root_project().view_options.size() == 2, "Undo restores removed instance views");
+    auto graph_copy = graph_views.copy({id(20)});
+    auto copied = graph_views.paste(graph_copy, 400, 0).front();
+    const auto copied_plot = expanded_uuid({copied}, id(60));
+    auto copied_view = std::find_if(graph_views.root_project().view_options.begin(),
+                                    graph_views.root_project().view_options.end(),
+                                    [&](const auto &v) { return v.plot == copied_plot; });
+    require(copied_view != graph_views.root_project().view_options.end() && copied_view->begin == .0001 &&
+                copied_view->curve_names ==
+                    std::vector<std::pair<std::string, std::string>>{
+                        {expanded_uuid({copied}, id(11)), "First output"}},
+            "Copying a subcircuit retains its graph viewport and remaps curve identities");
+    graph_views.expand_instance(copied);
+    graph_views.set_view(copied_plot, .0002, .0006, .0003, .0004);
+    copied_view = std::find_if(graph_views.root_project().view_options.begin(),
+                               graph_views.root_project().view_options.end(),
+                               [&](const auto &v) { return v.plot == copied_plot; });
+    require(copied_view->begin == .0002, "Expanded graph retains an editable viewport override");
+    graph_views.navigate({id(20)});
+    const auto nested_graph = graph_views.create_definition({id(60)}, "Nested graph");
+    const auto first_nested = expanded_uuid({id(20), nested_graph}, id(60));
+    const auto second_nested = expanded_uuid({id(21), nested_graph}, id(60));
+    const auto &grouped_views = graph_views.root_project().view_options;
+    require(std::any_of(grouped_views.begin(), grouped_views.end(),
+                        [&](const auto &v) { return v.plot == first_nested && v.begin == .0001; }) &&
+                std::any_of(grouped_views.begin(), grouped_views.end(),
+                            [&](const auto &v) { return v.plot == second_nested && v.begin == .0005; }),
+            "Grouping a shared internal graph preserves every instance viewport");
+    auto implicit = graph_project;
+    auto &implicit_body = implicit.definitions[0];
+    implicit_body.nodes.clear();
+    for (auto &port : implicit_body.ports)
+        if (port.terminal.object == id(11))
+            port.terminal = {id(12), "n"};
+    for (auto &connection : implicit_body.wires)
+        for (auto *endpoint : {&connection.from, &connection.to})
+            if (endpoint->object == id(11))
+                *endpoint = {id(12), "n"};
+    std::erase_if(implicit_body.wires, [](const auto &w) { return w.from == w.to; });
+    ViewOptions implicit_view;
+    implicit_view.plot = id(60);
+    implicit_view.curve_names = {
+        {resolve_connections(definition_project(implicit, id(10))).nets.at(endpoint_key({id(12), "n"})),
+         "Implicit output"}};
+    implicit_body.view_options.push_back(implicit_view);
+    const auto expanded_views = flatten(implicit).project;
+    for (const auto &v : expanded_views.view_options)
+        require(v.curve_names.front().first == plot_channels(expanded_views, v.plot).front(),
+                "Definition graph styles follow unnamed electrical nets after expansion");
     text.erase(text.rfind("end_definition"));
     std::istringstream broken(text);
     error("parse_error", [&] { read_project(broken); });

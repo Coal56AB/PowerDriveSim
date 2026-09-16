@@ -243,10 +243,12 @@ void EditorWindow::observe_object(const std::string &id) {
     bottom_->setCurrentIndex(1);
     banner_->setText(text("record_next_run"));
 }
-void EditorWindow::open_plot(const std::string &id) {
-    auto plot = std::find_if(project().plots.begin(), project().plots.end(),
-                             [&](const PlotBlock &p) { return p.id == id; });
-    if (plot == project().plots.end())
+void EditorWindow::open_plot(const std::string &local_id) {
+    const auto id = expanded_uuid(hierarchy_path(), local_id);
+    const auto flat = flatten(root_project()).project;
+    auto plot =
+        std::find_if(flat.plots.begin(), flat.plots.end(), [&](const PlotBlock &p) { return p.id == id; });
+    if (plot == flat.plots.end())
         return;
     if (plot_windows_[id]) {
         plot_windows_[id]->show();
@@ -282,7 +284,7 @@ void EditorWindow::open_plot(const std::string &id) {
     layout->addWidget(view->channel_controls());
     view->set_wheel_modifiers(scope_wheel_x_, scope_wheel_y_);
     view->set_live(running());
-    for (const auto &options : project().view_options)
+    for (const auto &options : flat.view_options)
         if (options.plot == id)
             view->load_view_options(options);
     layout->addWidget(view->navigation());
@@ -291,7 +293,7 @@ void EditorWindow::open_plot(const std::string &id) {
     plot_windows_[id] = window;
     plot_views_[id] = view;
     connect(export_button, &QPushButton::clicked, this,
-            [this, id] { export_csv(visible_plot_channels(id)); });
+            [this, id] { export_csv(plot_channels(root_project(), id)); });
     view->changed = [this, id](double a, double b, double ca, double cb) {
         document_->set_view(id, a, b, ca, cb);
         if (plot_views_[id]) {
@@ -305,18 +307,21 @@ void EditorWindow::open_plot(const std::string &id) {
     window->show();
 }
 void EditorWindow::update_graphs() {
+    if (plot_windows_.empty())
+        return;
+    const auto flat = flatten(root_project()).project;
     for (auto &[id, window] : plot_windows_) {
         if (!window)
             continue;
-        auto plot = std::find_if(project().plots.begin(), project().plots.end(),
+        auto plot = std::find_if(flat.plots.begin(), flat.plots.end(),
                                  [&](const PlotBlock &p) { return p.id == id; });
-        if (plot == project().plots.end()) {
+        if (plot == flat.plots.end()) {
             window->close();
             continue;
         }
         window->setWindowTitle(QString::fromStdString(plot->name) + " · PowerDriveSim");
         window->findChild<QLabel *>("plot_heading")->setText(QString::fromStdString(plot->name));
-        auto keys = visible_plot_channels(id);
+        auto keys = plot_channels(flat, id);
         auto indexes = result_indices(keys);
         window->findChild<QPushButton *>("plot_export")
             ->setEnabled(result_ && !result_->samples.empty() && !indexes.empty());
@@ -325,6 +330,13 @@ void EditorWindow::update_graphs() {
         view_state.scope_end = plot->end;
         view_state.cursor_a = plot->cursor_a;
         view_state.cursor_b = plot->cursor_b;
+        for (const auto &options : flat.view_options)
+            if (options.plot == id && options.viewport) {
+                view_state.scope_begin = options.begin;
+                view_state.scope_end = options.end;
+                view_state.cursor_a = options.cursor_a;
+                view_state.cursor_b = options.cursor_b;
+            }
         if (plot_views_[id])
             plot_views_[id]->set_result(result_ ? &*result_ : nullptr, indexes, view_state);
     }

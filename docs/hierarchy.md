@@ -20,11 +20,13 @@ The desktop uses the same transactions for grouping, insertion, detach and expan
 
 Grouping inside a definition preserves its enclosing public ports and parameter bindings. Expanded UUIDs compose from the leaf outward, so replacing a nested instance with atoms preserves result identities. Recording subscriptions are remapped for all linked instances when grouping changes object paths.
 
-Remaining integration work includes keeping graph windows open across level changes and independent persistent graph views for repeated instances.
+Graph windows use expanded plot UUIDs and remain open across level changes. Root-level `ViewOptions` can override a particular expanded plot, including its time viewport and cursors, without changing a shared definition. Definition settings remain defaults. Grouping, copying and expansion remap plot/channel identities together; unnamed electrical nets are resolved through terminals rather than by prefixing the old net UUID. Deleting an instance removes its overrides; undo restores them. Public graph inputs retain their electrical/gate tap behavior through nested aliases.
+
+The public parameter dialog derives numeric bindings and display scales from component property configurations, including constant PWM. Nested instance parameters inherit primitive editor constraints. The hierarchy tree rebuilds only after structural/name changes and preserves collapsed branches; text editing suppresses hierarchy keyboard shortcuts.
 
 ## Schema 7
 
-The loader migrates schema 1–6 to 7. Existing flat records retain their meaning. New `instance` records include a definition UUID and parameter overrides. Each `definition` record contains public-port/parameter metadata, a `body` using the same project record parser, and `end_definition`. Catalog definitions cannot be nested textually; nested instances reference entries in the project catalog. Unknown `x-` extensions in definition bodies survive save/load. No external files are needed to reconstruct a project.
+The loader migrates schema 1–6 to 7. Existing flat records retain their meaning. New `instance` records include a definition UUID and parameter overrides. Each `definition` record contains public-port/parameter metadata, a `body` using the same project record parser, and `end_definition`. Catalog definitions cannot be nested textually; nested instances reference entries in the project catalog. `x-view` optionally ends with a viewport override flag, begin/end and A/B cursor times; records without this tail retain their existing defaults. A view target can be a local plot or an expanded plot in a nested instance. Unknown `x-` extensions in definition bodies survive save/load. No external files are needed to reconstruct a project.
 
 ## Verification
 
