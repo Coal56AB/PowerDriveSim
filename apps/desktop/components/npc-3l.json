@@ -5,7 +5,7 @@
   "palette": {
     "id": 261,
     "label": "npc_3l_module",
-    "category": "converters",
+    "category": "converters/inverters",
     "short": "3L NPC",
     "fixed": false,
     "hidden": false

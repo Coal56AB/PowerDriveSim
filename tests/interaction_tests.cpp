@@ -25,6 +25,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -39,6 +40,8 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
+#include <QToolTip>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <algorithm>
@@ -75,6 +78,120 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void live_history_responsiveness_benchmark() {
+        if (qEnvironmentVariableIsEmpty("PDS_LIVE_HISTORY_BENCHMARK")) QSKIP("Opt-in live GUI performance measurement");
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path()); ready(w);
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/diode-freewheel.pds"));
+        w.set_scope_enabled(true);
+        auto *channels = w.findChild<QListWidget *>("channels");
+        for (int i = 0; i < channels->count(); ++i) channels->item(i)->setCheckState(i < 2 ? Qt::Checked : Qt::Unchecked);
+        w.findChild<QTabWidget *>("results_tabs")->setCurrentIndex(1);
+        w.findChild<QLineEdit *>("sim_stop")->setText("10");
+        w.findChild<QLineEdit *>("sim_step")->setText("1e-6");
+        for (double span : {0., .1}) {
+            w.scope()->set_time_span(span);
+            QElapsedTimer elapsed; elapsed.start();
+            qint64 previous = 0, longest = 0;
+            QTimer heartbeat; heartbeat.setInterval(10);
+            connect(&heartbeat, &QTimer::timeout, &w, [&] {
+                const auto now = elapsed.elapsed(); longest = std::max(longest, now - previous); previous = now;
+            });
+            heartbeat.start(); w.start_simulation();
+            QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 45000);
+            heartbeat.stop(); QVERIFY(w.has_result()); QVERIFY(!w.result().cancelled);
+            QCOMPARE(w.result().last_time, 10.);
+            qInfo() << "Live 10 s / 1e-6, span" << span << "wall ms" << elapsed.elapsed()
+                    << "maximum GUI heartbeat gap ms" << longest << "samples" << w.result().samples.size();
+        }
+    }
+    void example_templates_commands_and_hierarchy_buttons() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path()); ready(w);
+        const auto original = QString(PDS_SOURCE_DIR) + "/examples/diode-freewheel.pds";
+        QFile source(original); QVERIFY(source.open(QIODevice::ReadOnly)); const auto bytes = source.readAll();
+        QVERIFY(w.open_project(original));
+        QVERIFY(w.root_project().name.find("Свободный ход") != std::string::npos);
+        QVERIFY(w.suggested_save_path().endsWith("diode-freewheel-copy.pds"));
+        QVERIFY(!w.save_project(original));
+        source.seek(0); QCOMPARE(source.readAll(), bytes);
+        const auto copy = dir.filePath("my-circuit.pds");
+        QVERIFY(w.save_project(copy)); QCOMPARE(w.suggested_save_path(), copy);
+        auto *example = w.findChild<QAction *>("example_diode-freewheel");
+        QVERIFY(example); QVERIFY(!example->text().contains(".pds"));
+        QVERIFY(qobject_cast<QMenu *>(example->parent()));
+        auto *tree = w.findChild<QTreeWidget *>("library");
+        QTreeWidgetItem *bridge = nullptr;
+        for (QTreeWidgetItemIterator it(tree); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole).isValid() && (*it)->data(0, Qt::UserRole).toInt() == 231) bridge = *it;
+        QVERIFY(bridge && bridge->parent() && bridge->parent()->parent());
+        auto *search = w.findChild<QLineEdit *>("library_search"); search->setText(bridge->text(0));
+        QVERIFY(!bridge->isHidden()); QVERIFY(bridge->parent()->isExpanded()); search->clear();
+        QVERIFY(!bridge->parent()->isExpanded());
+        Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
+        bool selected = false;
+        QTimer::singleShot(0, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("command_search_dialog");
+            if (!dialog) return;
+            auto *input = dialog->findChild<QLineEdit *>("command_search_input");
+            input->setText(text("library") + " " + text("full_bridge_module"));
+            auto *list = dialog->findChild<QListWidget *>("command_search_results");
+            selected = list->currentItem() && !list->currentItem()->isHidden();
+            QTest::keyClick(input, Qt::Key_Return);
+            if (dialog->isVisible()) dialog->reject();
+        });
+        w.show_command_search(); QVERIFY(selected);
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier, w.canvas()->mapFromScene(QPointF(0, 0)));
+        QCOMPARE(w.project().instances.size(), size_t(1));
+        const auto id = w.project().instances.front().id;
+        QVERIFY(definition_icon_id(w.project().instances.front().definition) == 231);
+        if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT")));
+        w.raise(); w.activateWindow(); QTest::qWait(50);
+        auto *viewport = w.canvas()->viewport();
+        for (const auto &scenePoint : {QPointF(150, 150), item(w, id)->sceneBoundingRect().center()}) {
+            const auto point = w.canvas()->mapFromScene(scenePoint);
+            QMouseEvent move(QEvent::MouseMove, QPointF(point), QPointF(viewport->mapToGlobal(point)),
+                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(viewport, &move);
+        }
+        QTRY_VERIFY(item(w, id)->toolTip().contains("data:image/png;base64"));
+        if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT")));
+        w.open_subcircuit(id); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QTest::qWait(30);
+        if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT") + ".hierarchy.png"));
+        auto *back = w.findChild<QToolButton *>("hierarchy_level_0");
+        auto *edit = w.findChild<QToolButton *>("edit_definition_button");
+        QVERIFY(back && back->isVisible() && edit && edit->isVisible());
+        QTest::mouseClick(back, Qt::LeftButton, Qt::NoModifier, QPoint(3, back->height()/2));
+        QVERIFY(w.hierarchy_path().empty());
+    }
+    void incremental_extrema_and_scope_history() {
+        std::vector<double> values;
+        ExtremaIndex index;
+        auto value = [&](size_t i) { return values[i]; };
+        for (size_t chunk = 0; chunk < 8; ++chunk) {
+            for (size_t i = 0; i < 137; ++i) values.push_back(std::sin(double(values.size()) * .17));
+            index.append(values.size(), value);
+            for (size_t a = 0; a < values.size(); a += 17)
+                for (size_t b = a + 1; b <= values.size(); b += 71) {
+                    auto expected = std::minmax_element(values.begin() + a, values.begin() + b);
+                    auto actual = index.range(a, b, value);
+                    QCOMPARE(value(actual.first), *expected.first); QCOMPARE(value(actual.second), *expected.second);
+                }
+        }
+        Result result; result.channels = {{"a", "Trace", "V"}};
+        for (size_t i = 0; i < 1000000; ++i) result.samples.push_back({double(i)*1e-6, {std::sin(double(i)*.01)}, {}});
+        Scope scope; Project project; scope.resize(1200, 500); scope.set_live(true);
+        scope.set_result(&result, {0}, project); scope.fit();
+        QElapsedTimer timer; timer.start();
+        for (int i = 0; i < 5; ++i) { scope.fit(Scope::Axes::y); auto image = scope.grab(); QVERIFY(!image.isNull()); }
+        qInfo() << "Indexed million-sample fit/render, five frames (ms):" << timer.elapsed();
+        result.samples.push_back({1.1, {100}, {}}); scope.set_result(&result, {0}, project); scope.fit();
+        QVERIFY(scope.y_high > 100);
+        scope.begin = .1; scope.end = .2; scope.fit(Scope::Axes::y); QVERIFY(scope.y_high < 2);
+        scope.set_live(false); result.samples.back().values[0] = 200;
+        scope.set_result(&result, {0}, project); scope.fit(); QVERIFY(scope.y_high > 200);
+    }
     void open_end_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
         Project empty; empty.id = new_uuid(); empty.wired = true;
@@ -2106,6 +2223,11 @@ class InteractionTests : public QObject {
         QCOMPARE(w.result().samples.front().time, 0.0);
         if (!qEnvironmentVariableIsEmpty("PDS_SNAPSHOT_SCREENSHOT"))
             QVERIFY(w.grab().save(qEnvironmentVariable("PDS_SNAPSHOT_SCREENSHOT")));
+        QVERIFY(step->isEnabled());
+        step->trigger();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QCOMPARE(w.result().accepted_steps, size_t(1));
+        QCOMPARE(w.result().samples.front().time, 0.0);
         w.set_project(w.root_project());
         QVERIFY(!w.simulation_snapshot());
         QVERIFY(!save->isEnabled() && !resume->isEnabled());

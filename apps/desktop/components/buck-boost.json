@@ -5,7 +5,7 @@
   "palette": {
     "id": 222,
     "label": "buck_boost_module",
-    "category": "converters",
+    "category": "converters/dc_dc",
     "short": "buck-boost",
     "fixed": false,
     "hidden": false

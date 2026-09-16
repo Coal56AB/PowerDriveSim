@@ -14,6 +14,7 @@
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <set>
 namespace pds::desktop {
@@ -21,6 +22,18 @@ void EditorWindow::append_simulation_result(Result batch) {
     accumulate_statistics(batch, continuation_statistics_);
     if (!result_) {
         result_ = std::move(batch);
+        // Reserve sample headers once for ordinary fixed-step runs. Per-sample
+        // channel payloads are still allocated by the worker as results arrive.
+        const auto &profile = root_project().profile;
+        if (!result_->samples.empty() && !profile.step_control.adaptive && profile.step > 0) {
+            const double estimate = std::ceil(profile.stop / profile.step) * 1.02 + 1024;
+            constexpr size_t maximum_reservation = 20'000'000;
+            if (std::isfinite(estimate) && estimate > double(result_->samples.capacity()) &&
+                estimate <= double(maximum_reservation)) {
+                try { result_->samples.reserve(size_t(estimate)); }
+                catch (const std::bad_alloc &) { /* Retain ordinary incremental growth. */ }
+            }
+        }
         return;
     }
     auto samples = std::move(result_->samples);

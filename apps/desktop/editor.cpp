@@ -9,6 +9,9 @@
 #include "formats/project/project.hpp"
 #include "results/csv.hpp"
 #include <QApplication>
+#include <QBuffer>
+#include <QGraphicsSceneHoverEvent>
+#include <QToolTip>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -154,18 +157,47 @@ class Atom final : public QGraphicsItem {
     unsigned input_count = 2;
     std::vector<std::pair<QString, QPointF>> public_ports;
     std::vector<PublicPort> definition_ports;
+    int library_icon_id = -1;
     bool ground = false, separate_labels = false;
     Atom(std::string uuid, QString label, QString mark, int category)
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
         setData(0, q(id));
         setFlags(ItemIsSelectable | ItemSendsGeometryChanges);
         setZValue(2);
+        setAcceptHoverEvents(true);
+    }
+    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override {
+        int icon_id = library_icon_id;
+        if (type == 3) icon_id = 103;
+        if (type == 2) icon_id = symbol == "PWM" ? 104 : 102;
+        if (type == 1 && ground) icon_id = 100;
+        if (type == 0) {
+            const QStringList symbols{"R", "C", "L", "V", "I", "S", "D", "VP", "IP", "T", "IGBT"};
+            icon_id = int(symbols.indexOf(symbol));
+        }
+        QString content = name.toHtmlEscaped();
+        if (icon_id >= 0) {
+            QByteArray bytes;
+            QBuffer buffer(&bytes);
+            buffer.open(QIODevice::WriteOnly);
+            component_icon(icon_id).pixmap(48, 48).save(&buffer, "PNG");
+            content = "<table><tr><td><img width='48' height='48' src='data:image/png;base64," +
+                      QString::fromLatin1(bytes.toBase64()) + "'></td><td>" + content + "</td></tr></table>";
+        }
+        setToolTip(content);
+        QToolTip::showText(event->screenPos() + QPoint(12, 12), content);
+        QGraphicsItem::hoverEnterEvent(event);
+    }
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override {
+        QToolTip::hideText();
+        QGraphicsItem::hoverLeaveEvent(event);
     }
     void prepareGeometryChangeForInputs(unsigned count) {
         prepareGeometryChange();
         input_count = count;
     }
     void set_definition(const Definition &definition) {
+        library_icon_id = definition_icon_id(definition.id);
         if (definition_ports == definition.ports)
             return;
         prepareGeometryChange();
@@ -281,12 +313,14 @@ class Atom final : public QGraphicsItem {
                       point.x() < 0 ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
                       QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 65));
             }
-            p->setPen(QPen(theme_colors().muted, 1.5));
-            p->drawRect(QRectF(-8, -12, 16, 8));
-            p->drawLine(0, -4, 0, 5);
-            p->drawLine(-9, 5, 9, 5);
-            p->drawRect(QRectF(-13, 5, 8, 8));
-            p->drawRect(QRectF(5, 5, 8, 8));
+            if (library_icon_id >= 0) {
+                component_icon(library_icon_id).paint(p, QRect(-28, -28, 56, 56));
+            } else {
+                font.setPointSize(11);
+                font.setBold(true);
+                p->setFont(font);
+                label(p, QRectF(-53, -h + 5, 106, 2 * h - 10), Qt::AlignCenter | Qt::TextWordWrap, name);
+            }
             return;
         }
         if (type == 3) {
@@ -762,7 +796,7 @@ void EditorWindow::build_ui() {
     action(file_menu, "save", QKeySequence::Save, [this] {
         auto f = path_;
         if (f.isEmpty())
-            f = QFileDialog::getSaveFileName(this, text("save"), {}, text("project_filter"));
+            f = QFileDialog::getSaveFileName(this, text("save"), suggested_save_path(), text("project_filter"));
         if (!f.isEmpty())
             save_project(f);
     });
@@ -799,6 +833,7 @@ void EditorWindow::build_ui() {
     for (const char *mode : {"left", "right", "top", "bottom", "horizontal", "vertical"})
         action(nullptr, mode, {}, [this, mode] { arrange_selection(mode); });
     action(edit_menu, "shortcuts", {}, [this] { show_shortcuts(); });
+    auto *search_action = action(edit_menu, "command_search", QKeySequence("Ctrl+Shift+P"), [this] { show_command_search(); });
     build_hierarchy_actions(edit_menu->addMenu(text("hierarchy")));
     auto *wire_action = action(edit_menu, "connect_tool", QKeySequence("Ctrl+W"), [this] {
         if (running())
@@ -846,6 +881,8 @@ void EditorWindow::build_ui() {
     auto *simulation_menu = menuBar()->addMenu(text("simulation_menu"));
     auto *continue_action = action(simulation_menu, "continue_state", {}, [this] { continue_simulation(); });
     auto *step_action = action(simulation_menu, "simulation_step", QKeySequence("F10"), [this] { step_simulation(); });
+    continue_action->setToolTip(text("continue_state_hint"));
+    step_action->setToolTip(text("simulation_step_hint"));
     simulation_menu->addSeparator();
     action(simulation_menu, "snapshot_save", {}, [this] {
         auto path = QFileDialog::getSaveFileName(this, text("snapshot_save"), {}, text("snapshot_filter"));
@@ -861,12 +898,7 @@ void EditorWindow::build_ui() {
     action(simulation_menu, "initial_settings", {}, [this] { show_initial_settings(); });
     action(simulation_menu, "step_settings", {}, [this] { show_step_settings(); });
     auto *examples = menuBar()->addMenu(text("examples"));
-    QDir dir(QCoreApplication::applicationDirPath() + "/examples");
-    for (const auto &file : dir.entryList({"*.pds"}, QDir::Files))
-        connect(examples->addAction(file), &QAction::triggered, this, [this, dir, file] {
-            if (!running() && confirm_discard())
-                open_project(dir.filePath(file));
-        });
+    build_examples_menu(examples);
     auto *toolbar = addToolBar("PowerDriveSim");
     toolbar->setObjectName("controls");
     toolbar->setMovable(false);
@@ -938,22 +970,21 @@ void EditorWindow::build_ui() {
     canvas_tools->setStyleSheet("background:palette(base);border-bottom:1px solid palette(mid);");
     auto *tools_layout = new QHBoxLayout(canvas_tools);
     tools_layout->setContentsMargins(16, 8, 16, 8);
-    auto *title = new QLabel(text("canvas_title"));
+    auto *title = new QWidget;
     breadcrumbs_ = title;
     title->setObjectName("hierarchy_breadcrumbs");
     title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    connect(title, &QLabel::linkActivated, this, [this](const QString &link) {
-        auto path = hierarchy_path();
-        bool valid = false;
-        auto depth = link.toUInt(&valid);
-        if (valid && depth <= path.size()) {
-            path.resize(depth);
-            navigate_hierarchy(path);
-        }
-    });
-    title->setStyleSheet("font-weight:600;border:0;padding-right:16px;");
-    tools_layout->addWidget(title, 1);
-    for (auto *a : {wire_action, undo_, redo_, fit_action}) {
+    auto *breadcrumb_layout = new QHBoxLayout(title);
+    breadcrumb_layout->setContentsMargins(16, 5, 16, 5);
+    breadcrumb_layout->setSpacing(4);
+    layout->addWidget(title);
+    tools_layout->addStretch();
+    definition_button_ = new QToolButton;
+    definition_button_->setObjectName("edit_definition_button");
+    definition_button_->setDefaultAction(commands_.at("edit_definition"));
+    definition_button_->setToolTip(text("editing_shared_definition"));
+    tools_layout->addWidget(definition_button_);
+    for (auto *a : {search_action, wire_action, undo_, redo_, fit_action}) {
         auto *button = new QToolButton;
         button->setDefaultAction(a);
         tools_layout->addWidget(button);
@@ -1237,6 +1268,7 @@ void EditorWindow::set_project(Project p) {
     selected_.clear();
 
     path_.clear();
+    example_origin_.clear();
     saved_state_ = serialized(root_project());
     refresh();
     canvas_->resetTransform();
@@ -1259,8 +1291,16 @@ bool EditorWindow::open_project(const QString &path) {
         if (!file.open(QIODevice::ReadOnly))
             throw std::runtime_error(file.errorString().toStdString());
         std::istringstream in(file.readAll().toStdString());
-        set_project(read_project(in));
-        path_ = path;
+        auto opened = read_project(in);
+        const bool example = bundled_example(path);
+        if (example) {
+            const auto key = "example_" + QFileInfo(path).completeBaseName();
+            const auto title = text(key.toUtf8().constData());
+            if (title != key) opened.name = title.toStdString();
+        }
+        set_project(std::move(opened));
+        if (example) example_origin_ = path;
+        else path_ = path;
         update_title();
         banner_->setText(text("hint"));
         return true;
@@ -1270,6 +1310,10 @@ bool EditorWindow::open_project(const QString &path) {
     }
 }
 bool EditorWindow::save_project(const QString &path) {
+    if (bundled_example(path)) {
+        banner_->setText(text("example_save_copy"));
+        return false;
+    }
     if (!commit_inline_edit())
         return false;
     try {
@@ -1353,6 +1397,9 @@ void EditorWindow::refresh(bool invalidate) {
                                    scene_project_->scope_channels != project().scope_channels;
     topology_dirty_ |= model_changed;
     if (invalidate && result_ && result_project_ && !same_simulation(*result_project_, root_project())) {
+        auto previous = *result_project_;
+        previous.profile.stop = root_project().profile.stop;
+        if (!same_simulation(previous, root_project())) continuation_.reset();
         clear_result();
         banner_->setText(text("result_outdated"));
     }
@@ -2254,7 +2301,7 @@ bool EditorWindow::confirm_discard() {
         return true;
     auto path = path_;
     if (path.isEmpty())
-        path = QFileDialog::getSaveFileName(this, text("save"), {}, text("project_filter"));
+        path = QFileDialog::getSaveFileName(this, text("save"), suggested_save_path(), text("project_filter"));
     return !path.isEmpty() && save_project(path);
 }
 void EditorWindow::closeEvent(QCloseEvent *e) {

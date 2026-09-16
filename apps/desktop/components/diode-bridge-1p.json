@@ -5,7 +5,7 @@
   "palette": {
     "id": 210,
     "label": "diode_bridge_1p",
-    "category": "converters",
+    "category": "converters/rectifiers",
     "short": "1~",
     "fixed": false,
     "hidden": false

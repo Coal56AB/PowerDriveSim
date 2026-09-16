@@ -5,7 +5,7 @@
   "palette": {
     "id": 223,
     "label": "bidirectional_module",
-    "category": "converters",
+    "category": "converters/dc_dc",
     "short": "DC/DC",
     "fixed": false,
     "hidden": false

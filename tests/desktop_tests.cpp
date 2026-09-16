@@ -17,6 +17,7 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <QWheelEvent>
 #include <QtTest/QtTest>
 #include <cmath>
@@ -38,19 +39,16 @@ class DesktopTests : public QObject {
         QVERIFY(!window.project().scope_enabled);
         auto place = [&](int kind, QPointF point) {
             QTreeWidgetItem *chosen = nullptr;
-            for (int i = 0; i < library->topLevelItemCount(); ++i)
-                for (int j = 0; j < library->topLevelItem(i)->childCount(); ++j) {
-                    auto *item = library->topLevelItem(i)->child(j);
-                    if (item->data(0, Qt::UserRole).toInt() == kind)
-                        chosen = item;
-                }
+            for (QTreeWidgetItemIterator it(library); *it; ++it)
+                if ((*it)->data(0, Qt::UserRole).isValid() && (*it)->data(0, Qt::UserRole).toInt() == kind)
+                    chosen = *it;
             if (!chosen) {
                 auto *bar = window.findChild<QToolBar *>("component_bar");
                 auto *action = window.findChild<QAction *>("insert_component_" + QString::number(kind));
                 QVERIFY(action && bar->actions().contains(action));
                 QTest::mouseClick(bar->widgetForAction(action), Qt::LeftButton);
             } else {
-                chosen->parent()->setExpanded(true);
+                for (auto *parent = chosen->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
                 library->scrollToItem(chosen);
                 QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
                                   library->visualItemRect(chosen).center());

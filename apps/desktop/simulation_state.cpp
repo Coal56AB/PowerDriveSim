@@ -149,8 +149,12 @@ void EditorWindow::continue_simulation() {
 }
 
 void EditorWindow::step_simulation() {
-    if (!running())
-        launch_simulation(continuation_, 1);
+    if (running()) return;
+    try {
+        auto state = continuation_;
+        if (state && state->time >= parse_si(stop_->text().toStdString(), "s")) state.reset();
+        launch_simulation(state, 1);
+    } catch (const std::exception &error) { show_error(error); }
 }
 
 bool EditorWindow::save_simulation_snapshot(const QString &path) {

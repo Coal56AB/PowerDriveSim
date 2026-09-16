@@ -12,11 +12,18 @@
 #include <QSettings>
 #include <QToolBar>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <algorithm>
 #include <sstream>
 
 namespace pds::desktop {
 namespace {
+std::map<std::string, int> definition_icons;
+}
+int definition_icon_id(const std::string &id) {
+    const auto found = definition_icons.find(id);
+    return found == definition_icons.end() ? -1 : found->second;
+}
 QIcon component_icon(int id) {
     QPixmap image(64, 64);
     image.fill(Qt::transparent);
@@ -186,7 +193,6 @@ QIcon component_icon(int id) {
     }
     return QIcon(image);
 }
-} // namespace
 void EditorWindow::refresh_component_icons() {
     for (const auto &[id, action] : component_actions_)
         action->setIcon(component_icon(id));
@@ -245,16 +251,30 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         action->setToolTip(text(label.constData()));
         connect(action, &QAction::triggered, this, [this, id = id] { begin_placement(id); });
         component_actions_[id] = action;
+        if (spec.contains("template")) {
+            QFile file(":/library/" + spec.value("template").toString());
+            if (file.open(QIODevice::ReadOnly)) {
+                std::istringstream input(file.readAll().toStdString());
+                const auto project = read_project(input);
+                for (const auto &instance : project.instances)
+                    definition_icons[instance.definition] = id;
+            }
+        }
         if (group.isEmpty())
             continue;
-        auto *&category = categories[group.toStdString()];
-        if (!category) {
-            category = new QTreeWidgetItem(library_, {text(group.constData())});
-            auto font = category->font(0);
-            font.setBold(true);
-            category->setFont(0, font);
-            category->setFlags(Qt::ItemIsEnabled);
-            category->setExpanded(false);
+        QTreeWidgetItem *category = nullptr;
+        std::string path;
+        for (const auto &part : QString::fromUtf8(group).split('/')) {
+            path += "/" + part.toStdString();
+            auto *&group_item = categories[path];
+            if (!group_item) {
+                group_item = category ? new QTreeWidgetItem(category, {text(part.toUtf8().constData())})
+                                 : new QTreeWidgetItem(library_, {text(part.toUtf8().constData())});
+                auto font = group_item->font(0); font.setBold(true); group_item->setFont(0, font);
+                group_item->setFlags(Qt::ItemIsEnabled);
+                group_item->setExpanded(false);
+            }
+            category = group_item;
         }
         auto *item = new QTreeWidgetItem(category, {text(label.constData())});
         item->setData(0, Qt::UserRole, id);
@@ -266,24 +286,18 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
             const bool active = !query.trimmed().isEmpty();
             if (active && !filtering) {
                 expanded.clear();
-                for (int i = 0; i < library_->topLevelItemCount(); ++i)
-                    if (library_->topLevelItem(i)->isExpanded())
-                        expanded.insert(library_->topLevelItem(i));
+                for (QTreeWidgetItemIterator it(library_); *it; ++it)
+                    if ((*it)->isExpanded()) expanded.insert(*it);
             }
-            for (int i = 0; i < library_->topLevelItemCount(); ++i) {
-                auto *parent = library_->topLevelItem(i);
-                bool any = false;
-                for (int j = 0; j < parent->childCount(); ++j) {
-                    auto *child = parent->child(j);
-                    const bool match = !active || child->text(0).contains(query, Qt::CaseInsensitive) ||
-                                       parent->text(0).contains(query, Qt::CaseInsensitive);
-                    child->setHidden(!match);
-                    any |= match;
-                }
-                parent->setHidden(!any);
-                if (active || filtering)
-                    parent->setExpanded(active || expanded.count(parent));
-            }
+            std::function<bool(QTreeWidgetItem *, bool)> filter = [&](QTreeWidgetItem *item, bool ancestor) {
+                const bool own = !active || ancestor || item->text(0).contains(query.trimmed(), Qt::CaseInsensitive);
+                bool any = own;
+                for (int j = 0; j < item->childCount(); ++j) any |= filter(item->child(j), own);
+                item->setHidden(!any);
+                if (item->childCount() && (active || filtering)) item->setExpanded(active || expanded.count(item));
+                return any;
+            };
+            for (int i = 0; i < library_->topLevelItemCount(); ++i) filter(library_->topLevelItem(i), false);
             filtering = active;
         });
     connect(library_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem *item, int) {

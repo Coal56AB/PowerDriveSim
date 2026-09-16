@@ -55,6 +55,7 @@ Scope::Scope(QWidget *parent, Domain domain) : QWidget(parent), domain_(domain) 
 }
 void Scope::set_result(const Result *result, const std::vector<int> &channels, const Project &p) {
     const bool new_data = result_ != result || channels_ != channels;
+    if (new_data || !live_) extrema_.clear();
     result_ = result && !result->samples.empty() ? result : nullptr;
     if (new_data)
         cancel_drag();
@@ -130,10 +131,10 @@ void Scope::fit_y() {
         if (!channel_visible(result_channel(*result_, channel).object))
             continue;
         double low = std::numeric_limits<double>::infinity(), high = -low;
-        for (size_t i = from; i < to; ++i) {
-            double v = sample_value(i, channel);
-            low = std::min(low, v);
-            high = std::max(high, v);
+        if (from < to) {
+            auto [imin, imax] = sample_extrema(channel, from, to);
+            low = sample_value(imin, channel);
+            high = sample_value(imax, channel);
         }
         all_low = std::min(all_low, low);
         all_high = std::max(all_high, high);
@@ -150,6 +151,12 @@ void Scope::fit_y() {
 }
 double Scope::sample_value(size_t sample, int channel) const {
     return channel_value(*result_, sample, channel);
+}
+std::pair<size_t, size_t> Scope::sample_extrema(int channel, size_t from, size_t to) {
+    auto value = [&](size_t i) { return sample_value(i, channel); };
+    auto &index = extrema_[channel];
+    index.append(result_->samples.size(), value);
+    return index.range(from, to, value);
 }
 void Scope::paintEvent(QPaintEvent *) {
     QPainter painter(this);
@@ -240,12 +247,9 @@ void Scope::paintEvent(QPaintEvent *) {
                 for (size_t i = from; i < to; i += stride) {
                     const size_t finish = std::min(i + stride, to);
                     const double first_value = sample_value(i, channels_[ch]);
-                    double minimum = first_value, maximum = first_value, last_value = first_value;
-                    for (size_t k = i + 1; k < finish; ++k) {
-                        last_value = sample_value(k, channels_[ch]);
-                        minimum = std::min(minimum, last_value);
-                        maximum = std::max(maximum, last_value);
-                    }
+                    const auto [imin, imax] = sample_extrema(channels_[ch], i, finish);
+                    const double minimum = sample_value(imin, channels_[ch]), maximum = sample_value(imax, channels_[ch]),
+                                 last_value = sample_value(finish - 1, channels_[ch]);
                     const double column = x((samples[i].time + samples[finish - 1].time) / 2);
                     envelope.append(QLineF(column, y(minimum), column, y(maximum)));
                     if (have_previous) {
@@ -267,13 +271,8 @@ void Scope::paintEvent(QPaintEvent *) {
                 continue;
             }
             for (size_t i = from; i < to; i += stride) {
-                size_t finish = std::min(i + stride, to), imin = i, imax = i;
-                for (size_t k = i + 1; k < finish; ++k) {
-                    if (sample_value(k, channels_[ch]) < sample_value(imin, channels_[ch]))
-                        imin = k;
-                    if (sample_value(k, channels_[ch]) > sample_value(imax, channels_[ch]))
-                        imax = k;
-                }
+                size_t finish = std::min(i + stride, to);
+                auto [imin, imax] = sample_extrema(channels_[ch], i, finish);
                 std::vector<size_t> indices{i, imin, imax, finish - 1};
                 std::sort(indices.begin(), indices.end());
                 indices.erase(std::unique(indices.begin(), indices.end()), indices.end());

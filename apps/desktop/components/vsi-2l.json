@@ -5,7 +5,7 @@
   "palette": {
     "id": 260,
     "label": "vsi_2l_module",
-    "category": "converters",
+    "category": "converters/inverters",
     "short": "2L VSI",
     "fixed": false,
     "hidden": false

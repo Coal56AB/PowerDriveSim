@@ -98,6 +98,7 @@ void Canvas::set_ghost(QGraphicsItem *item) {
         item->setZValue(90);
         std::function<void(QGraphicsItem *)> disable = [&](QGraphicsItem *child) {
             child->setAcceptedMouseButtons(Qt::NoButton);
+            child->setAcceptHoverEvents(false);
             child->setData(1, "preview");
             child->setFlags({});
             for (auto *c : child->childItems())

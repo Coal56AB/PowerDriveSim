@@ -5,7 +5,7 @@
   "palette": {
     "id": 270,
     "label": "open_end_winding_module",
-    "category": "converters",
+    "category": "converters/inverters",
     "short": "Dual VSI",
     "fixed": false,
     "hidden": false

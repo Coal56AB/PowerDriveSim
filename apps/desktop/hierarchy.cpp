@@ -22,6 +22,7 @@
 #include <QTableWidget>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
 #include <set>
@@ -213,24 +214,39 @@ void EditorWindow::refresh_hierarchy() {
     if (!hierarchy_ || !document_)
         return;
     const auto &root = root_project();
-    QString breadcrumb = "<a href=\"0\">" + QString::fromStdString(root.name).toHtmlEscaped() + "</a>";
+    auto *layout = static_cast<QHBoxLayout *>(breadcrumbs_->layout());
+    while (auto *item = layout->takeAt(0)) {
+        if (item->widget()) item->widget()->deleteLater();
+        delete item;
+    }
+    auto add_level = [&](const std::string &name, size_t depth) {
+        auto *button = new QToolButton;
+        button->setObjectName("hierarchy_level_" + QString::number(depth));
+        const auto title = name.empty() ? text("untitled") : QString::fromStdString(name);
+        button->setText(QFontMetrics(button->font()).elidedText(title, Qt::ElideMiddle, 200));
+        button->setToolTip(title);
+        button->setCheckable(true);
+        button->setChecked(depth == hierarchy_path().size());
+        button->setStyleSheet("QToolButton{border:1px solid palette(mid);border-radius:4px;padding:6px 10px;}"
+                              "QToolButton:hover,QToolButton:checked{background:palette(alternate-base);}");
+        connect(button, &QToolButton::clicked, this, [this, depth] {
+            auto path = hierarchy_path();
+            if (depth <= path.size()) { path.resize(depth); navigate_hierarchy(path); }
+        });
+        layout->addWidget(button);
+    };
+    add_level(root.name, 0);
     const Schematic *level = &root;
     size_t depth = 0;
     for (const auto &step : hierarchy_path()) {
         auto i = std::find_if(level->instances.begin(), level->instances.end(),
                               [&](const auto &i) { return i.id == step; });
-        if (i == level->instances.end())
-            break;
-        breadcrumb += " / <a href=\"" + QString::number(++depth) + "\">" +
-                      QString::fromStdString(i->name).toHtmlEscaped() + "</a>";
+        if (i == level->instances.end()) break;
+        add_level(i->name, ++depth);
         level = &definition(root, i->definition);
     }
-    if (depth)
-        breadcrumb +=
-            " · " +
-            text(hierarchy_edit_enabled_ ? "definition_shared" : "definition_readonly").toHtmlEscaped();
-    breadcrumbs_->setText(breadcrumb);
-    breadcrumbs_->setToolTip(text("editing_shared_definition"));
+    layout->addStretch();
+    definition_button_->setVisible(depth != 0);
     std::map<std::string, QString> exposed;
     if (depth)
         for (const auto &port : definition(root, document_->current_definition()).ports)

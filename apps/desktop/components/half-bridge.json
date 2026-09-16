@@ -5,7 +5,7 @@
   "palette": {
     "id": 230,
     "label": "half_bridge_module",
-    "category": "converters",
+    "category": "converters/inverters",
     "short": "half-bridge",
     "fixed": false,
     "hidden": false

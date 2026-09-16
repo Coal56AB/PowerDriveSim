@@ -5,7 +5,7 @@
   "palette": {
     "id": 231,
     "label": "full_bridge_module",
-    "category": "converters",
+    "category": "converters/inverters",
     "short": "full-bridge",
     "fixed": false,
     "hidden": false

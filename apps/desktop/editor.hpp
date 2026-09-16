@@ -2,6 +2,7 @@
 #include "core/editor/document.hpp"
 #include "core/solver/reference/reference.hpp"
 #include "results/measurements.hpp"
+#include "results/extrema_index.hpp"
 #include <QElapsedTimer>
 #include <QFutureWatcher>
 #include <QGraphicsView>
@@ -34,8 +35,12 @@ class QLabel;
 class QAction;
 class QTableWidget;
 class QToolBar;
+class QToolButton;
 class QMenu;
 namespace pds::desktop {
+QIcon component_icon(int id);
+int definition_icon_id(const std::string &id);
+bool bundled_example(const QString &path);
 inline constexpr int wire_segment_role = 3; // 1-based path edge; zero selects the whole wire.
 inline constexpr int channel_highlight_role = 6;
 QString text(const char *key);
@@ -158,6 +163,8 @@ class Scope : public QWidget {
   private:
     Domain domain_ = Domain::time;
     const Result *result_ = nullptr;
+    std::map<int, ExtremaIndex> extrema_;
+    std::pair<size_t, size_t> sample_extrema(int channel, size_t from, size_t to);
     std::vector<int> channels_;
     std::set<std::string> hidden_channels_;
     QPointer<QToolBar> channel_bar_;
@@ -261,6 +268,9 @@ class EditorWindow : public QMainWindow {
     const Result &result() const { return *result_; }
     void set_project(Project project);
     bool open_project(const QString &path);
+    void build_examples_menu(QMenu *menu);
+    void show_command_search();
+    QString suggested_save_path() const;
     bool save_project(const QString &path);
     bool autosave();
     bool recover(const QString &path);
@@ -294,7 +304,9 @@ class EditorWindow : public QMainWindow {
 
   private:
     std::unique_ptr<Document> document_;
-    QLabel *breadcrumbs_ = nullptr;
+    QWidget *breadcrumbs_ = nullptr;
+    QToolButton *definition_button_ = nullptr;
+    QString example_origin_;
     QTreeWidget *hierarchy_ = nullptr;
     std::vector<std::string> scene_path_;
     bool hierarchy_edit_enabled_ = false;

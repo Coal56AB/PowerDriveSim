@@ -18,6 +18,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPainterPath>
@@ -31,6 +32,62 @@
 #include <limits>
 #include <sstream>
 namespace pds::desktop {
+void EditorWindow::show_command_search() {
+    QDialog dialog(this);
+    dialog.setObjectName("command_search_dialog");
+    dialog.setWindowTitle(text("command_search"));
+    dialog.resize(640, 440);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *input = new QLineEdit;
+    input->setObjectName("command_search_input");
+    input->setPlaceholderText(text("command_search_hint"));
+    auto *list = new QListWidget;
+    list->setObjectName("command_search_results");
+    layout->addWidget(input);
+    layout->addWidget(list);
+    std::vector<QPointer<QAction>> actions;
+    std::set<QAction *> added;
+    std::function<void(const QList<QAction *> &, const QString &)> collect = [&](const auto &entries, const QString &prefix) {
+        for (auto *action : entries) {
+            if (action->isSeparator()) continue;
+            auto name = action->text(); name.remove('&');
+            const auto label = prefix + name;
+            if (action->menu()) { collect(action->menu()->actions(), label + " → "); continue; }
+            if (!added.insert(action).second) continue;
+            auto *item = new QListWidgetItem(label + (action->shortcut().isEmpty() ? QString() : "    " + action->shortcut().toString(QKeySequence::NativeText)), list);
+            item->setData(Qt::UserRole, int(actions.size()));
+            item->setToolTip(action->toolTip());
+            if (!action->isEnabled()) item->setFlags(item->flags() & ~Qt::ItemIsEnabled);
+            actions.push_back(action);
+        }
+    };
+    collect(menuBar()->actions(), {});
+    for (const auto &[id, action] : component_actions_) collect({action}, text("library") + " → ");
+    QPointer<QAction> selected;
+    auto choose = [&] {
+        auto *item = list->currentItem();
+        if (!item || item->isHidden() || !(item->flags() & Qt::ItemIsEnabled)) return;
+        selected = actions.at(size_t(item->data(Qt::UserRole).toInt()));
+        dialog.accept();
+    };
+    connect(input, &QLineEdit::textChanged, &dialog, [&](const QString &query) {
+        QListWidgetItem *first = nullptr;
+        for (int i = 0; i < list->count(); ++i) {
+            auto *item = list->item(i);
+            bool matches = true;
+            for (const auto &word : query.simplified().split(' ', Qt::SkipEmptyParts))
+                matches &= (item->text() + " " + item->toolTip()).contains(word, Qt::CaseInsensitive);
+            item->setHidden(!matches);
+            if (matches && !first && (item->flags() & Qt::ItemIsEnabled)) first = item;
+        }
+        list->setCurrentItem(first);
+    });
+    connect(input, &QLineEdit::returnPressed, &dialog, choose);
+    connect(list, &QListWidget::itemActivated, &dialog, [&](QListWidgetItem *) { choose(); });
+    list->setCurrentRow(0);
+    input->setFocus();
+    if (dialog.exec() == QDialog::Accepted && selected && selected->isEnabled()) selected->trigger();
+}
 std::vector<std::string> EditorWindow::selected_ids() const {
     std::vector<std::string> ids;
     for (auto *item : canvas_->scene()->selectedItems()) {

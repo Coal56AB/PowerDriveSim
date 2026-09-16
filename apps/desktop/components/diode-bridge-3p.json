@@ -5,7 +5,7 @@
   "palette": {
     "id": 211,
     "label": "diode_bridge_3p",
-    "category": "converters",
+    "category": "converters/rectifiers",
     "short": "3~",
     "fixed": false,
     "hidden": false

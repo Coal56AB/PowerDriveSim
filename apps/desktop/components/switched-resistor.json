@@ -5,7 +5,7 @@
   "palette": {
     "id": 242,
     "label": "switched_resistor_module",
-    "category": "converters",
+    "category": "converters/dc_bus",
     "short": "switched-resistor",
     "fixed": false,
     "hidden": false

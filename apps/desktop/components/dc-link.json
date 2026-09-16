@@ -5,7 +5,7 @@
   "palette": {
     "id": 241,
     "label": "dc_link_module",
-    "category": "converters",
+    "category": "converters/dc_bus",
     "short": "dc-link",
     "fixed": false,
     "hidden": false

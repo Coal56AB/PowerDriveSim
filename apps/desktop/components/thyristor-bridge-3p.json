@@ -5,7 +5,7 @@
   "palette": {
     "id": 213,
     "label": "thyristor_bridge_3p",
-    "category": "converters",
+    "category": "converters/rectifiers",
     "short": "T 3~",
     "fixed": false,
     "hidden": false

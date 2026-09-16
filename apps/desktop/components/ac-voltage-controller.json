@@ -5,7 +5,7 @@
   "palette": {
     "id": 250,
     "label": "ac_voltage_controller",
-    "category": "converters",
+    "category": "converters/ac_ac",
     "short": "AC/AC",
     "fixed": false,
     "hidden": false

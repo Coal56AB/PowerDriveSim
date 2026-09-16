@@ -71,7 +71,7 @@ void EditorWindow::update_command_state() {
         auto action = commands_.find(key);
         if (action != commands_.end())
             action->second->setEnabled(!running() &&
-                ((std::string(key) != "continue_state" && std::string(key) != "simulation_step") || can_advance) &&
+                (std::string(key) != "continue_state" || can_advance) &&
                 ((std::string(key) != "snapshot_save" && std::string(key) != "continue_state") ||
                  continuation_.has_value()));
     }

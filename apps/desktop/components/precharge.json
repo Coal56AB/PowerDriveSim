@@ -5,7 +5,7 @@
   "palette": {
     "id": 240,
     "label": "precharge_module",
-    "category": "converters",
+    "category": "converters/dc_bus",
     "short": "precharge",
     "fixed": false,
     "hidden": false
