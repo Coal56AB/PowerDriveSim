@@ -282,5 +282,9 @@
   "source_phase": "Initial phase, rad",
   "source_points": "Time and value",
   "samples_format": "Enter time and value on each row, for example: 1ms 5V",
-  "wave_table_short": "Table"
+  "wave_table_short": "Table",
+  "import_samples": "Import table…",
+  "import_samples_hint": "Load two columns: time and value. Review the table and click Apply.",
+  "sample_file_filter": "Tables (*.csv *.tsv *.txt);;All files (*)",
+  "sample_import_error": "Could not import table: %1"
 }

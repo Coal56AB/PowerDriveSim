@@ -2,8 +2,11 @@
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
+#include "formats/samples/table.hpp"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QFile>
+#include <QFileDialog>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -43,7 +46,7 @@ static QString field_text(QWidget *widget) {
         for (int col = 0; col < 2; ++col)
             parts << (table->item(row, col) ? table->item(row, col)->text() : QString());
         if (!parts.join("").trimmed().isEmpty())
-            result += parts.join(" ") + "\n";
+            result += parts.join(widget->property("editor") == "samples" ? "\t" : " ") + "\n";
     }
     return result;
 }
@@ -73,7 +76,10 @@ static void set_field_text(QWidget *widget, const QString &text) {
     auto lines = text.split('\n', Qt::SkipEmptyParts);
     table->setRowCount(lines.size() + 1);
     for (int row = 0; row < table->rowCount(); ++row) {
-        auto parts = row < lines.size() ? lines[row].simplified().split(' ') : QStringList{};
+        auto parts = row < lines.size()
+                         ? (widget->property("editor") == "samples" ? lines[row].split('\t')
+                                                                    : lines[row].simplified().split(' '))
+                         : QStringList{};
         for (int col = 0; col < 2; ++col)
             table->setItem(row, col, new QTableWidgetItem(col < parts.size() ? parts[col] : QString()));
     }
@@ -97,7 +103,8 @@ static QString display_value(const PropertyValue &value, const QJsonObject &fiel
             result += QString::number(e.time, 'g', 12) + "s " + (e.closed ? "1" : "0") + "\n";
     if (auto v = std::get_if<std::vector<Point>>(&value))
         for (auto e : *v)
-            result += QString::number(e.x, 'g', 12) + " " + QString::number(e.y, 'g', 12) + "\n";
+            result += QString::number(e.x, 'g', 17) + (field.value("editor") == "samples" ? "\t" : " ") +
+                      QString::number(e.y, 'g', 17) + "\n";
     return result;
 }
 static PropertyValue parse_field(const QString &input, const QJsonObject &field) {
@@ -144,11 +151,12 @@ static PropertyValue parse_field(const QString &input, const QJsonObject &field)
                 throw std::runtime_error(text("events_format").toStdString());
             events.push_back({parse_si(time, "s"), "", state != 0});
         } else if (editor == "samples") {
-            std::string time, value;
-            if (!(in >> time >> value) || (in >> extra))
+            const auto cells = line.split('\t');
+            if (cells.size() != 2)
                 throw std::runtime_error(text("samples_format").toStdString());
             points.push_back(
-                {parse_si(time, "s"), parse_si(value, field.value("unit").toString().toStdString())});
+                {parse_si(cells[0].toStdString(), "s"),
+                 parse_si(cells[1].toStdString(), field.value("unit").toString().toStdString())});
         } else {
             Point point;
             if (!(in >> point.x >> point.y) || (in >> extra) || !std::isfinite(point.x) ||
@@ -170,6 +178,13 @@ void EditorWindow::fill_inspector() {
     inspector_id_ = selected_;
     property_error_->clear();
     active_fields_ = {};
+    for (auto &[key, button] : property_imports_) {
+        if (properties_->indexOf(button) >= 0) {
+            auto row = properties_->takeRow(button);
+            delete row.fieldItem;
+        }
+        button->hide();
+    }
     for (auto &[key, widget] : property_editors_) {
         if (properties_->indexOf(widget) >= 0) {
             auto row = properties_->takeRow(widget);
@@ -245,8 +260,48 @@ void EditorWindow::fill_inspector() {
             auto *table = qobject_cast<QTableWidget *>(widget);
             table->setHorizontalHeaderLabels(
                 {text("time_s"), text("value") + ", " + field.value("unit").toString()});
+            auto *button = property_imports_.at(key);
+            properties_->insertRow(row++, button);
+            button->show();
         }
         active_fields_.append(field);
+    }
+}
+void EditorWindow::import_samples(const QString &key) {
+    if (!editing_allowed() || inspector_id_ != selected_ || selected_.empty())
+        return;
+    QJsonObject field;
+    for (const auto &entry : active_fields_)
+        if (entry.toObject().value("key").toString() == key)
+            field = entry.toObject();
+    if (field.value("editor") != "samples")
+        return;
+    const auto owner = selected_;
+    const auto path =
+        QFileDialog::getOpenFileName(this, text("import_samples"), {}, text("sample_file_filter"));
+    if (path.isEmpty() || selected_ != owner)
+        return;
+    try {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly))
+            throw std::runtime_error(file.errorString().toStdString());
+        if (file.size() > qint64(sample_table_max_bytes))
+            throw std::runtime_error("Table exceeds 16 MiB");
+        auto bytes = file.readAll();
+        if (file.error() != QFileDevice::NoError)
+            throw std::runtime_error(file.errorString().toStdString());
+        std::istringstream input(bytes.toStdString());
+        const auto points = read_sample_table(input, field.value("unit").toString().toStdString());
+        auto *widget = property_editors_.at(key);
+        {
+            QScopedValueRollback<bool> loading(inspector_loading_, true);
+            set_field_text(widget, display_value(points, field));
+        }
+        widget->setProperty("draft", true);
+        remember_draft();
+        property_error_->clear();
+    } catch (const std::exception &e) {
+        property_error_->setText(text("sample_import_error").arg(QString::fromUtf8(e.what())));
     }
 }
 void EditorWindow::apply_inspector() {

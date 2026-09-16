@@ -4,6 +4,8 @@
 #include "core/model/waveform.hpp"
 #include "core/solver/reference/reference.hpp"
 #include "formats/project/project.hpp"
+#include "formats/samples/table.hpp"
+#include "results/csv.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -58,6 +60,40 @@ static void roundtrip(const Project &p) {
 }
 int main(int argc, char **argv) try {
     check(argc == 2, "Pass repository root");
+    auto parse_table = [](const std::string &text, const std::string &unit = "V") {
+        std::istringstream in(text);
+        return read_sample_table(in, unit);
+    };
+    for (const auto &text : {"time[s],value[V]\n0,1\n0.001,2\n",
+                             "\xef\xbb\xbf# comment\r\ntime[ms];value[mV]\r\n0;1000\r\n1,0;2000\r\n",
+                             "t\tvalue\n0\t1,0\n1ms\t2V\n", "# SI\n0s 1V\n1ms 2V\n",
+                             "\"time[ms]\",\"Voltage, V[mV]\"\n\"0\",\"1 V\"\n\"1ms\",\"2000\"\n"})
+        check(parse_table(text) == std::vector<Point>{{0, 1}, {.001, 2}}, "Sample table delimiters and units");
+    check(parse_table("time[us],value[mA]\n0,1\n1000,2\n", "A") == std::vector<Point>{{0, .001}, {.001, .002}},
+          "Current table header units");
+    for (const auto &text :
+         {"", "# empty\n", "time,value\n", "0,1,2\n", "-1,0\n", "0,1\n0,2\n", "1,1\n0,2\n", "0,nan\n",
+          "0,inf\n", "1e999,1\n", "0,1A\n", "time[V],value[V]\n0,1\n", "time[s],value[A]\n0,1\n", "0,\"1\n",
+          "0,\"1\"x\n", "time[s],value[V]\n0,1\ntime[s],value[V]\n"})
+        error("invalid_samples", [&] { parse_table(text); });
+    try {
+        parse_table("# comment\n0,1\n0,2\n");
+        check(false, "Missing table line diagnostic");
+    } catch (const Diagnostic &e) {
+        check(std::string(e.what()).find("Line 3:") != std::string::npos, "Table error locates row");
+    }
+    std::ostringstream long_table;
+    for (size_t i = 0; i <= sample_table_max_rows; ++i)
+        long_table << i << ",0\n";
+    error("invalid_samples", [&] { parse_table(long_table.str()); });
+    error("invalid_samples", [&] { parse_table(std::string(sample_table_max_bytes + 1, '#')); });
+    Result exported;
+    exported.channels.push_back({"voltage", "u:source, output; \"probe\"", "V"});
+    exported.samples = {{0, {1.2345678901234567}, {}}, {.0012345678901234567, {2}, {}}};
+    std::ostringstream csv;
+    write_csv(exported, csv);
+    check(parse_table(csv.str()) == std::vector<Point>{{0, 1.2345678901234567}, {.0012345678901234567, 2}},
+          "Single-channel Scope CSV imports without loss");
     for (bool current : {false, true}) {
         auto p = fixture(current);
         auto &s = p.components[0].source;

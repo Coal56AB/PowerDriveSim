@@ -14,6 +14,8 @@
 #include <QDialogButtonBox>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
 #include <QJsonDocument>
@@ -73,6 +75,95 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void import_source_table() {
+        struct RestoreNativeDialogs {
+            bool previous = QApplication::testAttribute(Qt::AA_DontUseNativeDialogs);
+            ~RestoreNativeDialogs() { QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, previous); }
+        } restore;
+        QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/rc-table.pds")));
+        ready(w);
+        const auto source = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                        [](const auto &c) { return c.kind == Kind::voltage; })->id;
+        w.select_object(source);
+        auto *button = w.findChild<QPushButton *>("import_source_points");
+        auto *table = w.findChild<QTableWidget *>("property_source_points");
+        QVERIFY(button && button->isVisible());
+        auto choose = [&](const QString &path, bool cancel = false) {
+            bool visited = false;
+            QTimer timer;
+            QElapsedTimer elapsed;
+            elapsed.start();
+            connect(&timer, &QTimer::timeout, &w, [&] {
+                if (auto *dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget())) {
+                    if (cancel || elapsed.elapsed() > 3000) {
+                        visited |= cancel;
+                        timer.stop();
+                        dialog->reject();
+                    } else if (!visited) {
+                        visited = true;
+                        dialog->setDirectory(QFileInfo(path).absolutePath());
+                        dialog->selectFile(QFileInfo(path).fileName());
+                        auto *edit = dialog->findChild<QLineEdit *>("fileNameEdit");
+                        if (edit) edit->setText(QFileInfo(path).fileName());
+                    } else {
+                        QMetaObject::invokeMethod(dialog, "accept");
+                    }
+                } else if (elapsed.elapsed() > 3000) {
+                    if (auto *other = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+                        other->reject();
+                }
+            });
+            timer.start(20);
+            QTest::mouseClick(button, Qt::LeftButton);
+            return visited;
+        };
+        auto file = dir.filePath("signal.csv");
+        QFile out(file);
+        QVERIFY(out.open(QIODevice::WriteOnly));
+        out.write("time[s];value[V]\n0;1,2345678901234567\n0,002;2,5\n");
+        out.close();
+        const auto before = encoded(w.root_project());
+        QVERIFY(choose(file));
+        QCOMPARE(table->rowCount(), 3);
+        QCOMPARE(table->item(0, 1)->text().toDouble(), 1.2345678901234567);
+        QCOMPARE(table->item(1, 0)->text().toDouble(), .002);
+        QCOMPARE(encoded(w.root_project()), before); // Import is a draft until Apply.
+        QVERIFY(choose({}, true));
+        QCOMPARE(table->rowCount(), 3);
+        const auto resistor = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                           [](const auto &c) { return c.kind == Kind::resistor; })->id;
+        w.select_object(resistor);
+        QVERIFY(!button->isVisible());
+        w.select_object(source);
+        QVERIFY(button->isVisible());
+        QCOMPARE(table->item(1, 1)->text().toDouble(), 2.5); // Draft survives navigation.
+        QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        out.write("time,value\n0,1\n0,2\n"); out.close();
+        QVERIFY(choose(file));
+        QCOMPARE(table->item(1, 1)->text().toDouble(), 2.5);
+        QVERIFY(w.findChild<QLabel *>("property_error")->text().contains("Line 3:"));
+        QCOMPARE(encoded(w.root_project()), before);
+        QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
+        QVERIFY(w.findChild<QLabel *>("property_error")->text().isEmpty());
+        const auto applied = encoded(w.root_project());
+        QVERIFY(applied != before);
+        w.undo(); QCOMPARE(encoded(w.root_project()), before);
+        w.redo(); QCOMPARE(encoded(w.root_project()), applied);
+        QVERIFY(QFile::remove(file));
+        const auto saved = dir.filePath("imported.pds");
+        QVERIFY(w.save_project(saved)); QVERIFY(w.open_project(saved));
+        QCOMPARE(encoded(w.root_project()), applied);
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(w.has_result());
+        if (auto path = qEnvironmentVariable("PDS_IMPORT_SCREENSHOT"); !path.isEmpty()) {
+            w.select_object(source);
+            QTest::qWait(30);
+            QVERIFY(w.grab().save(path));
+        }
+    }
     void source_waveform_properties_and_run() {
         QTemporaryDir dir;
         EditorWindow w("ru",dir.path());
@@ -106,7 +197,7 @@ class InteractionTests : public QObject {
         auto *points=w.findChild<QTableWidget*>("property_source_points");
         QVERIFY(points->isVisible());QVERIFY(!frequency->isVisible());
         points->setItem(0,0,new QTableWidgetItem("0s"));points->setItem(0,1,new QTableWidgetItem("0V"));
-        points->setItem(1,0,new QTableWidgetItem("2ms"));points->setItem(1,1,new QTableWidgetItem("3V"));
+        points->setItem(1,0,new QTableWidgetItem("2 ms"));points->setItem(1,1,new QTableWidgetItem("3 V"));
         QTest::mouseClick(w.findChild<QPushButton*>("apply_properties"),Qt::LeftButton);
         QCOMPARE(selected_source().source.points,(std::vector<Point>{{0,0},{.002,3}}));
         w.start_simulation();QTRY_VERIFY_WITH_TIMEOUT(!w.running(),2000);QVERIFY(w.has_result());

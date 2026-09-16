@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QStyledItemDelegate>
 #include <QTableWidget>
@@ -120,6 +121,15 @@ void EditorWindow::build_property_editors() {
                     table->setProperty("draft", true);
                     remember_draft();
                 });
+                if (kind == "samples") {
+                    auto *button = new QPushButton(text("import_samples"));
+                    button->setObjectName("import_" + key);
+                    button->setToolTip(text("import_samples_hint"));
+                    button->setAutoDefault(false);
+                    properties_->addRow(button);
+                    property_imports_[key] = button;
+                    connect(button, &QPushButton::clicked, this, [this, key] { import_samples(key); });
+                }
             } else {
                 auto *edit = new QPlainTextEdit;
                 widget = edit;

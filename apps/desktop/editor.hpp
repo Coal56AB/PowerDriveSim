@@ -302,6 +302,7 @@ class EditorWindow : public QMainWindow {
     std::map<int, QAction *> component_actions_;
     std::map<std::string, QJsonObject> component_specs_;
     std::map<QString, QWidget *> property_editors_;
+    std::map<QString, QPushButton *> property_imports_;
     QJsonArray active_fields_;
     QPointer<QLineEdit> inline_editor_;
     std::vector<int> pinned_components_;
@@ -397,6 +398,7 @@ class EditorWindow : public QMainWindow {
     void update_wires();
     void fill_inspector();
     void apply_inspector();
+    void import_samples(const QString &key);
     void show_error(const std::exception &);
     void commit_positions();
     void delete_selected();
