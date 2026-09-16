@@ -319,5 +319,6 @@
   "bidirectional_module": "Двунаправленный buck/boost",
   "precharge_module": "Предварительный заряд",
   "dc_link_module": "DC-link · Конденсатор",
-  "switched_resistor_module": "Разряд / тормозной резистор"
+  "switched_resistor_module": "Разряд / тормозной резистор",
+  "ac_voltage_controller": "Регулятор переменного напряжения"
 }

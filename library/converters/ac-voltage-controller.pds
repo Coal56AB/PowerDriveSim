@@ -1,0 +1,39 @@
+PowerDriveSim 12
+project "64884bbe-f5bb-5172-adbf-c33cdcacf175" "AC voltage controller"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "d769dc0a-f952-55f0-ae4e-f97e0caa787f" "AC voltage controller" "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" 0 0 0
+definition "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" "AC voltage controller"
+public_port "55b29433-2080-57b1-8830-217e488fc38a" "IN" "178540cd-5103-5083-9f95-a46e981a287d" "node" 0 0
+public_port "ba9cd319-9d28-5b91-a149-b45ae03d51a5" "OUT" "dab9f98e-3911-5244-939b-05cae467d33b" "node" 0 0
+public_port "1c88278d-6855-5ca8-b8c0-8bd670e38ae3" "g+" "4462fcda-3fde-532f-b501-f5d1de737ba3" "gate" 1 1
+public_port "9698c92b-9364-5536-923b-ac5c41f1a726" "g-" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "gate" 1 1
+public_parameter "b7e48c6a-f034-542c-a88c-4044d71eff2b" "Ron T+" "Ohm" "4462fcda-3fde-532f-b501-f5d1de737ba3" "ron" 0.01
+public_parameter "580edfcb-c736-555d-a593-51f67a791422" "Vf T+" "V" "4462fcda-3fde-532f-b501-f5d1de737ba3" "forward_voltage" 0.7
+public_parameter "b9f72500-318d-58d6-9507-7400d9bf9cbd" "Ron T-" "Ohm" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "ron" 0.01
+public_parameter "79e756ed-14c7-5ae3-8a31-9120b46fdc05" "Vf T-" "V" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "forward_voltage" 0.7
+body
+PowerDriveSim 12
+project "f27aab68-ffd2-5a45-a0ec-b2fcaf338e70" "AC voltage controller"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "178540cd-5103-5083-9f95-a46e981a287d" "IN" 0 -240 0
+node "dab9f98e-3911-5244-939b-05cae467d33b" "OUT" 0 240 0
+component "4462fcda-3fde-532f-b501-f5d1de737ba3" "T+" T "" "" 0 0 0 -100 0
+component "8aaf4546-53f6-5b3c-859f-1011eef110ce" "T-" T "" "" 0 0 0 100 0
+orientation "8aaf4546-53f6-5b3c-859f-1011eef110ce" 2 0
+wire "b232d1dd-9881-587f-9f7a-e990ad8771ad" "178540cd-5103-5083-9f95-a46e981a287d" "node" "4462fcda-3fde-532f-b501-f5d1de737ba3" "p" 1 -240 -100
+wire "a1cf0b2b-8307-5684-ba0b-0da85ea99891" "4462fcda-3fde-532f-b501-f5d1de737ba3" "n" "dab9f98e-3911-5244-939b-05cae467d33b" "node" 1 240 -100
+wire "444f234f-69e0-5b86-b835-46cddcbfeaec" "dab9f98e-3911-5244-939b-05cae467d33b" "node" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "p" 1 240 100
+wire "826b8e66-ed9a-5638-bab6-2c73c16379f8" "8aaf4546-53f6-5b3c-859f-1011eef110ce" "n" "178540cd-5103-5083-9f95-a46e981a287d" "node" 1 -240 100
+semiconductor "4462fcda-3fde-532f-b501-f5d1de737ba3" 1 0.01 1000000 0.7
+x-label "4462fcda-3fde-532f-b501-f5d1de737ba3" "value" -50 0 0 0
+semiconductor "8aaf4546-53f6-5b3c-859f-1011eef110ce" 1 0.01 1000000 0.7
+x-label "8aaf4546-53f6-5b3c-859f-1011eef110ce" "value" -50 0 0 0
+end_definition

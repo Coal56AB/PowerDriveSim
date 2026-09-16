@@ -59,7 +59,9 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
    энергии, с внешними комплементарными gates и точной RL-аналитикой.
    [Precharge/DC-link и коммутируемый резистор](dc-link.md) добавлены с примерами
    заряда/обхода/разряда и торможения; проверены RC-аналитика, мощность и энергия.
-   Следом — AC voltage controller и оставшиеся топологии §12.
+   [Регулятор переменного напряжения](ac-voltage-controller.md) проверен с двумя
+   встречно-параллельными тиристорами: ideal/PWL, форма, RMS, удержание и мощность.
+   Следом — библиотечные 2L/NPC и open-end winding по §12.
 3. Initial conditions, snapshot/continue и улучшения шага с учётом событий.
 4. Расширенный анализ Scope: FFT/THD и измерения энергии; scenario/parameter sweep.
 5. Документация компонентов, energy balance/steady-state/fault assertions,

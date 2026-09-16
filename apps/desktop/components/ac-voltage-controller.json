@@ -1,0 +1,13 @@
+{
+  "type": "library:ac-voltage-controller",
+  "fields": [],
+  "template": "converters/ac-voltage-controller.pds",
+  "palette": {
+    "id": 250,
+    "label": "ac_voltage_controller",
+    "category": "converters",
+    "short": "AC/AC",
+    "fixed": false,
+    "hidden": false
+  }
+}

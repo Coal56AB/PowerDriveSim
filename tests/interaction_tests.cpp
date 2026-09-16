@@ -75,6 +75,41 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void ac_controller_library_and_run() {
+        QTemporaryDir dir; EditorWindow w("ru", dir.path());
+        Project empty; empty.id = new_uuid(); empty.wired = true;
+        w.set_project(empty); ready(w);
+        auto *insert = w.findChild<QAction *>("insert_component_250");
+        QVERIFY(insert && !insert->icon().isNull()); insert->trigger();
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          w.canvas()->mapFromScene(QPointF(0, 0)));
+        QCOMPARE(w.root_project().instances.size(), size_t(1));
+        const auto module = w.project().instances.front();
+        const auto parameter = definition(w.project(), module.definition).parameters.front().id;
+        auto *value = w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(parameter));
+        QVERIFY(value && value->isVisible());
+        value->setText("20 mOhm"); QTest::keyClick(value, Qt::Key_Return);
+        QCOMPARE(w.project().instances.front().parameters.front().second, .02);
+        w.open_subcircuit(module.id);
+        QCOMPARE(w.project().components.size(), size_t(2));
+        w.navigate_hierarchy({}); w.undo();
+        QVERIFY(w.project().instances.front().parameters.empty());
+        QVERIFY(w.open_project(PDS_SOURCE_DIR "/examples/ac-voltage-controller.pds"));
+        w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.has_result() && !w.result().samples.empty());
+        const auto path = dir.filePath("ac.pds"); QVERIFY(w.save_project(path));
+        const auto expected = encoded(w.root_project());
+        if (auto screenshot = qEnvironmentVariable("PDS_AC_CONTROLLER_SCREENSHOT"); !screenshot.isEmpty()) {
+            QTest::qWait(30); QVERIFY(w.grab().save(screenshot + ".png"));
+            w.open_plot(w.project().plots.front().id);
+            auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(w.project().plots.front().id));
+            QVERIFY(graph); QTest::qWait(30); QVERIFY(graph->grab().save(screenshot + "-plot.png")); graph->close();
+            w.open_subcircuit(w.project().instances.front().id);
+            QTest::qWait(30); QVERIFY(w.grab().save(screenshot + "-inside.png"));
+        }
+        QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+    }
     void dc_link_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
         Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty); ready(w);

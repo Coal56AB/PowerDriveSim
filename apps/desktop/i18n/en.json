@@ -319,5 +319,6 @@
   "bidirectional_module": "Bidirectional buck/boost",
   "precharge_module": "Precharge circuit",
   "dc_link_module": "DC-link capacitor",
-  "switched_resistor_module": "Discharge / braking resistor"
+  "switched_resistor_module": "Discharge / braking resistor",
+  "ac_voltage_controller": "AC voltage controller"
 }

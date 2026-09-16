@@ -242,8 +242,10 @@ void EditorWindow::refresh_hierarchy() {
                     exposed[endpoint_key({id, dot->data(2).toString().toStdString()})].trimmed();
                 if (dot->data(7).toString() == label) {
                     for (auto *child : dot->childItems())
-                        if (auto *note = dynamic_cast<QGraphicsSimpleTextItem *>(child))
+                        if (auto *note = dynamic_cast<QGraphicsSimpleTextItem *>(child)) {
                             note->setBrush(theme_colors().signal);
+                            note->setTransform(atom->transform().inverted());
+                        }
                     continue;
                 }
                 dot->setData(7, label);
@@ -257,6 +259,7 @@ void EditorWindow::refresh_hierarchy() {
                     font.setPointSize(8);
                     note->setFont(font);
                     note->setPos(5, -20);
+                    note->setTransform(atom->transform().inverted());
                 }
             }
     QStringList structure{QString::fromStdString(root.id), QString::fromStdString(root.name)};
