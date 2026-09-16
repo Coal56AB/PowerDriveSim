@@ -75,6 +75,38 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void bridge_library_and_run() {
+        for (const int type : {230, 231}) {
+            QTemporaryDir dir; EditorWindow w("ru", dir.path());
+            Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty); ready(w);
+            auto *insert = w.findChild<QAction *>("insert_component_" + QString::number(type));
+            QVERIFY(insert && !insert->icon().isNull()); insert->trigger();
+            QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              w.canvas()->mapFromScene(QPointF(0, 0)));
+            QCOMPARE(w.project().instances.size(), size_t(1));
+            const auto module = w.project().instances.front(); w.open_subcircuit(module.id);
+            if (type == 231) {
+                QCOMPARE(w.project().instances.size(), size_t(2));
+                w.open_subcircuit(w.project().instances.front().id);
+            }
+            QCOMPARE(w.project().components.size(), size_t(4));
+            w.navigate_hierarchy({}); w.undo(); QVERIFY(w.project().instances.empty());
+            w.redo(); QCOMPARE(w.project().instances.front().id, module.id);
+            const QString kind = type == 230 ? "half-bridge" : "full-bridge";
+            QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/") + kind + ".pds"));
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+            w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+            QVERIFY(w.has_result() && !w.result().samples.empty());
+            const auto path = dir.filePath("bridge.pds"); QVERIFY(w.save_project(path));
+            const auto expected = encoded(w.root_project());
+            QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+            if (auto screenshot = qEnvironmentVariable("PDS_BRIDGE_SCREENSHOT"); !screenshot.isEmpty()) {
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + kind + ".png"));
+                w.open_subcircuit(w.project().instances.front().id);
+                QTest::qWait(30); QVERIFY(w.grab().save(screenshot + kind + "-inside.png"));
+            }
+        }
+    }
     void dcdc_library_parameters_and_run() {
         for (const int type : {220, 221, 222}) {
             QTemporaryDir dir;

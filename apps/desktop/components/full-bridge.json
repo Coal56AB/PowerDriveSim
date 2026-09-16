@@ -1,0 +1,13 @@
+{
+  "type": "library:full-bridge",
+  "fields": [],
+  "template": "converters/full-bridge.pds",
+  "palette": {
+    "id": 231,
+    "label": "full_bridge_module",
+    "category": "converters",
+    "short": "full-bridge",
+    "fixed": false,
+    "hidden": false
+  }
+}

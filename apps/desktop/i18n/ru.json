@@ -313,5 +313,7 @@
   "thyristor_bridge_3p": "Трёхфазный тиристорный мост",
   "buck_module": "Buck · Понижающий",
   "boost_module": "Boost · Повышающий",
-  "buck_boost_module": "Buck-boost · Инвертирующий"
+  "buck_boost_module": "Buck-boost · Инвертирующий",
+  "half_bridge_module": "Полумост",
+  "full_bridge_module": "Полный мост"
 }

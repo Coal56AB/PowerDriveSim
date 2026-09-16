@@ -1,0 +1,106 @@
+PowerDriveSim 12
+project "0f7b6f0e-7133-58db-b8c8-51696012bbb7" "Full bridge with RL load"
+profile 0.006 0.000002 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "bf112771-ce66-5e6c-b364-5790f395e384" "Full bridge" "d5009c18-6cff-53a0-8df1-cf95bfe8ac1b" 0 0 0
+node "d2600700-194c-5e16-8bbc-6dbb8520f4ce" "Neutral" 1 -380 300
+component "9354e901-78e2-5db4-aaba-37ab4a2e39fd" "Supply" V "" "" 24 0 -380 60 0
+orientation "9354e901-78e2-5db4-aaba-37ab4a2e39fd" 1 0
+wire "66c8f1b5-1fb6-5a42-8859-0e5202c1c575" "9354e901-78e2-5db4-aaba-37ab4a2e39fd" "p" "bf112771-ce66-5e6c-b364-5790f395e384" "da4ca126-de92-59ec-ad06-181429b3f67c" 2 -380 -100 -160 -100
+wire "0ee9891d-4d45-5f7b-ab80-35d8dba98264" "9354e901-78e2-5db4-aaba-37ab4a2e39fd" "n" "d2600700-194c-5e16-8bbc-6dbb8520f4ce" "node" 0
+wire "e68ba491-bda0-538e-ba62-d914bfe3941b" "d2600700-194c-5e16-8bbc-6dbb8520f4ce" "node" "bf112771-ce66-5e6c-b364-5790f395e384" "56466097-fc18-58e6-b04f-95d25dc9d83e" 2 -180 300 -180 -39
+pattern "2c645d5f-5aec-5b25-bda7-30eeb00b7335" "Positive" -350 -380 1
+event 0.001 "2c645d5f-5aec-5b25-bda7-30eeb00b7335" 0
+event 0.002 "2c645d5f-5aec-5b25-bda7-30eeb00b7335" 1
+event 0.003 "2c645d5f-5aec-5b25-bda7-30eeb00b7335" 0
+event 0.004 "2c645d5f-5aec-5b25-bda7-30eeb00b7335" 1
+event 0.005 "2c645d5f-5aec-5b25-bda7-30eeb00b7335" 0
+event 0.006 "2c645d5f-5aec-5b25-bda7-30eeb00b7335" 1
+pattern "ef110761-a535-573c-a3cb-22ae33e14abf" "Negative" -350 -280 0
+event 0.001 "ef110761-a535-573c-a3cb-22ae33e14abf" 1
+event 0.002 "ef110761-a535-573c-a3cb-22ae33e14abf" 0
+event 0.003 "ef110761-a535-573c-a3cb-22ae33e14abf" 1
+event 0.004 "ef110761-a535-573c-a3cb-22ae33e14abf" 0
+event 0.005 "ef110761-a535-573c-a3cb-22ae33e14abf" 1
+event 0.006 "ef110761-a535-573c-a3cb-22ae33e14abf" 0
+wire "5a01dde0-de38-5e22-ac79-9faac79009b8" "2c645d5f-5aec-5b25-bda7-30eeb00b7335" "out" "bf112771-ce66-5e6c-b364-5790f395e384" "e6bde26f-f7f6-5c50-8c83-d4d0997d2aed" 2 -140 -380 -140 -13
+wire "664a6cbf-98b4-5b41-954a-f8d04c2e0b5f" "2c645d5f-5aec-5b25-bda7-30eeb00b7335" "out" "bf112771-ce66-5e6c-b364-5790f395e384" "a9d1816a-d52d-5c1e-aafa-940fb661fafe" 2 -140 -380 -140 65
+wire "d235d16d-8901-550f-bda8-3e0d7365f312" "ef110761-a535-573c-a3cb-22ae33e14abf" "out" "bf112771-ce66-5e6c-b364-5790f395e384" "2c2f05d0-1999-5877-82e7-e018cab7faa1" 2 -120 -280 -120 13
+wire "6cf61ad8-ae51-54ce-85db-14b186722e9a" "ef110761-a535-573c-a3cb-22ae33e14abf" "out" "bf112771-ce66-5e6c-b364-5790f395e384" "bbfa7e44-563c-5ff6-afbc-365b5e08f34d" 2 -120 -280 -120 39
+component "f983fccb-86b0-55bb-8d97-b9b0eb7de6f6" "Load R" R "" "" 10 0 340 -100 0
+component "d0b72e93-01ac-5d2f-8311-7a1883df542c" "Load L" L "" "" 0.01 0 540 -100 0
+component "be6129ec-e0ec-5475-bb63-53cbe7002be3" "Iload" IP "" "" 0 0 740 -100 0
+component "b469033f-1db3-5bb2-8340-61661ad897fe" "Uload" VP "" "" 0 0 300 100 0
+orientation "b469033f-1db3-5bb2-8340-61661ad897fe" 1 0
+wire "30ee79db-2555-57e2-8e07-f0df21090eb4" "bf112771-ce66-5e6c-b364-5790f395e384" "9ab077f8-7891-5a91-a9b7-4df27fed3bf6" "f983fccb-86b0-55bb-8d97-b9b0eb7de6f6" "p" 2 180 -13 180 -100
+wire "a6a554fe-2db7-5e16-a519-1529e3b0943a" "f983fccb-86b0-55bb-8d97-b9b0eb7de6f6" "n" "d0b72e93-01ac-5d2f-8311-7a1883df542c" "p" 0
+wire "4890d0cd-8e0d-5857-9e69-dfd24d9cfabf" "d0b72e93-01ac-5d2f-8311-7a1883df542c" "n" "be6129ec-e0ec-5475-bb63-53cbe7002be3" "p" 0
+wire "04b1d40d-b4ca-5d9d-8151-b4b78ac12af2" "be6129ec-e0ec-5475-bb63-53cbe7002be3" "n" "bf112771-ce66-5e6c-b364-5790f395e384" "031131a1-7bd3-5159-bb15-1cea81079fdf" 4 840 -100 840 260 140 260 140 13
+wire "9c34fbe9-e8b0-567f-8ce6-b2d469501035" "bf112771-ce66-5e6c-b364-5790f395e384" "9ab077f8-7891-5a91-a9b7-4df27fed3bf6" "b469033f-1db3-5bb2-8340-61661ad897fe" "p" 2 200 -13 200 40
+wire "56c328bb-9245-54cf-be39-abf3838b004b" "b469033f-1db3-5bb2-8340-61661ad897fe" "n" "bf112771-ce66-5e6c-b364-5790f395e384" "031131a1-7bd3-5159-bb15-1cea81079fdf" 3 300 260 140 260 140 13
+plot "f3c3a61f-37f3-5e11-882e-d3ca6560bebd" "Load voltage and current" 1080 40 2 0 -1 -1 -1
+wire "23bebf9a-b830-5e99-8f2a-92ca511c3f38" "b469033f-1db3-5bb2-8340-61661ad897fe" "out" "f3c3a61f-37f3-5e11-882e-d3ca6560bebd" "in1" 2 900 100 900 29
+wire "b08d7118-f037-5763-9776-e661543e3bc4" "be6129ec-e0ec-5475-bb63-53cbe7002be3" "out" "f3c3a61f-37f3-5e11-882e-d3ca6560bebd" "in2" 3 740 -180 940 -180 940 51
+definition "d5009c18-6cff-53a0-8df1-cf95bfe8ac1b" "Full bridge"
+public_port "da4ca126-de92-59ec-ad06-181429b3f67c" "DC+" "8b877ac4-fdb6-5b50-8208-065cce26ec94" "node" 0 0
+public_port "9ab077f8-7891-5a91-a9b7-4df27fed3bf6" "A" "9d014fd0-ea42-5c30-837c-c55df2a40da2" "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" 0 0
+public_port "56466097-fc18-58e6-b04f-95d25dc9d83e" "DC-" "6fd2ecd0-d731-5374-9d1e-2a5ac239129f" "node" 0 0
+public_port "031131a1-7bd3-5159-bb15-1cea81079fdf" "B" "030478e6-c55a-5943-a9f0-4408b93e1a7f" "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" 0 0
+public_port "e6bde26f-f7f6-5c50-8c83-d4d0997d2aed" "gAH" "9d014fd0-ea42-5c30-837c-c55df2a40da2" "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" 1 1
+public_port "2c2f05d0-1999-5877-82e7-e018cab7faa1" "gAL" "9d014fd0-ea42-5c30-837c-c55df2a40da2" "a71a5ff3-e829-54f4-9388-a7de7577074d" 1 1
+public_port "bbfa7e44-563c-5ff6-afbc-365b5e08f34d" "gBH" "030478e6-c55a-5943-a9f0-4408b93e1a7f" "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" 1 1
+public_port "a9d1816a-d52d-5c1e-aafa-940fb661fafe" "gBL" "030478e6-c55a-5943-a9f0-4408b93e1a7f" "a71a5ff3-e829-54f4-9388-a7de7577074d" 1 1
+body
+PowerDriveSim 12
+project "d5009c18-6cff-53a0-8df1-cf95bfe8ac1b" "Full bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "9d014fd0-ea42-5c30-837c-c55df2a40da2" "Leg A" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" -140 0 0
+instance "030478e6-c55a-5943-a9f0-4408b93e1a7f" "Leg B" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" 180 0 0
+node "8b877ac4-fdb6-5b50-8208-065cce26ec94" "DC+" 0 -360 -220
+node "6fd2ecd0-d731-5374-9d1e-2a5ac239129f" "DC-" 0 -360 220
+wire "6d3c92a7-cf1f-5d37-a135-b55c6a1f4dff" "8b877ac4-fdb6-5b50-8208-065cce26ec94" "node" "9d014fd0-ea42-5c30-837c-c55df2a40da2" "b6148504-a13e-510f-8eab-55f3765543d0" 2 -270 -220 -270 -39
+wire "b1a2301a-4f5c-5532-9782-08ff7211870a" "9d014fd0-ea42-5c30-837c-c55df2a40da2" "a5c4f733-dfba-5022-847e-0a3264cacfeb" "6fd2ecd0-d731-5374-9d1e-2a5ac239129f" "node" 2 -290 -13 -290 220
+wire "b493dabe-89c5-5156-9fa4-5fa54f9d0643" "8b877ac4-fdb6-5b50-8208-065cce26ec94" "node" "030478e6-c55a-5943-a9f0-4408b93e1a7f" "b6148504-a13e-510f-8eab-55f3765543d0" 2 50 -220 50 -39
+wire "004c0c47-fad1-5e43-9719-2599be4c5069" "030478e6-c55a-5943-a9f0-4408b93e1a7f" "a5c4f733-dfba-5022-847e-0a3264cacfeb" "6fd2ecd0-d731-5374-9d1e-2a5ac239129f" "node" 2 30 -13 30 220
+end_definition
+definition "0ebb782b-e954-56f3-8bd2-553833ad6d4d" "Half bridge"
+public_port "b6148504-a13e-510f-8eab-55f3765543d0" "DC+" "1daed23d-256d-5ad7-8462-ad7da1c60b62" "node" 0 0
+public_port "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" "AC" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" 0 0
+public_port "a5c4f733-dfba-5022-847e-0a3264cacfeb" "DC-" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 0 0
+public_port "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" "gH" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "gate" 1 1
+public_port "a71a5ff3-e829-54f4-9388-a7de7577074d" "gL" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "gate" 1 1
+body
+PowerDriveSim 12
+project "0ebb782b-e954-56f3-8bd2-553833ad6d4d" "Half bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "1daed23d-256d-5ad7-8462-ad7da1c60b62" "DC+" 0 -120 -260
+node "a153da29-25f5-5f05-ab08-43700fa6d103" "AC" 0 -120 0
+node "a4d6679e-95b3-5edf-a404-093ab99f5761" "DC-" 0 -120 260
+component "6a4434c3-93b6-5857-b759-c9c7dae9f435" "SH" S "" "" 0 0 0 -130 0
+orientation "6a4434c3-93b6-5857-b759-c9c7dae9f435" 1 0
+component "153f33d7-3647-525b-a069-89272c17fdec" "DH" D "" "" 0 0 160 -130 0
+orientation "153f33d7-3647-525b-a069-89272c17fdec" 3 0
+wire "5d93f097-c3b1-5ab6-b567-0fabf972045a" "1daed23d-256d-5ad7-8462-ad7da1c60b62" "node" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "p" 1 0 -260
+wire "97abb783-6f9d-5cb5-b74c-93955d2b0e2d" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "n" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" 1 0 0
+wire "9cc11ef4-ce68-524d-8b79-51f9b2d23620" "1daed23d-256d-5ad7-8462-ad7da1c60b62" "node" "153f33d7-3647-525b-a069-89272c17fdec" "n" 1 160 -260
+wire "9c13364c-9e02-52c2-9819-02761f29427d" "153f33d7-3647-525b-a069-89272c17fdec" "p" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" 1 160 0
+component "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "SL" S "" "" 0 0 0 130 0
+orientation "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" 1 0
+component "eaf6882f-ef82-51ae-bed6-67f26841ff63" "DL" D "" "" 0 0 160 130 0
+orientation "eaf6882f-ef82-51ae-bed6-67f26841ff63" 3 0
+wire "29fecd92-9c9a-5d59-8e77-2d1ea621b536" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "p" 1 0 0
+wire "d0da2c6d-b49c-5ed7-9f37-2be7b2a2860e" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "n" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 1 0 260
+wire "52c5e934-cb11-5a93-9a1c-805d6ca3094a" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" "eaf6882f-ef82-51ae-bed6-67f26841ff63" "n" 1 160 0
+wire "0bc07501-042a-568d-bafd-9aadaaff5cbc" "eaf6882f-ef82-51ae-bed6-67f26841ff63" "p" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 1 160 260
+end_definition

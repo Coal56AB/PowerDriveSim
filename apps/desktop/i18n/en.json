@@ -313,5 +313,7 @@
   "thyristor_bridge_3p": "Three-phase thyristor bridge",
   "buck_module": "Buck converter",
   "boost_module": "Boost converter",
-  "buck_boost_module": "Inverting buck-boost"
+  "buck_boost_module": "Inverting buck-boost",
+  "half_bridge_module": "Half bridge",
+  "full_bridge_module": "Full bridge"
 }

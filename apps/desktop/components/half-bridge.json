@@ -1,0 +1,13 @@
+{
+  "type": "library:half-bridge",
+  "fields": [],
+  "template": "converters/half-bridge.pds",
+  "palette": {
+    "id": 230,
+    "label": "half_bridge_module",
+    "category": "converters",
+    "short": "half-bridge",
+    "fixed": false,
+    "hidden": false
+  }
+}
