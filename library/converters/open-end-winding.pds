@@ -1,0 +1,108 @@
+PowerDriveSim 12
+project "081aa22f-4023-53f5-9904-96795f26df11" "Open-end winding inverter"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "97a9d38f-2323-5c72-84aa-5549eca548e9" "Open-end winding inverter" "d745e2d9-4d37-5c64-97d7-45d87d506cb8" 0 0 0
+definition "d745e2d9-4d37-5c64-97d7-45d87d506cb8" "Open-end winding inverter"
+public_port "89811612-3d36-5b6a-b885-f279699590cd" "A1" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "85eecd15-fe32-5406-b328-b611d9919bba" 0 0
+public_port "ed2d91f2-9c36-533a-9d21-9b7f1de0a967" "A2" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "85eecd15-fe32-5406-b328-b611d9919bba" 0 0
+public_port "280ada5c-36ab-529f-8f42-86db84bfbb86" "B1" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "d8774db8-072d-5fb4-9206-b9d7845e9f2f" 0 0
+public_port "db6b1eb5-1a0a-5bf1-9ed8-f7c2da61fc63" "B2" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "d8774db8-072d-5fb4-9206-b9d7845e9f2f" 0 0
+public_port "95e804f4-ceba-5b92-a1f1-f0f38d86c6dc" "C1" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "5ecfd649-a410-5d8e-8eed-ff0aa22d02f8" 0 0
+public_port "98ea4c2c-9e12-5ec6-91c1-37b2234ac48f" "C2" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "5ecfd649-a410-5d8e-8eed-ff0aa22d02f8" 0 0
+public_port "ca9b3c35-644a-57be-9eb4-59415acb67be" "DC1+" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "09045ec4-1b61-5a96-ba32-9cfd67482004" 0 0
+public_port "1efbd5bd-4373-5763-af6b-b25e28fcbba8" "DC2+" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "09045ec4-1b61-5a96-ba32-9cfd67482004" 0 0
+public_port "4e57d100-809e-5964-ae45-1edc25898dfc" "DC1-" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "5d8b0704-fe85-5fc9-b31f-04815988b3c4" 0 0
+public_port "568a08f0-1d44-5042-a553-e6bbd99761aa" "DC2-" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "5d8b0704-fe85-5fc9-b31f-04815988b3c4" 0 0
+public_port "f49db267-923b-5d89-8979-c25fbec7e105" "g1AH" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "ffd12ca4-bdae-543a-a643-3fac7615061b" 1 1
+public_port "d18559a1-3bd8-56bd-86fe-1c3d778d5773" "g1AL" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "23daa74e-e7a6-59b9-b2da-67e4e140aa68" 1 1
+public_port "7a742f72-c112-586f-98e2-08b72159b315" "g1BH" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "ad4b853d-93c8-5d38-92ce-4fe4303ecb7d" 1 1
+public_port "ddcd6dd8-07f8-542e-b6c7-8d48fab70b8f" "g1BL" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "9bb9ab71-b771-5e5b-a5c3-01bd8f439135" 1 1
+public_port "6d3567c9-b515-59b8-a9fd-c2b734b729fc" "g1CH" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "c83f7967-ca1c-571a-8785-aab38192a029" 1 1
+public_port "cb945722-f998-58d5-864f-5ede900287f5" "g1CL" "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "9b05a652-3d26-5042-8974-3511b03fab2a" 1 1
+public_port "10e57866-9ef4-55da-88a3-22e38f541402" "g2AH" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "ffd12ca4-bdae-543a-a643-3fac7615061b" 1 1
+public_port "79b08d9c-645d-5265-8ddf-09b6bcfc013e" "g2AL" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "23daa74e-e7a6-59b9-b2da-67e4e140aa68" 1 1
+public_port "7186f987-4e75-5cb9-89b4-ca9b3ece1232" "g2BH" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "ad4b853d-93c8-5d38-92ce-4fe4303ecb7d" 1 1
+public_port "bca0c37a-cad4-5e7a-89b6-e85579c813dd" "g2BL" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "9bb9ab71-b771-5e5b-a5c3-01bd8f439135" 1 1
+public_port "228676d5-263c-5e67-9a2a-4cf0f055b32e" "g2CH" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "c83f7967-ca1c-571a-8785-aab38192a029" 1 1
+public_port "1255f159-de85-577f-8b13-c8b377599775" "g2CL" "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "9b05a652-3d26-5042-8974-3511b03fab2a" 1 1
+body
+PowerDriveSim 12
+project "d745e2d9-4d37-5c64-97d7-45d87d506cb8" "Open-end winding inverter"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "7cf68a38-6a7b-581c-8bdc-08b3004d21a4" "Inverter 1" "310d1d81-6d80-5865-8387-1016e05c563f" 0 0 0
+instance "464a6edf-c78d-5eed-8ed3-9f015d1ccd45" "Inverter 2" "310d1d81-6d80-5865-8387-1016e05c563f" 400 0 0
+end_definition
+definition "310d1d81-6d80-5865-8387-1016e05c563f" "Three-phase bridge"
+public_port "09045ec4-1b61-5a96-ba32-9cfd67482004" "DC+" "8032cb5f-2950-55db-85d0-e561509b113b" "node" 0 0
+public_port "85eecd15-fe32-5406-b328-b611d9919bba" "A" "ec314016-af24-5d9a-80a3-a0b2c099d354" "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" 0 0
+public_port "5d8b0704-fe85-5fc9-b31f-04815988b3c4" "DC-" "0232aa9e-1def-5422-8599-184b105bb8ed" "node" 0 0
+public_port "d8774db8-072d-5fb4-9206-b9d7845e9f2f" "B" "e2be104c-0e70-5431-9075-dc1c31473614" "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" 0 0
+public_port "5ecfd649-a410-5d8e-8eed-ff0aa22d02f8" "C" "61db8b12-eac3-5224-ac4e-adcd3735fa72" "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" 0 0
+public_port "ffd12ca4-bdae-543a-a643-3fac7615061b" "gAH" "ec314016-af24-5d9a-80a3-a0b2c099d354" "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" 1 1
+public_port "23daa74e-e7a6-59b9-b2da-67e4e140aa68" "gAL" "ec314016-af24-5d9a-80a3-a0b2c099d354" "a71a5ff3-e829-54f4-9388-a7de7577074d" 1 1
+public_port "ad4b853d-93c8-5d38-92ce-4fe4303ecb7d" "gBH" "e2be104c-0e70-5431-9075-dc1c31473614" "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" 1 1
+public_port "9bb9ab71-b771-5e5b-a5c3-01bd8f439135" "gBL" "e2be104c-0e70-5431-9075-dc1c31473614" "a71a5ff3-e829-54f4-9388-a7de7577074d" 1 1
+public_port "c83f7967-ca1c-571a-8785-aab38192a029" "gCH" "61db8b12-eac3-5224-ac4e-adcd3735fa72" "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" 1 1
+public_port "9b05a652-3d26-5042-8974-3511b03fab2a" "gCL" "61db8b12-eac3-5224-ac4e-adcd3735fa72" "a71a5ff3-e829-54f4-9388-a7de7577074d" 1 1
+body
+PowerDriveSim 12
+project "310d1d81-6d80-5865-8387-1016e05c563f" "Three-phase bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "8032cb5f-2950-55db-85d0-e561509b113b" "DC+" 0 -280 -240
+node "0232aa9e-1def-5422-8599-184b105bb8ed" "DC-" 0 -280 240
+instance "ec314016-af24-5d9a-80a3-a0b2c099d354" "Leg A" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" 0 0 0
+wire "176ef541-4791-582e-8412-d4b87eae2105" "8032cb5f-2950-55db-85d0-e561509b113b" "node" "ec314016-af24-5d9a-80a3-a0b2c099d354" "b6148504-a13e-510f-8eab-55f3765543d0" 2 -160 -240 -160 -39
+wire "d56b769e-8379-5e44-8751-e015a71fe496" "ec314016-af24-5d9a-80a3-a0b2c099d354" "a5c4f733-dfba-5022-847e-0a3264cacfeb" "0232aa9e-1def-5422-8599-184b105bb8ed" "node" 2 -140 -13 -140 240
+instance "e2be104c-0e70-5431-9075-dc1c31473614" "Leg B" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" 340 0 0
+wire "12a2656b-6eb6-55cd-871f-a26a65b0033a" "8032cb5f-2950-55db-85d0-e561509b113b" "node" "e2be104c-0e70-5431-9075-dc1c31473614" "b6148504-a13e-510f-8eab-55f3765543d0" 2 180 -240 180 -39
+wire "69b7c466-7a2f-5314-b725-c95cd0c6d6e0" "e2be104c-0e70-5431-9075-dc1c31473614" "a5c4f733-dfba-5022-847e-0a3264cacfeb" "0232aa9e-1def-5422-8599-184b105bb8ed" "node" 2 200 -13 200 240
+instance "61db8b12-eac3-5224-ac4e-adcd3735fa72" "Leg C" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" 680 0 0
+wire "197f17b4-5a25-5f74-a6bb-4616f5ec4cd3" "8032cb5f-2950-55db-85d0-e561509b113b" "node" "61db8b12-eac3-5224-ac4e-adcd3735fa72" "b6148504-a13e-510f-8eab-55f3765543d0" 2 520 -240 520 -39
+wire "ac55b982-a441-5f61-ab99-c38cc72ca7f6" "61db8b12-eac3-5224-ac4e-adcd3735fa72" "a5c4f733-dfba-5022-847e-0a3264cacfeb" "0232aa9e-1def-5422-8599-184b105bb8ed" "node" 2 540 -13 540 240
+end_definition
+definition "0ebb782b-e954-56f3-8bd2-553833ad6d4d" "Half bridge"
+public_port "b6148504-a13e-510f-8eab-55f3765543d0" "DC+" "1daed23d-256d-5ad7-8462-ad7da1c60b62" "node" 0 0
+public_port "3fc9f26f-4b81-5e92-93e2-63322eaa0c91" "AC" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" 0 0
+public_port "a5c4f733-dfba-5022-847e-0a3264cacfeb" "DC-" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 0 0
+public_port "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" "gH" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "gate" 1 1
+public_port "a71a5ff3-e829-54f4-9388-a7de7577074d" "gL" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "gate" 1 1
+body
+PowerDriveSim 12
+project "0ebb782b-e954-56f3-8bd2-553833ad6d4d" "Half bridge"
+profile 0.006 0.00001 BackwardEuler
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "1daed23d-256d-5ad7-8462-ad7da1c60b62" "DC+" 0 -120 -260
+node "a153da29-25f5-5f05-ab08-43700fa6d103" "AC" 0 -120 0
+node "a4d6679e-95b3-5edf-a404-093ab99f5761" "DC-" 0 -120 260
+component "6a4434c3-93b6-5857-b759-c9c7dae9f435" "SH" S "" "" 0 0 0 -130 0
+orientation "6a4434c3-93b6-5857-b759-c9c7dae9f435" 1 0
+component "153f33d7-3647-525b-a069-89272c17fdec" "DH" D "" "" 0 0 160 -130 0
+orientation "153f33d7-3647-525b-a069-89272c17fdec" 3 0
+wire "5d93f097-c3b1-5ab6-b567-0fabf972045a" "1daed23d-256d-5ad7-8462-ad7da1c60b62" "node" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "p" 1 0 -260
+wire "97abb783-6f9d-5cb5-b74c-93955d2b0e2d" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "n" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" 1 0 0
+wire "9cc11ef4-ce68-524d-8b79-51f9b2d23620" "1daed23d-256d-5ad7-8462-ad7da1c60b62" "node" "153f33d7-3647-525b-a069-89272c17fdec" "n" 1 160 -260
+wire "9c13364c-9e02-52c2-9819-02761f29427d" "153f33d7-3647-525b-a069-89272c17fdec" "p" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" 1 160 0
+component "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "SL" S "" "" 0 0 0 130 0
+orientation "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" 1 0
+component "eaf6882f-ef82-51ae-bed6-67f26841ff63" "DL" D "" "" 0 0 160 130 0
+orientation "eaf6882f-ef82-51ae-bed6-67f26841ff63" 3 0
+wire "29fecd92-9c9a-5d59-8e77-2d1ea621b536" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "p" 1 0 0
+wire "d0da2c6d-b49c-5ed7-9f37-2be7b2a2860e" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "n" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 1 0 260
+wire "52c5e934-cb11-5a93-9a1c-805d6ca3094a" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" "eaf6882f-ef82-51ae-bed6-67f26841ff63" "n" 1 160 0
+wire "0bc07501-042a-568d-bafd-9aadaaff5cbc" "eaf6882f-ef82-51ae-bed6-67f26841ff63" "p" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 1 160 260
+end_definition

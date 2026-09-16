@@ -75,6 +75,38 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void open_end_library_and_run() {
+        QTemporaryDir dir; EditorWindow w("ru", dir.path());
+        Project empty; empty.id = new_uuid(); empty.wired = true;
+        w.set_project(empty); ready(w);
+        auto *insert = w.findChild<QAction *>("insert_component_270");
+        QVERIFY(insert && !insert->icon().isNull()); insert->trigger();
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          w.canvas()->mapFromScene(QPointF(0, 0)));
+        QCOMPARE(w.project().instances.size(), size_t(1));
+        w.open_subcircuit(w.project().instances.front().id);
+        QCOMPARE(w.project().instances.size(), size_t(2));
+        w.open_subcircuit(w.project().instances.front().id);
+        QCOMPARE(w.project().instances.size(), size_t(3));
+        w.open_subcircuit(w.project().instances.front().id);
+        QCOMPARE(w.project().components.size(), size_t(4));
+        w.navigate_hierarchy({}); w.undo(); QVERIFY(w.root_project().instances.empty());
+        QVERIFY(w.open_project(PDS_SOURCE_DIR "/examples/open-end-winding.pds"));
+        w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.has_result() && !w.result().samples.empty());
+        const auto path = dir.filePath("dual.pds"); QVERIFY(w.save_project(path));
+        const auto expected = encoded(w.root_project());
+        if (auto screenshot = qEnvironmentVariable("PDS_OPEN_END_SCREENSHOT"); !screenshot.isEmpty()) {
+            QTest::qWait(30); QVERIFY(w.grab().save(screenshot + ".png"));
+            w.open_plot(w.project().plots.front().id);
+            auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(w.project().plots.front().id));
+            QVERIFY(graph); QTest::qWait(30); QVERIFY(graph->grab().save(screenshot + "-plot.png")); graph->close();
+            w.open_subcircuit(w.project().instances.front().id);
+            QTest::qWait(30); QVERIFY(w.grab().save(screenshot + "-inside.png"));
+        }
+        QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+    }
     void three_phase_library_parameters() {
         for (const int type : {260, 261}) {
             QTemporaryDir dir; EditorWindow w("ru", dir.path());

@@ -258,7 +258,13 @@ void EditorWindow::refresh_hierarchy() {
                     auto font = note->font();
                     font.setPointSize(8);
                     note->setFont(font);
-                    note->setPos(5, -20);
+                    const bool nested = std::any_of(project().instances.begin(), project().instances.end(),
+                                                     [&](const auto &instance) { return instance.id == id; });
+                    if (nested)
+                        note->setPos(dot->pos().x() < 0 ? -note->boundingRect().width() - 6 : 6,
+                                     -note->boundingRect().height() / 2);
+                    else
+                        note->setPos(5, -20);
                     note->setTransform(atom->transform().inverted());
                 }
             }

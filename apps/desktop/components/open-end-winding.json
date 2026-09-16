@@ -1,0 +1,13 @@
+{
+  "type": "library:open-end-winding",
+  "fields": [],
+  "template": "converters/open-end-winding.pds",
+  "palette": {
+    "id": 270,
+    "label": "open_end_winding_module",
+    "category": "converters",
+    "short": "Dual VSI",
+    "fixed": false,
+    "hidden": false
+  }
+}

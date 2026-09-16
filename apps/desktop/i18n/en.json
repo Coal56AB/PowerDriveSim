@@ -322,5 +322,6 @@
   "switched_resistor_module": "Discharge / braking resistor",
   "ac_voltage_controller": "AC voltage controller",
   "vsi_2l_module": "2L three-phase inverter",
-  "npc_3l_module": "3L NPC inverter"
+  "npc_3l_module": "3L NPC inverter",
+  "open_end_winding_module": "Open-end winding inverter"
 }
