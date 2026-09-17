@@ -66,6 +66,39 @@ void Scope::set_curve_multiplier(const std::string &key, double value) {
         changed(begin, end, cursor_a, cursor_b);
     update();
 }
+void Scope::show_multiplier_settings(const std::string &key) {
+    if (key.empty())
+        return;
+    auto *dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setObjectName("curve_multiplier_settings");
+    dialog->setWindowTitle(text("curve_multiplier_title").arg(curve_name(key)));
+    auto *form = new QFormLayout(dialog);
+    auto *multiplier = new QLineEdit(QString::number(curve_multiplier(key), 'g', 12));
+    multiplier->setObjectName("curve_multiplier");
+    normalize_decimal_point(multiplier);
+    form->addRow(text("curve_multiplier"), multiplier);
+    auto *error = new QLabel;
+    error->setStyleSheet("color:palette(bright-text)");
+    form->addRow(error);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Apply | QDialogButtonBox::Close);
+    form->addRow(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, dialog,
+            [this, key, multiplier, error] {
+                bool ok = false;
+                const double value = multiplier->text().toDouble(&ok);
+                if (!ok || !std::isfinite(value)) {
+                    error->setText(text("curve_multiplier_error"));
+                    return;
+                }
+                set_curve_multiplier(key, value);
+                error->clear();
+            });
+    dialog->show();
+    multiplier->selectAll();
+    multiplier->setFocus();
+}
 void Scope::set_curve_style(const CurveStyle &style) {
     if (style.channel.empty() || unsigned(style.line) > unsigned(CurveLine::none) ||
         unsigned(style.marker) > unsigned(CurveMarker::triangle_down) || !std::isfinite(style.width) ||

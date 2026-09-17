@@ -104,6 +104,14 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     const size_t analog_count=ir.unknowns.size()+ir.observations.size();
     for(size_t i=0;i<analog_count;++i)if(selected(catalog[i].object)){analog_indices.push_back(i);result.channels.push_back(catalog[i]);}
     for(size_t i=analog_count;i<catalog.size();++i)if(selected(catalog[i].object)){gate_indices.push_back(i-analog_count);result.gate_objects.push_back(catalog[i].object.substr(5));result.gate_names.push_back(catalog[i].name);}
+    const size_t stream_preview_samples=options?options->stream_preview_samples:0;
+    if((!stream||stream_preview_samples)&&(!analog_indices.empty()||!gate_indices.empty())&&
+       !ir.profile.step_control.adaptive&&ir.profile.step>0) {
+        const double estimate=std::ceil((ir.profile.stop-ir.profile.warmup)/ir.profile.step)+2;
+        constexpr size_t maximum_reservation=20'000'000;
+        if(std::isfinite(estimate)&&estimate>0&&estimate<=double(maximum_reservation))
+            result.samples.reserve(size_t(estimate));
+    }
     std::vector<size_t> switch_indices;
     std::vector<size_t> source_indices;
     for(size_t i=0;i<ir.stamps.size();++i)
@@ -313,7 +321,34 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     std::vector<double> accepted_values, before_states, before_history, coarse_values, coarse_states;
     std::vector<bool> before_diodes, before_latched, coarse_latched;
     if(adaptive){accepted_values=*final_values;final_values=&accepted_values;}
-    auto publish=[&]{if(stream&&!result.samples.empty()){auto samples=std::move(result.samples);Result batch=result;batch.samples=std::move(samples);stream(std::move(batch));}};
+    size_t published_samples=0;
+    auto publish=[&]{
+        if(!stream||result.samples.empty())return;
+        if(!stream_preview_samples) {
+            auto samples=std::move(result.samples);Result batch=result;batch.samples=std::move(samples);
+            stream(std::move(batch));return;
+        }
+        if(published_samples>=result.samples.size())return;
+        Result batch;
+        batch.project_id=result.project_id;batch.backend=result.backend;batch.precision=result.precision;
+        batch.engine=result.engine;batch.profile=result.profile;batch.channels=result.channels;
+        batch.gate_objects=result.gate_objects;batch.gate_names=result.gate_names;
+        batch.accepted_steps=result.accepted_steps;batch.linear_solves=result.linear_solves;
+        batch.max_step_iterations=result.max_step_iterations;batch.rejected_steps=result.rejected_steps;
+        batch.min_accepted_step=result.min_accepted_step;batch.max_accepted_step=result.max_accepted_step;
+        batch.max_local_error=result.max_local_error;batch.step_reduction_reason=result.step_reduction_reason;
+        batch.cancelled=result.cancelled;batch.max_scaled_residual=result.max_scaled_residual;
+        batch.last_time=result.last_time;
+        const size_t available=result.samples.size()-published_samples;
+        const size_t count=std::min(available,stream_preview_samples);
+        batch.samples.reserve(count);
+        for(size_t i=0;i<count;++i) {
+            const size_t offset=available<=stream_preview_samples?i:(i*(available-1))/std::max<size_t>(1,count-1);
+            batch.samples.push_back(result.samples[published_samples+offset]);
+        }
+        published_samples=result.samples.size();
+        stream(std::move(batch));
+    };
     auto next_publish=std::chrono::steady_clock::now()+std::chrono::milliseconds(80);
     publish();
     while(time<ir.profile.stop) {

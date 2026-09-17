@@ -14,6 +14,7 @@
 #include <QHeaderView>
 #include <QJsonDocument>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QPixmap>
@@ -24,6 +25,7 @@
 #include <QSyntaxHighlighter>
 #include <QTableWidget>
 #include <QTextCharFormat>
+#include <array>
 namespace pds::desktop {
 namespace {
 class EventTimeDelegate final : public QStyledItemDelegate {
@@ -188,40 +190,60 @@ void EditorWindow::build_property_editors() {
                 continue;
             }
             QWidget *widget = nullptr;
-            if (kind == "text" || kind == "number" || kind == "color") {
+            if (kind == "text" || kind == "number") {
                 auto *line = new QLineEdit;
                 if (kind == "number")
                     normalize_decimal_point(line);
-                if (kind == "color") {
-                    line->setPlaceholderText(text("wire_color_auto"));
-                    auto *picker = line->addAction(QIcon(), QLineEdit::TrailingPosition);
-                    auto update_swatch = [line, picker](const QString &value) {
-                        QPixmap swatch(16, 16);
-                        const QColor color(value);
-                        swatch.fill(color.isValid() ? color : Qt::transparent);
-                        picker->setIcon(QIcon(swatch));
-                    };
-                    connect(line, &QLineEdit::textChanged, this, update_swatch);
-                    connect(picker, &QAction::triggered, this, [this, line] {
-                        QColor initial(line->text());
-                        if (!initial.isValid())
-                            initial = theme_colors().electrical;
-                        const auto selected = QColorDialog::getColor(initial, this, text("wire_color"));
-                        if (selected.isValid()) {
-                            line->setText(selected.name(QColor::HexRgb));
-                            line->setModified(true);
-                            line->setProperty("draft", true);
-                            apply_inspector();
-                        }
-                    });
-                    update_swatch({});
-                }
                 widget = line;
                 connect(line, &QLineEdit::editingFinished, this, [this] {
                     if (!inspector_loading_ && !applying_)
                         apply_inspector();
                 });
                 connect(line, &QLineEdit::textEdited, this, [this] { remember_draft(); });
+            } else if (kind == "color") {
+                auto *button = new QPushButton;
+                button->setFixedSize(38, 32);
+                button->setIconSize({24, 24});
+                button->setToolTip(text("wire_color_hint"));
+                button->setContextMenuPolicy(Qt::CustomContextMenu);
+                widget = button;
+                auto set_swatch = [button](const QString &value) {
+                    const QColor color = QColor(value).isValid() ? QColor(value) : theme_colors().electrical;
+                    QPixmap swatch(24, 24);
+                    swatch.fill(color);
+                    button->setIcon(QIcon(swatch));
+                    button->setProperty("color_value", value);
+                };
+                set_swatch({});
+                connect(button, &QPushButton::clicked, this, [this, button, set_swatch] {
+                    QColor initial(button->property("color_value").toString());
+                    if (!initial.isValid())
+                        initial = theme_colors().electrical;
+                    const std::array<QColor, 8> defaults{
+                        QColor("#146cca"), QColor("#17866d"), QColor("#8c67c8"), QColor("#c56819"),
+                        QColor("#b8394e"), QColor("#263c55"), QColor("#ffffff"), QColor("#000000")};
+                    QColorDialog::setCustomColor(0, initial.rgb());
+                    for (int i = 0; i < int(defaults.size()); ++i)
+                        QColorDialog::setCustomColor(i + 1, defaults[size_t(i)].rgb());
+                    QColorDialog dialog(initial, this);
+                    dialog.setWindowTitle(text("wire_color"));
+                    dialog.setOption(QColorDialog::DontUseNativeDialog);
+                    if (dialog.exec() == QDialog::Accepted) {
+                        set_swatch(dialog.selectedColor().name(QColor::HexRgb));
+                        button->setProperty("draft", true);
+                        apply_inspector();
+                    }
+                });
+                connect(button, &QWidget::customContextMenuRequested, this, [this, button, set_swatch](QPoint point) {
+                    QMenu menu(button);
+                    auto *automatic = menu.addAction(text("wire_color_auto"));
+                    connect(automatic, &QAction::triggered, this, [this, button, set_swatch] {
+                        set_swatch({});
+                        button->setProperty("draft", true);
+                        apply_inspector();
+                    });
+                    menu.exec(button->mapToGlobal(point));
+                });
             } else if (kind == "enum") {
                 auto *combo = new QComboBox;
                 widget = combo;

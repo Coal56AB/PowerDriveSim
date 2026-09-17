@@ -1,0 +1,15 @@
+{
+  "type": "differential_plot",
+  "fields": [
+    { "key": "name", "editor": "text", "label": "name", "inline": "name" },
+    { "key": "inputs", "editor": "integer", "label": "differential_plot_inputs", "min": 1, "max": 8 }
+  ],
+  "palette": {
+    "id": 107,
+    "label": "differential_plot",
+    "category": null,
+    "short": "diff",
+    "fixed": true,
+    "hidden": false
+  }
+}

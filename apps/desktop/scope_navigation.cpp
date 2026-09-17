@@ -86,6 +86,7 @@ void Scope::update_channel_controls() {
             const auto info = result_channel(*result_, channel);
             auto *group = new QFrame;
             group->setObjectName("curve_channel");
+            group->setContextMenuPolicy(Qt::CustomContextMenu);
             auto *layout = new QHBoxLayout(group);
             layout->setContentsMargins(1, 1, 1, 1);
             layout->setSpacing(0);
@@ -142,6 +143,15 @@ void Scope::update_channel_controls() {
             channel_bar_->addAction(action);
             connect(settings, &QAction::triggered, this,
                     [this, key = info.object] { show_curve_settings(key); });
+            connect(group, &QWidget::customContextMenuRequested, this,
+                    [this, group, settings, key = info.object](QPoint point) {
+                        QMenu menu(group);
+                        auto *multiplier = menu.addAction(text("curve_multiplier_action"));
+                        connect(multiplier, &QAction::triggered, this,
+                                [this, key] { show_multiplier_settings(key); });
+                        menu.addAction(settings);
+                        menu.exec(group->mapToGlobal(point));
+                    });
         }
     }
     const auto &colors = theme_colors().curves;

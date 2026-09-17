@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 19;
+inline constexpr unsigned project_schema = 20;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -110,6 +110,7 @@ struct PlotBlock {
     std::string id,name; double x=0,y=0; unsigned inputs=2;
     double begin=0,end=-1,cursor_a=-1,cursor_b=-1;
     Orientation orientation;
+    bool differential=false;
     bool operator==(const PlotBlock&) const = default;
 };
 struct LabelLayout {

@@ -299,8 +299,12 @@ std::string Document::add_node(bool ground,double x,double y) {
 std::string Document::add_pattern(double x,double y) {
     auto id=new_uuid(); apply("Add gate pattern",[&](Project& p){p.patterns.push_back({id,"Gate"+std::to_string(p.patterns.size()+1),x,y,false});}); return id;
 }
-std::string Document::add_plot(double x,double y,const std::string& name){
-    auto id=new_uuid();apply("Add plot",[&](Project& p){p.plots.push_back({id,name+" "+std::to_string(p.plots.size()+1),x,y,2});});return id;
+std::string Document::add_plot(double x,double y,const std::string& name,bool differential){
+    auto id=new_uuid();apply("Add plot",[&](Project& p){
+        PlotBlock plot{id,name+" "+std::to_string(p.plots.size()+1),x,y,2};
+        plot.differential=differential;
+        p.plots.push_back(std::move(plot));
+    });return id;
 }
 void Document::connect(Endpoint from,Endpoint to) {
     Wire wire{new_uuid(),std::move(from),std::move(to),{}};

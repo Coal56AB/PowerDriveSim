@@ -70,11 +70,13 @@ void EditorWindow::update_command_state() {
     }
     for (const char *key : {"snapshot_save", "snapshot_load", "continue_state", "simulation_step", "initial_settings", "step_settings"}) {
         auto action = commands_.find(key);
-        if (action != commands_.end())
-            action->second->setEnabled(!running() &&
+        if (action != commands_.end()) {
+            const bool step_while_paused = std::string(key) == "simulation_step" && running() && paused_.load();
+            action->second->setEnabled((!running() || step_while_paused) &&
                 (std::string(key) != "continue_state" || can_advance) &&
                 ((std::string(key) != "snapshot_save" && std::string(key) != "continue_state") ||
                  continuation_.has_value()));
+        }
     }
 
     auto *focus = QApplication::focusWidget();

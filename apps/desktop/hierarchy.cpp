@@ -17,6 +17,7 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QScopedValueRollback>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -127,8 +128,9 @@ void EditorWindow::update_instance_specs() {
         build_property_editors();
 }
 void EditorWindow::navigate_hierarchy(const std::vector<std::string> &path) {
-    if (running() || !commit_inline_edit())
+    if (running() || hierarchy_navigation_ || !commit_inline_edit())
         return;
+    QScopedValueRollback<bool> navigation_guard(hierarchy_navigation_, true);
     try {
         canvas_->cancel_gesture();
         document_->navigate(path);
@@ -491,7 +493,11 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         terminal(g.id, g.name, "out");
     for (const auto &plot : body.plots)
         for (unsigned input = 1; input <= plot.inputs; ++input)
-            terminal(plot.id, plot.name, "in" + std::to_string(input));
+            if (plot.differential) {
+                terminal(plot.id, plot.name, "p" + std::to_string(input));
+                terminal(plot.id, plot.name, "n" + std::to_string(input));
+            } else
+                terminal(plot.id, plot.name, "in" + std::to_string(input));
     for (const auto &i : body.instances)
         for (const auto &port : definition(body, i.definition).ports) {
             terminal(i.id, i.name, port.id);

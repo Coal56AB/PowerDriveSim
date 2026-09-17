@@ -42,11 +42,11 @@ int definition_icon_id(const std::string &id) {
     return found == definition_icons.end() ? -1 : found->second;
 }
 QIcon component_icon(int id) {
-    QPixmap image(128, 128);
+    QPixmap image(256, 256);
     image.fill(Qt::transparent);
     QPainter p(&image);
     p.setRenderHint(QPainter::Antialiasing);
-    p.scale(4, 4);
+    p.scale(8, 8);
     p.setPen(QPen(theme_colors().text, 0.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
     auto title = [&](const QString &s) {
@@ -90,11 +90,25 @@ QIcon component_icon(int id) {
         p.drawLine(13, 27, 19, 27);
     } else if (id == 103) {
         p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
-            p.setPen(QPen(theme_colors().signal, 1.0));
+        p.setPen(QPen(theme_colors().signal, 1.0));
         QPainterPath line(QPointF(6, 22));
         line.cubicTo(13, 22, 12, 8, 19, 12);
         line.cubicTo(23, 15, 23, 21, 27, 14);
         p.drawPath(line);
+        p.setPen(QPen(theme_colors().text, .8));
+        p.drawLine(24, 22, 24, 25);
+        p.drawLine(20, 25, 28, 25);
+        p.drawLine(22, 27, 26, 27);
+    } else if (id == 107) {
+        p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
+        p.setPen(QPen(theme_colors().signal, 1.0));
+        QPainterPath line(QPointF(6, 22));
+        line.cubicTo(10, 8, 15, 8, 19, 17);
+        p.drawPath(line);
+        p.setPen(QPen(QColor("#d24b62"), 1.0));
+        QPainterPath other(QPointF(18, 20));
+        other.cubicTo(21, 13, 24, 13, 28, 20);
+        p.drawPath(other);
     } else if (id == 106) {
         p.setPen(QPen(theme_colors().gate, 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         QPainterPath tag;
@@ -242,9 +256,8 @@ QIcon component_icon(int id) {
             p.drawLine(12, 25, 12, 31);
         }
     } else if (id == 280 || id == 281) {
-        p.drawRoundedRect(QRectF(3, 3, 26, 21), 2, 2);
-        p.drawLine(0, 14, 3, 14);
-        for (int y : {7, 14, 21}) p.drawLine(29, y, 32, y);
+        p.drawLine(0, 14, 7, 14);
+        for (int y : {7, 14, 21}) p.drawLine(25, y, 32, y);
         p.drawEllipse(QRectF(7, 5, 18, 18));
         QPainterPath wave(QPointF(9, 14));
         wave.cubicTo(11, 8, 14, 8, 16, 14);
@@ -310,6 +323,8 @@ void EditorWindow::begin_placement(int id) {
                     throw std::runtime_error(file.errorString().toStdString());
                 std::istringstream input(file.readAll().toStdString());
                 paste_fragment_ = read_project(input);
+                for (auto &instance : paste_fragment_->instances)
+                    instance.locked = true;
             } catch (const std::exception &e) {
                 show_error(e);
                 return;
@@ -464,7 +479,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
 }
 void EditorWindow::rebuild_component_bar() {
     component_bar_->clear();
-    for (int id : {100, 7, 8, 103})
+    for (int id : {100, 7, 8, 103, 107})
         if (component_actions_.count(id) && component_actions_.at(id)->property("fixed").toBool())
             component_bar_->addAction(component_actions_.at(id));
     for (const auto &[id, action] : component_actions_)

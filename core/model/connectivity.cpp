@@ -8,7 +8,9 @@ namespace {
 bool plot_input(const Project& catalog,const Schematic& level,const Endpoint& endpoint,unsigned depth=0) {
     if(depth>64)return false;
     for(const auto& plot:level.plots)if(plot.id==endpoint.object)
-        for(unsigned input=1;input<=plot.inputs;++input)if(endpoint.port=="in"+std::to_string(input))return true;
+        for(unsigned input=1;input<=plot.inputs;++input)
+            if(endpoint.port==(plot.differential?"p":"in")+std::to_string(input)||
+               (plot.differential&&endpoint.port=="n"+std::to_string(input)))return true;
     for(const auto& instance:level.instances)if(instance.id==endpoint.object) {
         const auto& body=definition(catalog,instance.definition);
         for(const auto& port:body.ports)if(port.id==endpoint.port)return plot_input(catalog,body,port.terminal,depth+1);
@@ -30,7 +32,9 @@ PortType port_type(const Project& p,const Endpoint& e) {
     for(const auto& g:p.patterns) if(g.id==e.object && e.port=="out") return {Domain::gate,Direction::output};
     for(const auto& t:p.tags) if(t.id==e.object && e.port=="io") return {t.domain,Direction::conserving};
     for(const auto& plot:p.plots)if(plot.id==e.object)
-        for(unsigned i=1;i<=plot.inputs;++i)if(e.port=="in"+std::to_string(i))return {Domain::signal,Direction::input};
+        for(unsigned i=1;i<=plot.inputs;++i)
+            if(e.port==(plot.differential?"p":"in")+std::to_string(i)||
+               (plot.differential&&e.port=="n"+std::to_string(i)))return {Domain::signal,Direction::input};
     throw Diagnostic("missing_port",e.object,"Port does not exist: "+e.port);
 }
 void validate_wire(const Project& p,const Wire& w) {
@@ -87,7 +91,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     }
     for(const auto& plot:p.plots){
         uuid(plot.id);
-        if(!std::isfinite(plot.x)||!std::isfinite(plot.y)||plot.inputs<1||plot.inputs>16)
+        if(!std::isfinite(plot.x)||!std::isfinite(plot.y)||plot.inputs<1||plot.inputs>(plot.differential?8u:16u))
             throw Diagnostic("invalid_plot",plot.id,"A plot requires finite coordinates and 1..16 inputs");
     }
     auto root=[&](std::string k) {
@@ -96,10 +100,15 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     auto join=[&](const std::string& a,const std::string& b) {
         auto ra=root(a),rb=root(b); if(ra!=rb) parents[std::max(ra,rb)]=std::min(ra,rb);
     };
-    // All reference symbols represent the same zero-potential net.
-    std::string ground;
+    // Reference symbols are global only within the same explicit name. This
+    // allows independent GND1/GND2 domains while repeated GND1 symbols remain
+    // one net without a drawn wire.
+    std::map<std::string, std::string> grounds;
     for(const auto& n:p.nodes) if(n.ground) {
-        auto k=endpoint_key({n.id,"node"}); if(ground.empty()) ground=k; else join(ground,k);
+        if(n.name.empty())throw Diagnostic("invalid_ground",n.id,"Ground name must not be empty");
+        auto k=endpoint_key({n.id,"node"});
+        auto [found,inserted]=grounds.emplace(n.name,k);
+        if(!inserted)join(found->second,k);
     }
     for(const auto& tag:p.tags) if(tag.domain==Domain::electrical)
         for(const auto& other:p.tags) if(other.id>tag.id&&other.domain==tag.domain&&other.name==tag.name)
@@ -209,6 +218,14 @@ std::vector<std::string> plot_channels(const Project& p,const std::string& id){
     std::vector<std::string> result;
     auto plot=std::find_if(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==id;});
     if(plot==p.plots.end())return result;
+    if(plot->differential) {
+        const auto pairs=plot_differential_channels(p,id);
+        for(unsigned i=1;i<=plot->inputs;++i) {
+            if(i<=pairs.size()&&!pairs[i-1].first.empty()&&!pairs[i-1].second.empty())
+                result.push_back("diff/"+id+"/"+std::to_string(i));
+        }
+        return result;
+    }
     for(unsigned i=1;i<=plot->inputs;++i){
         Endpoint input{id,"in"+std::to_string(i)};
         for(const auto& w:p.wires){
@@ -220,6 +237,41 @@ std::vector<std::string> plot_channels(const Project& p,const std::string& id){
             if(std::find(result.begin(),result.end(),key)==result.end())result.push_back(key);
         }
     }return result;
+}
+namespace {
+std::string plot_source(const Project& p,const Endpoint& input) {
+    for(const auto& w:p.wires) {
+        const Endpoint* source=w.to==input?&w.from:(w.from==input?&w.to:nullptr);
+        if(!source)continue;
+        const auto domain=port_type(p,*source).domain;
+        if(domain==Domain::gate)return "gate/"+source->object;
+        if(domain==Domain::electrical)return resolve_connections(p).nets.at(endpoint_key(*source));
+        return source->object;
+    }
+    return {};
+}
+}
+std::vector<std::pair<std::string,std::string>> plot_differential_channels(const Project& p,
+                                                                           const std::string& id) {
+    if(!p.instances.empty())return plot_differential_channels(flatten(p).project,id);
+    std::vector<std::pair<std::string,std::string>> result;
+    const auto plot=std::find_if(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==id;});
+    if(plot==p.plots.end()||!plot->differential)return result;
+    for(unsigned i=1;i<=plot->inputs;++i)
+        result.emplace_back(plot_source(p,{id,"p"+std::to_string(i)}),
+                            plot_source(p,{id,"n"+std::to_string(i)}));
+    return result;
+}
+std::vector<std::string> plot_source_channels(const Project& p,const std::string& id) {
+    if(!p.instances.empty())return plot_source_channels(flatten(p).project,id);
+    const auto plot=std::find_if(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==id;});
+    if(plot==p.plots.end())return {};
+    if(!plot->differential)return plot_channels(p,id);
+    std::vector<std::string> result;
+    for(const auto& [positive,negative]:plot_differential_channels(p,id))
+        for(const auto& key:{positive,negative})
+            if(!key.empty()&&std::find(result.begin(),result.end(),key)==result.end())result.push_back(key);
+    return result;
 }
 Project make_wired(const Project& source) {
     if(source.wired) return source;

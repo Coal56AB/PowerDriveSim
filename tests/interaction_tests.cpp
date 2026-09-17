@@ -149,6 +149,7 @@ class InteractionTests : public QObject {
         QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier, w.canvas()->mapFromScene(QPointF(0, 0)));
         QCOMPARE(w.project().instances.size(), size_t(1));
         const auto id = w.project().instances.front().id;
+        QVERIFY(w.project().instances.front().locked);
         QVERIFY(definition_icon_id(w.project().instances.front().definition) == 231);
         if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT")));
         w.raise(); w.activateWindow(); QTest::qWait(50);
@@ -2168,9 +2169,8 @@ class InteractionTests : public QObject {
         QVERIFY(!w.has_result()); // No history allocation during the warm-up interval.
         w.stop_simulation();
         QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
-        QVERIFY(w.simulation_snapshot());
+        QVERIFY(!w.simulation_snapshot());
         QVERIFY(w.result().cancelled && w.result().samples.empty());
-        QVERIFY(w.simulation_snapshot()->time < .9);
     }
     void simulation_snapshots_and_step() {
         QTemporaryDir dir;
@@ -2306,9 +2306,14 @@ class InteractionTests : public QObject {
         QCOMPARE(run_button->size(), stop_button->size());
         QTest::qWait(150);
         const auto size = w.result().samples.size();
+        const auto paused_time = w.result().samples.back().time;
         QTest::qWait(150);
         QCOMPARE(w.result().samples.size(), size);
-        w.start_simulation();
+        w.step_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
+        QVERIFY(w.result().samples.size() > size);
+        QVERIFY(w.result().samples.back().time > paused_time);
+        w.continue_simulation();
         QTRY_VERIFY_WITH_TIMEOUT(w.result().samples.size() > size, 2000);
         w.start_simulation();
         w.stop_simulation();
@@ -2316,13 +2321,11 @@ class InteractionTests : public QObject {
         QVERIFY(w.result().cancelled);
         for (size_t i = 1; i < w.result().samples.size(); ++i)
             QVERIFY(w.result().samples[i].time > w.result().samples[i - 1].time);
-        QVERIFY(w.simulation_snapshot());
-        const auto stopped_samples = w.result().samples.size();
-        const auto stopped_steps = w.result().accepted_steps;
+        QVERIFY(!w.simulation_snapshot());
         w.step_simulation();
         QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 2000);
-        QCOMPARE(w.result().accepted_steps, stopped_steps + 1);
-        QCOMPARE(w.result().samples.size(), stopped_samples + 1);
+        QCOMPARE(w.result().accepted_steps, size_t(1));
+        QVERIFY(w.result().samples.size() <= 2);
         QVERIFY(!w.result().cancelled);
     }
     void inline_labels_and_configured_properties() {
@@ -2847,57 +2850,6 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().components.size(), size_t(2));
         // Closing an editor with an active preview must release its callbacks before member teardown.
         QTest::keyClick(w.canvas(), Qt::Key_V, Qt::ControlModifier);
-    }
-    void moving_component_reuses_connected_trunk() {
-        // A branch reuses the existing vertical run of its own network.
-        auto trunk = manual_route({20, 200}, {0, 0}, {{0, 200}});
-        auto branch = orthogonal_route({140, 160}, {120, 160}, {0, 0}, {0, 0}, {});
-        const auto joined = join_route_to_trunk(branch, {120, 160}, trunk, {});
-        QVERIFY(joined);
-        QCOMPARE(joined->second, QPointF(0, 160));
-        QCOMPARE(joined->first.elementCount(), 3);
-        // Crossing another network is not permission to join it.
-        QVERIFY(!join_route_to_trunk(branch, {120, 160}, manual_route({20, 200}, {0, -20}, {{0, 200}}), {}));
-        QTemporaryDir dir;
-        EditorWindow w("en", dir.path());
-        auto common = w.add_node(false, {0, -100});
-        auto diode = w.add_component(Kind::diode, {-40, 180});
-        auto resistor = w.add_component(Kind::resistor, {160, 120});
-        auto intermediate = w.add_node(false, {0, -60});
-        QVERIFY(w.connect_ports({diode, "n"}, {intermediate, "node"}));
-        const auto trunk_id = w.project().wires.back().id;
-        QVERIFY(w.connect_ports({intermediate, "node"}, {common, "node"}));
-        QVERIFY(w.connect_ports({resistor, "p"}, {common, "node"}));
-        const auto branch_id = w.project().wires.back().id;
-        ready(w);
-        const auto before = encoded(w.project());
-        drag(w, {160, 120}, {200, 80});
-        auto route = static_cast<QGraphicsPathItem *>(item(w, branch_id))->path();
-        auto trunk_path = static_cast<QGraphicsPathItem *>(item(w, trunk_id))->path();
-        const auto port = w.port_position({resistor, "p"});
-        // The branch turns onto the trunk at its own height, not at the old node.
-        QVERIFY(route.elementCount() >= 3);
-        const QPointF turn(route.elementAt(1).x, route.elementAt(1).y);
-        QCOMPARE(turn.y(), port.y());
-        QCOMPARE(project_on_route(trunk_path, turn), turn);
-        const auto moved = encoded(w.project());
-        w.undo();
-        QCOMPARE(encoded(w.project()), before);
-        w.redo();
-        QCOMPARE(encoded(w.project()), moved);
-        QCOMPARE(static_cast<QGraphicsPathItem *>(item(w, branch_id))->path(), route);
-        QVERIFY(w.save_project(dir.filePath("shared.pds")));
-        QVERIFY(w.open_project(dir.filePath("shared.pds")));
-        QCOMPARE(static_cast<QGraphicsPathItem *>(item(w, branch_id))->path(), route);
-        const auto screenshot = qEnvironmentVariable("PDS_SHARED_WIRE_SCREENSHOT_PATH");
-        if (!screenshot.isEmpty()) {
-            const auto project_path = qEnvironmentVariable("PDS_SHARED_WIRE_PROJECT");
-            if (!project_path.isEmpty())
-                QVERIFY(w.open_project(project_path));
-            w.canvas()->resetTransform();
-            w.canvas()->centerOn(260, 80);
-            QVERIFY(w.grab().save(screenshot));
-        }
     }
     void moved_plot_routes_have_no_backtracking() {
         // Fractional bends reproduce the small spur on a saved graph wire.

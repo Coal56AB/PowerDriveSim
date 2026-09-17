@@ -386,7 +386,25 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
         menu.addSeparator();
         for (const char *key : {"copy", "cut", "duplicate", "delete"})
             menu.addAction(commands_.at(key));
-        menu.addAction(text("observe_voltage"), this, [this, id] { observe_object(id); });
+        const bool wire = std::any_of(project().wires.begin(), project().wires.end(),
+                                      [&](const Wire &value) { return value.id == id; });
+        const bool component = std::any_of(project().components.begin(), project().components.end(),
+                                           [&](const Component &value) { return value.id == id; });
+        const bool component_current = std::any_of(project().components.begin(), project().components.end(),
+                                                   [&](const Component &value) {
+                                                       return value.id == id && value.kind != Kind::voltage_probe;
+                                                   });
+        const bool instance = std::any_of(project().instances.begin(), project().instances.end(),
+                                          [&](const Instance &value) { return value.id == id; });
+        if (wire)
+            menu.addAction(text("observe_voltage"), this, [this, id] { observe_object(id); });
+        else if (component || instance) {
+            auto *observe = menu.addMenu(text("observe"));
+            observe->addAction(text("observe_terminal_voltages"), this,
+                               [this, id] { observe_component_terminals(id); });
+            if (component_current)
+                observe->addAction(text("observe_current"), this, [this, id] { observe_object(id); });
+        }
     }
     menu.addAction(commands_.at("paste"));
     menu.addAction(commands_.at("group_subcircuit"));

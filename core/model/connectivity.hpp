@@ -4,6 +4,9 @@
 namespace pds {
 struct ResolvedGraph { Project project; std::map<std::string,std::string> nets; };
 std::vector<std::string> plot_channels(const Project& project,const std::string& plot_id);
+std::vector<std::string> plot_source_channels(const Project& project,const std::string& plot_id);
+std::vector<std::pair<std::string,std::string>> plot_differential_channels(const Project& project,
+                                                                           const std::string& plot_id);
 std::string endpoint_key(const Endpoint& endpoint);
 PortType port_type(const Project& project,const Endpoint& endpoint);
 void validate_wire(const Project& project,const Wire& wire);

@@ -22,7 +22,7 @@ node "uuid" "name" ground_boolean x y
 component "uuid" "name" kind "positive_node_uuid" "negative_node_uuid" value initial x y closed_boolean
 wire "uuid" "from_object" "from_port" "to_object" "to_port" bend_count x1 y1 ...
 pattern "uuid" "name" x y initial_boolean
-plot "uuid" "name" x y input_count time_begin time_end cursor_a cursor_b
+plot "uuid" "name" x y input_count time_begin time_end cursor_a cursor_b differential
 scope_enabled boolean
 event time_seconds "switch_or_pattern_uuid" closed_boolean
 scope "channel_key"
@@ -63,7 +63,7 @@ UUID именованного узла сохраняется для разре�
 
 ## Осциллограммы и расширения
 
-Ключ аналогового канала — UUID узла или компонента. Ключ состояния ключа — `gate/UUID`. `scopeview` хранит диапазон времени и два курсора; `-1` у конца диапазона и курсоров означает auto/unset. Каждый plot хранит собственные диапазон и курсоры. Результаты расчёта и история undo/redo в проект не записываются. `scope_enabled=0` выключает сбор истории осциллограмм; графики записывают только подключённые сигналы независимо от этого флага.
+Ключ аналогового канала — UUID узла или компонента. Ключ состояния ключа — `gate/UUID`. `scopeview` хранит диапазон времени и два курсора; `-1` у конца диапазона и курсоров означает auto/unset. Каждый plot хранит собственные диапазон и курсоры. В schema 20 флаг `differential=1` задаёт пары входов `pN`/`nN`; обычный график использует `inN`. Результаты расчёта и история undo/redo в проект не записываются. `scope_enabled=0` выключает сбор истории осциллограмм; графики записывают только подключённые сигналы независимо от этого флага.
 
 Записи с префиксом `x-` сохраняются дословно как непрозрачные расширения. Историческое `x-scope` в старых примерах сохраняется, но не заменяет текущие `scope`-записи.
 

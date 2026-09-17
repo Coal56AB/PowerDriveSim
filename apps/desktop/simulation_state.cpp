@@ -149,7 +149,16 @@ void EditorWindow::continue_simulation() {
 }
 
 void EditorWindow::step_simulation() {
-    if (running()) return;
+    if (running()) {
+        if (paused_.load()) {
+            step_after_pause_ = true;
+            discard_continuation_on_finish_ = false;
+            cancel_ = true;
+            paused_ = false;
+            run_->setEnabled(false);
+        }
+        return;
+    }
     try {
         auto state = continuation_;
         if (state && state->time >= parse_si(stop_->text().toStdString(), "s")) state.reset();

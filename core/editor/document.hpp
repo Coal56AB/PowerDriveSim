@@ -28,7 +28,7 @@ public:
     std::string add_component(Kind kind,double x,double y);
     std::string add_node(bool ground,double x,double y);
     std::string add_pattern(double x,double y);
-    std::string add_plot(double x,double y,const std::string& name="Plot");
+    std::string add_plot(double x,double y,const std::string& name="Plot",bool differential=false);
     void connect(Endpoint from,Endpoint to);
     void connect_anchors(WireAnchor from, WireAnchor to, const std::vector<Point>& bends,
                          const std::string& replace_wire = "", bool replace_gate_driver = false);

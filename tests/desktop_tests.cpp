@@ -27,6 +27,37 @@ using namespace pds::desktop;
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void differential_plot_records_difference() {
+        QTemporaryDir temp;
+        Project project; project.id=new_uuid(); project.wired=true; project.profile={1e-4,1e-5};
+        Document document(project);
+        const auto ground=document.add_node(true,0,200);
+        const auto first=document.add_component(Kind::voltage,0,0);
+        const auto second=document.add_component(Kind::voltage,0,100);
+        const auto positive=document.add_component(Kind::voltage_probe,180,0);
+        const auto negative=document.add_component(Kind::voltage_probe,180,100);
+        const auto graph=document.add_plot(360,50,"Differential",true);
+        document.apply("Voltages",[&](Project& p){p.components[0].value=5;p.components[1].value=2;});
+        document.connect({first,"n"},{ground,"node"});
+        document.connect({second,"n"},{ground,"node"});
+        document.connect({positive,"p"},{first,"p"});
+        document.connect({positive,"n"},{ground,"node"});
+        document.connect({negative,"p"},{second,"p"});
+        document.connect({negative,"n"},{ground,"node"});
+        document.connect({positive,"out"},{graph,"p1"});
+        document.connect({negative,"out"},{graph,"n1"});
+        EditorWindow window("en",temp.path());
+        window.set_project(document.project());
+        window.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(),5000);
+        QVERIFY(window.has_result());
+        const auto key="diff/"+graph+"/1";
+        const auto channel=std::find_if(window.result().channels.begin(),window.result().channels.end(),
+                                        [&](const Channel& value){return value.object==key;});
+        QVERIFY(channel!=window.result().channels.end());
+        const auto index=size_t(channel-window.result().channels.begin());
+        QVERIFY(std::abs(window.result().samples.back().values[index]-3.0)<1e-12);
+    }
     void create_connect_edit_run_save_recover() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
@@ -421,12 +452,12 @@ class DesktopTests : public QObject {
         QCOMPARE(window.project().wires.size(), size_t(1));
         window.select_object(window.project().wires.front().id);
         QVERIFY(!window.findChild<QPlainTextEdit *>("property_bends"));
-        auto *color = window.findChild<QLineEdit *>("property_wire_color");
+        auto *color = window.findChild<QPushButton *>("property_wire_color");
         auto *width = window.findChild<QLineEdit *>("property_wire_width");
         auto *line = window.findChild<QComboBox *>("property_wire_line");
         QVERIFY(color && width && line);
-        color->setText("#c04080");
-        color->setModified(true);
+        color->setProperty("color_value", "#c04080");
+        color->setProperty("draft", true);
         width->setText("3.5");
         width->setModified(true);
         line->setCurrentIndex(line->findData(unsigned(WireLine::dash)));

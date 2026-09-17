@@ -8,10 +8,12 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QPixmap>
 #include <QScopedValueRollback>
 #include <QSpinBox>
 #include <QTableWidget>
@@ -50,6 +52,9 @@ bool property_visible(const Project &project, const std::string &id, const QJson
     return true;
 }
 static QString field_text(QWidget *widget) {
+    if (auto *button = qobject_cast<QPushButton *>(widget);
+        button && widget->property("editor").toString() == "color")
+        return button->property("color_value").toString();
     if (auto *combo = qobject_cast<QComboBox *>(widget))
         return combo->currentData().toString();
     if (auto *line = qobject_cast<QLineEdit *>(widget))
@@ -80,6 +85,15 @@ static bool widget_changed(QWidget *widget) {
     return field_text(widget) != widget->property("loaded_text").toString();
 }
 static void set_field_text(QWidget *widget, const QString &text) {
+    if (auto *button = qobject_cast<QPushButton *>(widget);
+        button && widget->property("editor").toString() == "color") {
+        const QColor color = QColor(text).isValid() ? QColor(text) : theme_colors().electrical;
+        QPixmap swatch(24, 24);
+        swatch.fill(color);
+        button->setIcon(QIcon(swatch));
+        button->setProperty("color_value", text);
+        return;
+    }
     if (auto *combo = qobject_cast<QComboBox *>(widget)) {
         if (text.isEmpty())
             combo->setCurrentIndex(-1);

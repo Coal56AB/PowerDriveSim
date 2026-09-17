@@ -155,6 +155,22 @@ double Scope::sample_value(size_t sample, int channel) const {
 }
 std::pair<size_t, size_t> Scope::sample_extrema(int channel, size_t from, size_t to) {
     auto value = [&](size_t i) { return sample_value(i, channel); };
+    if (live_ && to > from) {
+        // Live painting must stay bounded even when the solver produces millions
+        // of samples between GUI frames. The complete history remains untouched;
+        // the exact append-only extrema index is built when the run finishes.
+        constexpr size_t live_budget = 4096;
+        const size_t stride = std::max<size_t>(1, (to - from) / live_budget);
+        size_t low = from, high = from;
+        for (size_t i = from; i < to; i += stride) {
+            if (value(i) < value(low)) low = i;
+            if (value(i) > value(high)) high = i;
+        }
+        const size_t last = to - 1;
+        if (value(last) < value(low)) low = last;
+        if (value(last) > value(high)) high = last;
+        return {low, high};
+    }
     auto &index = extrema_[channel];
     index.append(result_->samples.size(), value);
     return index.range(from, to, value);
@@ -248,7 +264,15 @@ void Scope::paintEvent(QPaintEvent *) {
                 for (size_t i = from; i < to; i += stride) {
                     const size_t finish = std::min(i + stride, to);
                     const double first_value = sample_value(i, channels_[ch]);
-                    const auto [imin, imax] = sample_extrema(channels_[ch], i, finish);
+                    size_t imin=i, imax=i;
+                    if (live_) {
+                        const size_t last_sample=finish-1;
+                        if (sample_value(last_sample,channels_[ch])<first_value)imin=last_sample;
+                        if (sample_value(last_sample,channels_[ch])>first_value)imax=last_sample;
+                    } else {
+                        const auto extrema=sample_extrema(channels_[ch],i,finish);
+                        imin=extrema.first;imax=extrema.second;
+                    }
                     const double minimum = sample_value(imin, channels_[ch]), maximum = sample_value(imax, channels_[ch]),
                                  last_value = sample_value(finish - 1, channels_[ch]);
                     const double column = x((samples[i].time + samples[finish - 1].time) / 2);

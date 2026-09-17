@@ -37,6 +37,7 @@ struct ExecutionOptions {
     const SimulationSnapshot* resume = nullptr;
     bool capture_snapshot = false;
     size_t max_steps = 0; // Zero means no per-call limit; useful for stepping/checkpoints.
+    size_t stream_preview_samples = 0; // Zero preserves every streamed sample; desktop may request a bounded preview.
 };
 struct Recording { bool all=true; std::vector<std::string> channels; };
 std::vector<Channel> available_channels(const SimulationIR& ir);

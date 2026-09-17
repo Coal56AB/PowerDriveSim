@@ -141,7 +141,7 @@ std::string object_type(const Project &p, const std::string &id) {
             return "pattern";
     for (const auto &g : p.plots)
         if (g.id == id)
-            return "plot";
+            return g.differential ? "differential_plot" : "plot";
     for(const auto& i:p.instances)if(i.id==id)return "instance:"+i.definition;
     for (const auto &w : p.wires)
         if (w.id == id)
@@ -433,7 +433,9 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                     for (const auto &e : {w.from, w.to})
                         if (e.object == id) {
                             for (unsigned i = 1; i <= g.inputs; ++i)
-                                if (e.port == "in" + std::to_string(i))
+                                if ((!g.differential && e.port == "in" + std::to_string(i)) ||
+                                    (g.differential && (e.port == "p" + std::to_string(i) ||
+                                                        e.port == "n" + std::to_string(i))))
                                     return false;
                             return true;
                         }

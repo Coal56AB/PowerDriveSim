@@ -19,7 +19,49 @@
 #include <iterator>
 #include <set>
 namespace pds::desktop {
+namespace {
+void append_differential_channels(Result &result, const Project &root) {
+    const auto flat = flatten(root).project;
+    const size_t analog_count = result.channels.size();
+    auto source = [&](const std::string &key) -> std::optional<std::pair<bool, size_t>> {
+        for (size_t i = 0; i < analog_count; ++i)
+            if (result.channels[i].object == key)
+                return std::pair{false, i};
+        for (size_t i = 0; i < result.gate_objects.size(); ++i)
+            if ("gate/" + result.gate_objects[i] == key)
+                return std::pair{true, i};
+        return {};
+    };
+    for (const auto &plot : flat.plots) {
+        if (!plot.differential)
+            continue;
+        const auto pairs = plot_differential_channels(flat, plot.id);
+        for (size_t i = 0; i < pairs.size(); ++i) {
+            if (pairs[i].first.empty() || pairs[i].second.empty())
+                continue;
+            const auto positive = source(pairs[i].first), negative = source(pairs[i].second);
+            if (!positive || !negative)
+                continue;
+            auto unit = [&](const std::pair<bool, size_t> &index) -> std::string {
+                return index.first ? std::string() : result.channels[index.second].unit;
+            };
+            const auto positive_unit = unit(*positive), negative_unit = unit(*negative);
+            result.channels.push_back({"diff/" + plot.id + "/" + std::to_string(i + 1),
+                                       plot.name + " Δ" + std::to_string(i + 1),
+                                       positive_unit == negative_unit ? positive_unit : std::string()});
+            for (auto &sample : result.samples) {
+                auto value = [&](const std::pair<bool, size_t> &index) {
+                    return index.first ? (sample.gates[index.second] ? 1.0 : 0.0)
+                                       : sample.values[index.second];
+                };
+                sample.values.push_back(value(*positive) - value(*negative));
+            }
+        }
+    }
+}
+}
 void EditorWindow::append_simulation_result(Result batch) {
+    append_differential_channels(batch, root_project());
     accumulate_statistics(batch, continuation_statistics_);
     if (!result_) {
         result_ = std::move(batch);
@@ -84,7 +126,7 @@ std::vector<std::string> EditorWindow::recording_keys() const {
         keys.insert(project().scope_channels.begin(), project().scope_channels.end());
     const auto flat = flatten(root_project()).project;
     for (const auto &plot : flat.plots) {
-        auto connected = plot_channels(flat, plot.id);
+        auto connected = plot_source_channels(flat, plot.id);
         keys.insert(connected.begin(), connected.end());
     }
     return {keys.begin(), keys.end()};
@@ -175,6 +217,13 @@ void EditorWindow::sync_scope() {
         if (!channels_->currentItem())
             return;
         QMenu menu(channels_);
+        const auto key = channels_->currentItem()->data(Qt::UserRole).toString().toStdString();
+        auto *multiplier = menu.addAction(text("curve_multiplier_action"));
+        connect(multiplier, &QAction::triggered, this,
+                [this, key] { scope_->show_multiplier_settings(key); });
+        auto *appearance = menu.addAction(text("curve_appearance_action"));
+        connect(appearance, &QAction::triggered, this, [this, key] { scope_->show_curve_settings(key); });
+        menu.addSeparator();
         auto *remove = menu.addAction(text("delete"));
         connect(remove, &QAction::triggered, this, &EditorWindow::remove_scope_point);
         menu.exec(channels_->viewport()->mapToGlobal(point));
@@ -283,6 +332,43 @@ void EditorWindow::observe_object(const std::string &id) {
             p.scope_points.push_back(key);
         if (std::find(p.scope_channels.begin(), p.scope_channels.end(), key) == p.scope_channels.end())
             p.scope_channels.push_back(key);
+    });
+    refresh_channel_catalog();
+    choose_channels();
+    bottom_->setCurrentIndex(1);
+    banner_->setText(text("record_next_run"));
+}
+void EditorWindow::observe_component_terminals(const std::string &id) {
+    if (running())
+        return;
+    const auto resolved = resolve_connections(root_project());
+    std::vector<std::string> keys;
+    auto add = [&](const Endpoint &local) {
+        Endpoint global{expanded_uuid(hierarchy_path(), local.object), local.port};
+        auto found = resolved.nets.find(endpoint_key(global));
+        if (found != resolved.nets.end() && std::find(keys.begin(), keys.end(), found->second) == keys.end())
+            keys.push_back(found->second);
+    };
+    for (const auto &component : project().components)
+        if (component.id == id) {
+            add({id, "p"});
+            add({id, "n"});
+        }
+    for (const auto &instance : project().instances)
+        if (instance.id == id)
+            for (const auto &port : definition(project(), instance.definition).ports)
+                if (port.domain == Domain::electrical)
+                    add({id, port.id});
+    if (keys.empty())
+        return;
+    set_scope_enabled(true);
+    document_->apply("Observe terminals", [&](Project &p) {
+        for (const auto &key : keys) {
+            if (std::find(p.scope_points.begin(), p.scope_points.end(), key) == p.scope_points.end())
+                p.scope_points.push_back(key);
+            if (std::find(p.scope_channels.begin(), p.scope_channels.end(), key) == p.scope_channels.end())
+                p.scope_channels.push_back(key);
+        }
     });
     refresh_channel_catalog();
     choose_channels();

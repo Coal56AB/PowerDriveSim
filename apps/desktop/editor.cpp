@@ -179,7 +179,7 @@ class Atom final : public QGraphicsItem {
     std::vector<std::pair<QString, QPointF>> public_ports;
     std::vector<PublicPort> definition_ports;
     int library_icon_id = -1;
-    bool ground = false, separate_labels = false;
+    bool ground = false, separate_labels = false, differential_plot = false;
     Atom(std::string uuid, QString label, QString mark, int category)
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
         setData(0, q(id));
@@ -438,11 +438,27 @@ class Atom final : public QGraphicsItem {
             curve.cubicTo(-6, 10, -4, -15, 10, -11);
             curve.cubicTo(25, -8, 20, 7, 36, -4);
             p->drawPath(curve);
+            if (differential_plot) {
+                p->setPen(QPen(QColor("#d24b62"), 1.5));
+                QPainterPath pair(QPointF(15, 20));
+                pair.cubicTo(21, 10, 27, 10, 33, 20);
+                pair.cubicTo(39, 30, 45, 30, 51, 20);
+                p->drawPath(pair);
+            } else {
+                p->setPen(QPen(theme_colors().text, 1.2));
+                p->drawLine(39, 20, 39, 25);
+                p->drawLine(32, 25, 46, 25);
+                p->drawLine(35, 29, 43, 29);
+                p->drawLine(38, 33, 40, 33);
+            }
             for (unsigned i = 1; i <= input_count; ++i) {
                 double y = (static_cast<double>(i) - 1.0) * 20.0;
                 p->setPen(QPen(theme_colors().signal, 1.4));
                 p->drawLine(QPointF(-60, y), QPointF(-46, y));
-                label(p, QRectF(-43, y - 9, 16, 18), Qt::AlignCenter, QString::number(i));
+                const QString port_label = differential_plot
+                    ? ((i % 2 ? QString("+") : QString("−")) + QString::number((i + 1) / 2))
+                    : QString::number(i);
+                label(p, QRectF(-45, y - 9, 20, 18), Qt::AlignCenter, port_label);
             }
             p->setPen(theme_colors().text);
             if (!separate_labels)
@@ -756,10 +772,17 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
     }
     for (const auto &g : fragment.plots) {
         auto *a = add(g, 3, {}, {});
-        a->input_count = g.inputs;
-        for (unsigned i = 1; i <= g.inputs; ++i)
-            a->port("in" + QString::number(i), {-60, (static_cast<double>(i) - 1.0) * 20.0},
-                    QColor("#8c67c8"));
+        a->differential_plot = g.differential;
+        a->input_count = g.differential ? g.inputs * 2 : g.inputs;
+        for (unsigned i = 1; i <= g.inputs; ++i) {
+            if (g.differential) {
+                const double y = (static_cast<double>(i) - 1.0) * 40.0;
+                a->port("p" + QString::number(i), {-60, y}, QColor("#8c67c8"), "+");
+                a->port("n" + QString::number(i), {-60, y + 20.0}, QColor("#8c67c8"), "−");
+            } else
+                a->port("in" + QString::number(i), {-60, (static_cast<double>(i) - 1.0) * 20.0},
+                        QColor("#8c67c8"));
+        }
     }
     for (const auto &instance : fragment.instances)
         add(instance, 4, {}, {})->set_definition(definition(fragment, instance.definition));
@@ -840,8 +863,9 @@ void EditorWindow::set_placement_preview() {
                 });
         } else if (placing_ == 106)
             fragment.apply("Tag", [](Project &p) { p.tags.push_back({new_uuid(), "TAG", 0, 0, Domain::gate}); });
-        else if (placing_ == 103)
-            fragment.add_plot(0, 0, text("plot").toStdString());
+        else if (placing_ == 103 || placing_ == 107)
+            fragment.add_plot(0, 0, text(placing_ == 107 ? "differential_plot" : "plot").toStdString(),
+                              placing_ == 107);
         else
             fragment.add_node(placing_ == 100, 0, 0);
         paste_fragment_ = fragment.project();
@@ -1018,6 +1042,8 @@ void EditorWindow::build_ui() {
     search_button->setDefaultAction(search_action);
     search_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
     search_button->setAutoRaise(true);
+    search_button->setFixedSize(112, 28);
+    search_button->setContentsMargins(4, 0, 4, 0);
     search_button->setObjectName("command_search_button");
     menuBar()->setCornerWidget(search_button, Qt::TopRightCorner);
     build_hierarchy_actions(edit_menu->addMenu(text("hierarchy")));
@@ -1791,13 +1817,21 @@ void EditorWindow::rebuild_scene() {
     }
     for (const auto &g : project().plots) {
         auto *a = atom(g.id, g.name, {}, 3);
-        if (a->input_count != g.inputs) {
-            a->prepareGeometryChangeForInputs(g.inputs);
+        a->differential_plot = g.differential;
+        const auto port_count = g.differential ? g.inputs * 2 : g.inputs;
+        if (a->input_count != port_count) {
+            a->prepareGeometryChangeForInputs(port_count);
         }
         std::vector<std::pair<QString, QPointF>> list;
-        for (unsigned i = 1; i <= g.inputs; ++i)
-            list.push_back(
-                {"in" + QString::number(i), {-60, (static_cast<double>(i) - 1.0) * 20.0}});
+        for (unsigned i = 1; i <= g.inputs; ++i) {
+            if (g.differential) {
+                const double y = (static_cast<double>(i) - 1.0) * 40.0;
+                list.push_back({"p" + QString::number(i), {-60, y}});
+                list.push_back({"n" + QString::number(i), {-60, y + 20.0}});
+            } else
+                list.push_back({"in" + QString::number(i),
+                                {-60, (static_cast<double>(i) - 1.0) * 20.0}});
+        }
         ports(a, list, QColor("#8c67c8"));
     }
     for (const auto &i : project().instances) {
@@ -2064,96 +2098,6 @@ void EditorWindow::update_wires() {
         route_positions_[endpoint_key(w.from)] = canvas_->snap_point(port_position(w.from));
         route_positions_[endpoint_key(w.to)] = canvas_->snap_point(port_position(w.to));
     }
-}
-void EditorWindow::share_wire_trunks(const std::vector<QRectF> &obstacles,
-                                     const std::set<std::string> &networks) {
-    std::vector<const Wire *> ordered;
-    auto port_domain = [&](const Endpoint &endpoint) -> std::optional<Domain> {
-        const auto found = port_types_.find(endpoint_key(endpoint));
-        if (found == port_types_.end())
-            return {};
-        return found->second.domain;
-    };
-    for (const auto &wire : project().wires) {
-        const auto network = net_cache_.find(endpoint_key(wire.from));
-        if (network == net_cache_.end() || !networks.contains(network->second))
-            continue;
-        auto *item = static_cast<WireItem *>(wires_.at(wire.id));
-        item->junctions.clear();
-        if (auto found = base_wire_routes_.find(wire.id); found != base_wire_routes_.end())
-            item->setPath(found->second);
-        const auto from_domain = port_domain(wire.from), to_domain = port_domain(wire.to);
-        if (from_domain && to_domain && *from_domain == Domain::electrical && *to_domain == Domain::electrical &&
-            wire.bends.empty())
-            ordered.push_back(&wire);
-    }
-    auto rank = [&](const Wire *wire) {
-        const auto a = port_position(wire->from), b = port_position(wire->to);
-        return std::make_tuple(wire->bends.empty(),
-                               std::min(std::abs(a.x() - b.x()), std::abs(a.y() - b.y())),
-                               base_wire_routes_.at(wire->id).length(), wire->id);
-    };
-    std::sort(ordered.begin(), ordered.end(),
-              [&](const Wire *a, const Wire *b) { return rank(a) < rank(b); });
-    struct Edge {
-        std::string to;
-        QPainterPath path;
-    };
-    std::map<std::string, std::vector<Edge>> network;
-    for (const auto *wire : ordered) {
-        auto *item = static_cast<WireItem *>(wires_.at(wire->id));
-        if (wire->bends.empty()) {
-            double best_added = item->path().length();
-            const double min_saving = std::max(40.0, best_added * 0.25);
-            std::optional<std::pair<QPainterPath, QPointF>> best;
-            for (bool reverse : {false, true}) {
-                const auto root = endpoint_key(reverse ? wire->from : wire->to);
-                const auto branch = reverse ? item->path().toReversed() : item->path();
-                const QPointF start(branch.elementAt(0).x, branch.elementAt(0).y);
-                const auto stub = port_stub(reverse ? wire->to : wire->from, start);
-                std::set<std::string> visited{root};
-                std::vector<std::pair<std::string, QPainterPath>> pending{
-                    {root, QPainterPath(branch.currentPosition())}};
-                for (size_t i = 0; i < pending.size(); ++i) {
-                    const auto current = pending[i];
-                    auto found = network.find(current.first);
-                    if (found == network.end())
-                        continue;
-                    for (const auto &edge : found->second) {
-                        if (!visited.insert(edge.to).second)
-                            continue;
-                        auto path = current.second;
-                        path.connectPath(edge.path);
-                        pending.emplace_back(edge.to, path);
-                        auto joined = join_route_to_trunk(branch, stub, path.toReversed(), obstacles);
-                        if (!joined)
-                            continue;
-                        double added = 0;
-                        for (int k = 1; k < joined->first.elementCount(); ++k) {
-                            auto a = joined->first.elementAt(k - 1), b = joined->first.elementAt(k);
-                            added += QLineF(QPointF(a.x, a.y), QPointF(b.x, b.y)).length();
-                            if (QPointF(b.x, b.y) == joined->second)
-                                break;
-                        }
-                        if (added < best_added - min_saving) {
-                            best_added = added;
-                            if (reverse)
-                                joined->first = joined->first.toReversed();
-                            best = std::move(joined);
-                        }
-                    }
-                }
-            }
-            if (best) {
-                item->setPath(best->first);
-                item->junctions.push_back(best->second);
-            }
-        }
-        network[endpoint_key(wire->from)].push_back({endpoint_key(wire->to), item->path()});
-        network[endpoint_key(wire->to)].push_back({endpoint_key(wire->from), item->path().toReversed()});
-        item->update();
-    }
-    std::erase_if(base_wire_routes_, [&](const auto &entry) { return !wires_.contains(entry.first); });
 }
 std::string EditorWindow::add_component(Kind kind, QPointF point) {
     if (running())
@@ -2658,6 +2602,7 @@ void EditorWindow::start_simulation() {
         if (!cancel_.load()) {
             paused_ = !paused_.load();
             update_run_button();
+            update_command_state();
         }
         return;
     }
@@ -2690,6 +2635,7 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
         }
         const bool append = state && result_ && result_->snapshot == state &&
                             recorded == std::set<std::string>(keys.begin(), keys.end());
+        committed_sample_count_ = append && result_ ? result_->samples.size() : 0;
         continuation_statistics_ = append ? select_result(*result_, {}) : Result{};
         continuation_statistics_.snapshot.reset();
         if (!append)
@@ -2748,6 +2694,7 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
                 options.resume = state ? &*state : nullptr;
                 options.capture_snapshot = true;
                 options.max_steps = max_steps;
+                options.stream_preview_samples = 4096;
                 outcome.result =
                     execute(ir, &cancel_, &simulated_time_, &plan, &paused_, [this](Result &&batch) {
                         std::lock_guard lock(stream_mutex_);
@@ -2771,6 +2718,8 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
 void EditorWindow::stop_simulation() {
     canvas_->cancel_gesture();
     if (running()) {
+        discard_continuation_on_finish_ = true;
+        step_after_pause_ = false;
         cancel_ = true;
         paused_ = false;
         run_->setEnabled(false);
@@ -2824,8 +2773,23 @@ void EditorWindow::finish_simulation() {
         banner_->setText(text("error_hint"));
         return;
     }
+    // Live batches are a bounded preview. Replace them with the complete worker
+    // history (or trim them back to the committed continuation boundary).
+    if (result_) {
+        if (committed_sample_count_ == 0)
+            result_.reset();
+        else if (result_->samples.size() > committed_sample_count_)
+            result_->samples.erase(result_->samples.begin() + static_cast<ptrdiff_t>(committed_sample_count_),
+                                   result_->samples.end());
+    }
     append_simulation_result(std::move(*outcome.result));
-    continuation_ = result_->snapshot;
+    const bool resume_one_step = step_after_pause_;
+    step_after_pause_ = false;
+    if (result_->cancelled && discard_continuation_on_finish_)
+        continuation_.reset();
+    else
+        continuation_ = result_->snapshot;
+    discard_continuation_on_finish_ = false;
     update_command_state();
     const bool stepped = !result_->cancelled && result_->last_time < result_->profile.stop;
     findChild<QLabel *>("diagnostic_status")
@@ -2854,6 +2818,8 @@ void EditorWindow::finish_simulation() {
             .arg(text(("step_reason_" + (result_->step_reduction_reason.empty() ? std::string("none") : result_->step_reduction_reason)).c_str())));
     }
     update_title();
+    if (resume_one_step && continuation_)
+        launch_simulation(continuation_, 1);
 }
 void EditorWindow::choose_channels() {
     if (!channels_)

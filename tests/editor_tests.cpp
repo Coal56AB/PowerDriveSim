@@ -22,6 +22,53 @@ int main(int argc,char** argv) {
     try {
         Project p; p.id=new_uuid(); p.name="New circuit"; p.wired=true; p.profile={.005,1e-6};
         {
+            Project references; references.id=new_uuid(); references.wired=true;
+            references.nodes={{new_uuid(),"GND1",true},{new_uuid(),"GND1",true},{new_uuid(),"GND2",true}};
+            const auto resolved=resolve_connections(references);
+            const auto first=resolved.nets.at(endpoint_key({references.nodes[0].id,"node"}));
+            const auto repeated=resolved.nets.at(endpoint_key({references.nodes[1].id,"node"}));
+            const auto isolated=resolved.nets.at(endpoint_key({references.nodes[2].id,"node"}));
+            check(first==repeated&&first!=isolated,"Ground names define shared and isolated reference nets");
+        }
+        {
+            Project differential; differential.id=new_uuid(); differential.wired=true;
+            Document view(differential);
+            const auto positive=view.add_component(Kind::voltage_probe,0,0);
+            const auto negative=view.add_component(Kind::voltage_probe,0,100);
+            const auto graph=view.add_plot(300,50,"Differential",true);
+            view.connect({positive,"out"},{graph,"p1"});
+            view.connect({negative,"out"},{graph,"n1"});
+            const auto sources=plot_source_channels(view.project(),graph);
+            const auto pairs=plot_differential_channels(view.project(),graph);
+            const auto displayed=plot_channels(view.project(),graph);
+            check(sources==std::vector<std::string>{positive,negative}&&pairs.size()==2&&
+                      pairs[0]==std::pair<std::string,std::string>{positive,negative}&&
+                      displayed==std::vector<std::string>{"diff/"+graph+"/1"},
+                  "Differential plot records operands and exposes their difference");
+            std::istringstream input(save(view.project()));
+            const auto restored=read_project(input);
+            check(restored.schema==project_schema&&restored.plots.front().differential,
+                  "Differential plot roundtrip");
+        }
+        {
+            Project junctions; junctions.id=new_uuid(); junctions.wired=true;
+            Document drawing(junctions);
+            const auto left=drawing.add_node(false,0,0), right=drawing.add_node(false,100,0);
+            const auto branch=drawing.add_node(false,50,100);
+            drawing.connect({left,"node"},{right,"node"});
+            const auto trunk=drawing.project().wires.front().id;
+            WireAnchor target; target.wire=trunk; target.point={50,0}; target.route={{0,0},{100,0}};
+            drawing.connect_anchors({{branch,"node"}},target,{});
+            check(drawing.project().nodes.size()==4&&drawing.project().wires.size()==3,
+                  "Branch creates one explicit junction and splits the trunk once");
+            const auto& joint=drawing.project().nodes.back();
+            check(joint.x==50&&joint.y==0&&
+                      std::count_if(drawing.project().wires.begin(),drawing.project().wires.end(),[&](const Wire& wire){
+                          return wire.from.object==joint.id||wire.to.object==joint.id;
+                      })==3,
+                  "Branch terminates exactly at a T-junction without a shared visual tail");
+        }
+        {
             constexpr const char *source_definition = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
             constexpr const char *voltage_parameter = "6c1aaf47-7a4f-5dac-ab25-cdd71f6816b3";
             constexpr const char *kind_parameter = "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b";

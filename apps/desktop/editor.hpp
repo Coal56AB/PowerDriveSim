@@ -143,6 +143,7 @@ class Scope : public QWidget {
     void set_curve_style(const CurveStyle &style);
     double curve_multiplier(const std::string &key) const;
     void set_curve_multiplier(const std::string &key, double value);
+    void show_multiplier_settings(const std::string &key);
     void show_curve_settings(const std::string &key);
     void set_wheel_modifiers(Qt::KeyboardModifiers x, Qt::KeyboardModifiers y) {
         wheel_x_ = x;
@@ -314,6 +315,7 @@ class EditorWindow : public QMainWindow {
     void show_shortcuts();
     void set_scope_enabled(bool enabled);
     void observe_object(const std::string &id);
+    void observe_component_terminals(const std::string &id);
     void remove_scope_point();
 
   protected:
@@ -328,6 +330,7 @@ class EditorWindow : public QMainWindow {
     QTreeWidget *hierarchy_ = nullptr;
     std::vector<std::string> scene_path_;
     bool hierarchy_edit_enabled_ = false;
+    bool hierarchy_navigation_ = false;
     bool current_hierarchy_locked() const;
     bool editing_allowed() const {
         return !running() && (hierarchy_path().empty() || hierarchy_edit_enabled_ || !current_hierarchy_locked());
@@ -368,6 +371,8 @@ class EditorWindow : public QMainWindow {
     QFutureWatcher<Outcome> watcher_;
     std::atomic_bool cancel_{false};
     std::atomic_bool paused_{false};
+    bool discard_continuation_on_finish_ = false;
+    bool step_after_pause_ = false;
     std::mutex stream_mutex_;
     std::deque<Result> stream_queue_;
     void drain_simulation_stream();
@@ -376,6 +381,7 @@ class EditorWindow : public QMainWindow {
     void launch_simulation(std::optional<SimulationSnapshot> state, size_t max_steps = 0);
     std::optional<SimulationSnapshot> continuation_;
     Result continuation_statistics_;
+    size_t committed_sample_count_ = 0;
     std::atomic<double> simulated_time_{0};
     std::atomic_bool preparing_{false};
     QElapsedTimer simulation_timer_;
@@ -405,7 +411,6 @@ class EditorWindow : public QMainWindow {
     bool transform_labels(int turns, bool mirror);
     std::map<std::string, QGraphicsPathItem *> wires_;
     std::map<std::string, QPainterPath> base_wire_routes_;
-    void share_wire_trunks(const std::vector<QRectF> &obstacles, const std::set<std::string> &networks);
     void build_ui();
     void load_component_specs();
     void build_property_editors();
