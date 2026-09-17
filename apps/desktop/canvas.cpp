@@ -16,7 +16,11 @@
 #include <tuple>
 namespace pds::desktop {
 static QPointF snap_to(QPointF p, double grid) {
-    return {std::round(p.x() / grid) * grid, std::round(p.y() / grid) * grid};
+    // A consistent half-up rule is translation invariant across zero. std::round
+    // rounds negative halves away from zero, which made ports jump by one grid
+    // cell after an object crossed the origin and the scene was rebuilt.
+    const auto snap = [grid](double value) { return std::floor(value / grid + 0.5) * grid; };
+    return {snap(p.x()), snap(p.y())};
 }
 Canvas::Canvas(QWidget *parent) : QGraphicsView(parent) {
     setScene(new QGraphicsScene(this));

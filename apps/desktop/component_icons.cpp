@@ -247,7 +247,7 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         if (id == 223) { p.drawLine(9, from, 12, from - 3); p.drawLine(9, from, 12, from + 3); }
     } else if (id >= 210 && id <= 213) {
         if (framed) p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
-        p.drawLine(4, 28, 28, 4);
+        if (framed) p.drawLine(4, 28, 28, 4);
         if (framed) {
             p.drawLine(0, 12, 4, 12);
             p.drawLine(0, 22, 4, 22);
@@ -300,17 +300,7 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         wave.cubicTo(11, 8, 14, 8, 16, 14);
         wave.cubicTo(18, 20, 21, 20, 23, 14);
         p.drawPath(wave);
-        p.setPen(QPen(theme_colors().signal, 0.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        if (id == 280) {
-            p.drawLine(16, 26, 16, 23);
-            p.drawLine(12, 26, 20, 26);
-        } else {
-            QPainterPath delta(QPointF(12, 27));
-            delta.lineTo(20, 27);
-            delta.lineTo(16, 23);
-            delta.closeSubpath();
-            p.drawPath(delta);
-        }
+        title(id == 280 ? "3-Phase Y" : "3-Phase Δ");
     } else if (id == 5) {
         p.drawLine(1, 22, 8, 22);
         p.drawLine(8, 22, 24, 12);

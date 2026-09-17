@@ -220,6 +220,10 @@ class Atom final : public QGraphicsItem {
                 library_icon_id = 210;
             else if (lower.contains("thyristor bridge"))
                 library_icon_id = 212;
+            else if (lower.contains("igbt"))
+                library_icon_id = 201;
+            else if (lower.contains("mosfet"))
+                library_icon_id = 200;
             else if (lower.contains("bidirectional") && lower.contains("buck-boost"))
                 library_icon_id = 223;
             else if (lower.contains("buck-boost"))
@@ -356,7 +360,10 @@ class Atom final : public QGraphicsItem {
     }
     void snap_ports_to_grid(double grid) {
         auto snap = [&](QPointF point) {
-            return QPointF(std::round(point.x() / grid) * grid, std::round(point.y() / grid) * grid);
+            const auto coordinate = [grid](double value) {
+                return std::floor(value / grid + 0.5) * grid;
+            };
+            return QPointF(coordinate(point.x()), coordinate(point.y()));
         };
         int index = 0;
         for (auto *child : childItems()) {
@@ -385,12 +392,20 @@ class Atom final : public QGraphicsItem {
         p->restore();
     }
     static void fixed_aspect_icon(QPainter *p, int icon_id, QRectF rect) {
+        const auto world = p->worldTransform();
+        const auto center = world.map(rect.center());
+        const double sx = std::hypot(world.m11(), world.m12());
+        const double sy = std::hypot(world.m21(), world.m22());
         const double side = std::min(rect.width(), rect.height());
-        if (side <= 0)
+        const double scale = std::min(sx, sy) * side / 32.0;
+        if (side <= 0 || scale <= 0)
             return;
+        const double angle = std::atan2(world.m12(), world.m11()) * 180.0 / std::acos(-1.0);
         p->save();
-        p->translate(rect.center());
-        p->scale(side / 32.0, side / 32.0);
+        p->resetTransform();
+        p->translate(center);
+        p->rotate(angle);
+        p->scale(world.determinant() < 0 ? -scale : scale, scale);
         p->translate(-16, -16);
         paint_component_symbol(*p, icon_id, false);
         p->restore();
@@ -434,6 +449,13 @@ class Atom final : public QGraphicsItem {
                 }
             }
             if (library_icon_id >= 0) {
+                if (library_icon_id >= 210 && library_icon_id <= 213) {
+                    // The diagonal is a structural separator of the converter,
+                    // not part of its fixed-size symbol. It follows the block
+                    // geometry and reaches the frame at both ends.
+                    p->setPen(main_pen);
+                    p->drawLine(QPointF(-70, h), QPointF(70, -h));
+                }
                 const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
                 fixed_aspect_icon(p, library_icon_id, QRectF(-44, -icon_h / 2, 88, icon_h));
             } else {
