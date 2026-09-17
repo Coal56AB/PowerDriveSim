@@ -557,6 +557,11 @@ void EditorWindow::remove_scope_point() {
             unmark_hidden_current_probe(p, key);
         }
     });
+    // Removing an observation must not leave selection/route handles that look
+    // like orphan schematic objects. The user can explicitly select the graph
+    // or conductor again if they want to resize or reroute it.
+    selected_.clear();
+    canvas_->scene()->clearSelection();
     refresh();
 }
 void EditorWindow::open_plot(const std::string &local_id) {

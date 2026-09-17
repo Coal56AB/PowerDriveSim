@@ -303,6 +303,35 @@ class InteractionTests : public QObject {
             }
         }
     }
+    void three_phase_source_connection_switches_definition() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        Project empty;
+        empty.id = new_uuid();
+        empty.wired = true;
+        w.set_project(empty);
+        ready(w);
+        auto *insert = w.findChild<QAction *>("insert_component_280");
+        QVERIFY(insert);
+        insert->trigger();
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          w.canvas()->mapFromScene(QPointF(0, 0)));
+        QCOMPARE(w.project().instances.size(), size_t(1));
+        auto *connection = w.findChild<QComboBox *>("property_three_phase_connection");
+        QVERIFY(connection && connection->isVisible());
+        connection->setCurrentIndex(connection->findData(1u));
+        QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
+        constexpr const char *star = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
+        constexpr const char *delta = "eb613164-faf4-5b03-9014-806885fef344";
+        QCOMPARE(w.project().instances.front().definition, std::string(delta));
+        QVERIFY(std::any_of(w.project().definitions.begin(), w.project().definitions.end(),
+                            [](const Definition &definition) { return definition.id == delta; }));
+        QCOMPARE(w.findChild<QLabel *>("property_error")->text(), QString());
+        w.undo();
+        QCOMPARE(w.project().instances.front().definition, std::string(star));
+        w.redo();
+        QCOMPARE(w.project().instances.front().definition, std::string(delta));
+    }
     void ac_controller_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
         Project empty; empty.id = new_uuid(); empty.wired = true;
@@ -1831,7 +1860,9 @@ class InteractionTests : public QObject {
                     w.project().scope_points.end());
             QVERIFY(std::find(w.project().scope_channels.begin(), w.project().scope_channels.end(), probe) !=
                     w.project().scope_channels.end());
-            QVERIFY(!item(w, probe)->isVisible());
+            auto *probe_item = item(w, probe);
+            QVERIFY(!probe_item->isVisible());
+            QVERIFY(!(probe_item->flags() & QGraphicsItem::ItemIsSelectable));
         }
         QVERIFY(w.project().scope_enabled);
         w.start_simulation();
@@ -1854,6 +1885,9 @@ class InteractionTests : public QObject {
         QCOMPARE(channels->count(), rows_before_delete - 2);
         QCOMPARE(w.project().components.size(), old_components);
         QCOMPARE(w.project().wires.size(), old_wires);
+        QVERIFY(w.canvas()->scene()->selectedItems().empty());
+        for (size_t index = 0; index < wires.size(); ++index)
+            QCOMPARE(static_cast<QGraphicsPathItem *>(item(w, wires[index]))->path(), original_paths[index]);
     }
     void selected_wire_group_is_available_from_background_menu() {
         QTemporaryDir dir;
@@ -3158,6 +3192,33 @@ class InteractionTests : public QObject {
             w.canvas()->centerOn(150, 0);
             QVERIFY(w.grab().save(screenshot));
         }
+
+        // Moving a graph tap along a straight trunk moves the generated
+        // junction under its input. Rebuilding, undo and redo must not bring
+        // back the obsolete detour.
+        Project branch;
+        branch.id = new_uuid();
+        branch.wired = true;
+        EditorWindow routed("en", dir.path());
+        routed.set_project(branch);
+        const auto left = routed.add_node(false, {0, 0});
+        const auto joint = routed.add_node(false, {200, 0});
+        const auto right = routed.add_node(false, {400, 0});
+        const auto graph = routed.add_plot({260, -180});
+        QVERIFY(routed.connect_ports({left, "node"}, {joint, "node"}));
+        QVERIFY(routed.connect_ports({joint, "node"}, {right, "node"}));
+        QVERIFY(routed.connect_ports({graph, "in1"}, {joint, "node"}));
+        ready(routed);
+        auto *view = routed.canvas();
+        QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          view->mapFromScene({260, -180}));
+        QTest::mouseMove(view->viewport(), view->mapFromScene({360, -180}), 5);
+        QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+                            view->mapFromScene({360, -180}));
+        const auto moved_joint = std::find_if(routed.project().nodes.begin(), routed.project().nodes.end(),
+                                               [&](const Node &node) { return node.id == joint; });
+        QVERIFY(moved_joint != routed.project().nodes.end());
+        QCOMPARE(moved_joint->x, routed.port_position({graph, "in1"}).x());
     }
     void wires_branch_route_reconnect_and_save() {
         QTemporaryDir dir;

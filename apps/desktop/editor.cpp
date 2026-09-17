@@ -1911,6 +1911,9 @@ void EditorWindow::rebuild_scene() {
         auto *a = atom(c.id, c.name, q(kind_name(c.kind)), 0);
         const bool hidden_probe = is_hidden_current_probe(project(), c.id);
         a->setVisible(!hidden_probe);
+        a->setFlag(QGraphicsItem::ItemIsSelectable, !hidden_probe);
+        if (hidden_probe)
+            a->setSelected(false);
         a->value = component_label(c);
         std::vector<std::pair<QString, QPointF>> list = hidden_probe
             ? std::vector<std::pair<QString, QPointF>>{{"p", {0, 0}}, {"n", {0, 0}}}

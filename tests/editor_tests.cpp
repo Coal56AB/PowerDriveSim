@@ -69,6 +69,18 @@ int main(int argc,char** argv) {
                   "Branch terminates exactly at a T-junction without a shared visual tail");
         }
         {
+            Project cleanup; cleanup.id=new_uuid(); cleanup.wired=true;
+            Document drawing(cleanup);
+            const auto junction=drawing.add_node(false,0,0);
+            const auto resistor=drawing.add_component(Kind::resistor,100,0);
+            drawing.connect({junction,"node"},{resistor,"p"});
+            drawing.erase({resistor});
+            check(drawing.project().nodes.empty(),"Deleting the last connected object removes its orphan junction");
+            drawing.undo();
+            check(drawing.project().nodes.size()==1&&drawing.project().components.size()==1,
+                  "Orphan cleanup is part of the same undoable deletion");
+        }
+        {
             constexpr const char *source_definition = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
             constexpr const char *voltage_parameter = "6c1aaf47-7a4f-5dac-ab25-cdd71f6816b3";
             constexpr const char *kind_parameter = "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b";

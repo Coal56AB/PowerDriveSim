@@ -239,12 +239,12 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
     } else if (id >= 220 && id <= 223) {
         if (framed) p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         if (framed) { p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16); }
-        const int from = id == 220 ? 10 : 22, to = id == 220 ? 22 : 10;
-        p.drawLine(9, from, 16, from); p.drawLine(16, from, 16, to);
-        p.drawLine(16, to, 23, to);
-        p.drawLine(20, to - 3, 23, to); p.drawLine(23, to, 20, to + 3);
+        const int from = id == 220 ? 7 : 25, to = id == 220 ? 25 : 7;
+        p.drawLine(5, from, 16, from); p.drawLine(16, from, 16, to);
+        p.drawLine(16, to, 27, to);
+        p.drawLine(22, to - 5, 27, to); p.drawLine(27, to, 22, to + 5);
         if (id == 222) p.drawLine(7, 8, 12, 8);
-        if (id == 223) { p.drawLine(9, from, 12, from - 3); p.drawLine(9, from, 12, from + 3); }
+        if (id == 223) { p.drawLine(5, from, 10, from - 5); p.drawLine(5, from, 10, from + 5); }
     } else if (id >= 210 && id <= 213) {
         if (framed) p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         if (framed) p.drawLine(4, 28, 28, 4);
@@ -256,11 +256,11 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
             p.drawLine(28, 24, 32, 24);
         }
         auto symbol_font = p.font();
-        symbol_font.setPixelSize(9);
+        symbol_font.setPixelSize(12);
         p.setFont(symbol_font);
-        p.drawText(QRectF(5, 4, 12, 11), Qt::AlignCenter, "~");
-        p.drawLine(19, 20, 27, 20);
-        p.drawLine(19, 24, 27, 24);
+        p.drawText(QRectF(1, 1, 15, 14), Qt::AlignCenter, "~");
+        p.drawLine(20, 22, 30, 22);
+        p.drawLine(20, 27, 30, 27);
         if (id >= 212) {
             p.setPen(QPen(theme_colors().gate, 1.0));
             if (framed) p.drawLine(12, 32, 12, 25);

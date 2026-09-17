@@ -916,7 +916,8 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
     p->setPen(QPen(theme_colors().accent, 1));
     p->setBrush(theme_colors().surface);
     for (auto *item : scene()->selectedItems())
-        if (item->data(1).toString() != "wire" && item->data(1).toString() != "label" && item->parentItem() == nullptr) {
+        if (item->isVisible() && item->data(1).toString() != "wire" &&
+            item->data(1).toString() != "label" && item->parentItem() == nullptr) {
             const auto r = item->boundingRect();
             const std::array<QPointF, 4> corners{r.topLeft(), r.topRight(), r.bottomLeft(), r.bottomRight()};
             for (auto corner : corners) {

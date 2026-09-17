@@ -491,6 +491,12 @@ void Document::arrange(const std::vector<std::string>& list,const std::string& m
 void Document::erase(const std::vector<std::string>& list) {
     const std::set<std::string> ids(list.begin(),list.end());
     apply("Delete objects",[&](Project& p) {
+        const bool removes_object=
+            std::any_of(p.components.begin(),p.components.end(),[&](const Component& c){return ids.count(c.id);})||
+            std::any_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& t){return ids.count(t.id);})||
+            std::any_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return ids.count(g.id);})||
+            std::any_of(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& g){return ids.count(g.id);})||
+            std::any_of(p.instances.begin(),p.instances.end(),[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.labels,[&](const LabelLayout& l){return ids.count(l.object);});
         std::erase_if(p.view_options,[&](const ViewOptions& o){return ids.count(o.plot);});
         std::erase_if(p.components,[&](const Component& c){return ids.count(c.id);});
@@ -501,6 +507,25 @@ void Document::erase(const std::vector<std::string>& list) {
         std::erase_if(p.instances,[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.events,[&](const GateEvent& e){return ids.count(e.target);});
         std::erase_if(p.wires,[&](const Wire& w){return ids.count(w.id)||ids.count(w.from.object)||ids.count(w.to.object);});
+        // A junction without a single incident conductor has no electrical or
+        // visual meaning. Keeping it produced a small unexplained square after
+        // deleting the object or wire that owned the last connection.
+        if(removes_object) {
+            std::erase_if(p.nodes,[&](const Node& n){
+                if(n.ground)return false;
+                return std::none_of(p.wires.begin(),p.wires.end(),[&](const Wire& w){
+                    return w.from.object==n.id||w.to.object==n.id;
+                });
+            });
+            std::erase_if(p.labels,[&](const LabelLayout& l){
+                return std::none_of(p.nodes.begin(),p.nodes.end(),[&](const Node& n){return n.id==l.object;})&&
+                       std::none_of(p.components.begin(),p.components.end(),[&](const Component& c){return c.id==l.object;})&&
+                       std::none_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& t){return t.id==l.object;})&&
+                       std::none_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==l.object;})&&
+                       std::none_of(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& g){return g.id==l.object;})&&
+                       std::none_of(p.instances.begin(),p.instances.end(),[&](const Instance& i){return i.id==l.object;});
+            });
+        }
     });
 }
 void Document::remove_junction(const std::string& id,std::vector<Point> a,std::vector<Point> b) {
