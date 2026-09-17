@@ -161,10 +161,6 @@ QIcon component_icon(int id) {
         title(id == 260 ? "2-Level" : "3-Level");
     } else if (id == 250 || id == 251) {
         thyristor_mark(16, 12);
-        if (id == 251) {
-            p.drawLine(4, 5, 28, 5);
-            p.drawLine(4, 19, 28, 19);
-        }
         title(id == 251 ? "3-Phase" : "1-Phase");
     } else if (id == 282) {
         p.drawLine(2, 8, 30, 8);
