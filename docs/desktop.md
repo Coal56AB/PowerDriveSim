@@ -127,6 +127,12 @@ F10 доступна также до первого запуска; после �
 
 Проверена Windows-сборка с Visual Studio 2019 (MSVC 19.29), Qt 6.5.3 `msvc2019_64` и CMake. Путь к Qt ниже замените своим.
 
+В Windows для обычной локальной сборки можно дважды запустить корневой
+`build-windows.cmd`. Скрипт проверяет, что старый экземпляр приложения не держит
+EXE, находит Qt через `PDS_QT_ROOT`, `QTDIR` или локальную `.deps`, собирает Release,
+запускает `windeployqt` и короткую проверку запуска. Готовый файл находится в
+`build/Release/powerdrive-desktop.exe`.
+
 ```powershell
 cmake -S . -B build -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH="C:/Qt/6.5.3/msvc2019_64"
 cmake --build build --config Release
