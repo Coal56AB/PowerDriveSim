@@ -249,7 +249,7 @@ void EditorWindow::build_property_editors() {
                 widget = combo;
                 connect(combo, &QComboBox::activated, this, [this, combo] {
                     combo->setProperty("draft", true);
-                    apply_inspector();
+                    QTimer::singleShot(0, this, [this] { apply_inspector(); });
                 });
             } else if (kind == "bool") {
                 auto *check = new QCheckBox;

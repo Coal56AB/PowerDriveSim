@@ -396,9 +396,11 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
                                                    });
         const bool instance = std::any_of(project().instances.begin(), project().instances.end(),
                                           [&](const Instance &value) { return value.id == id; });
-        if (wire)
-            menu.addAction(text("observe_voltage"), this, [this, id] { observe_object(id); });
-        else if (component || instance) {
+        if (wire) {
+            auto *observe = menu.addMenu(text("observe"));
+            observe->addAction(text("observe_voltage"), this, [this, id] { observe_object(id); });
+            observe->addAction(text("observe_wire_current"), this, [this, id] { observe_wire_current(id); });
+        } else if (component || instance) {
             auto *observe = menu.addMenu(text("observe"));
             observe->addAction(text("observe_terminal_voltages"), this,
                                [this, id] { observe_component_terminals(id); });

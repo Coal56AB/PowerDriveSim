@@ -97,6 +97,11 @@ QPainterPath orthogonal_route(QPointF a, QPointF sa, QPointF sb, QPointF b, cons
             }
         return true;
     };
+    // If the endpoints already share an axis, a straight segment is the
+    // canonical route. In particular, a branch ending at a junction must form
+    // an exact T instead of following a port stub and overlapping the trunk.
+    if ((std::abs(a.x() - b.x()) < 1e-8 || std::abs(a.y() - b.y()) < 1e-8) && clear({a, b}))
+        return clean_route({a, b});
     double score = std::numeric_limits<double>::infinity();
     std::vector<QPointF> best;
     auto consider = [&](std::vector<QPointF> route) {

@@ -39,7 +39,7 @@ class QToolBar;
 class QToolButton;
 class QMenu;
 namespace pds::desktop {
-QIcon component_icon(int id);
+QIcon component_icon(int id, bool framed = true);
 int definition_icon_id(const std::string &id);
 bool bundled_example(const QString &path);
 inline constexpr int wire_segment_role = 3; // 1-based path edge; zero selects the whole wire.
@@ -144,6 +144,7 @@ class Scope : public QWidget {
     double curve_multiplier(const std::string &key) const;
     void set_curve_multiplier(const std::string &key, double value);
     void show_multiplier_settings(const std::string &key);
+    void show_multiplier_settings(const std::vector<std::string> &keys);
     void show_curve_settings(const std::string &key);
     void set_wheel_modifiers(Qt::KeyboardModifiers x, Qt::KeyboardModifiers y) {
         wheel_x_ = x;
@@ -316,6 +317,7 @@ class EditorWindow : public QMainWindow {
     void set_scope_enabled(bool enabled);
     void observe_object(const std::string &id);
     void observe_component_terminals(const std::string &id);
+    void observe_wire_current(const std::string &id);
     void remove_scope_point();
 
   protected:

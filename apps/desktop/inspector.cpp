@@ -106,8 +106,13 @@ bool EditorWindow::eventFilter(QObject *watched, QEvent *event) {
         canvas_->editing_gesture() && !paste_fragment_)
         canvas_->cancel_gesture();
 
+    const bool channel_list = channels_ && (watched == channels_ || watched == channels_->viewport());
     if (event->type() == QEvent::ShortcutOverride) {
         auto *key = static_cast<QKeyEvent *>(event);
+        if (channel_list && key->key() == Qt::Key_Delete && !running()) {
+            key->accept();
+            return true;
+        }
         auto *field = qobject_cast<QLineEdit *>(watched);
         if (field && !running() && key->key() == Qt::Key_Escape) {
             key->accept();
@@ -116,7 +121,7 @@ bool EditorWindow::eventFilter(QObject *watched, QEvent *event) {
     }
     if (event->type() == QEvent::KeyPress) {
         auto *key = static_cast<QKeyEvent *>(event);
-        if (watched == channels_ && key->key() == Qt::Key_Delete && !running()) {
+        if (channel_list && key->key() == Qt::Key_Delete && !running()) {
             remove_scope_point();
             key->accept();
             return true;
@@ -139,6 +144,13 @@ bool EditorWindow::eventFilter(QObject *watched, QEvent *event) {
             key->accept();
             return true;
         }
+    }
+    if (channels_ && canvas_ &&
+        (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::FocusIn) &&
+        (watched == canvas_ || watched == canvas_->viewport()) && channels_->currentItem()) {
+        channels_->setCurrentItem(nullptr);
+        channels_->clearSelection();
+        update_wires();
     }
     return QMainWindow::eventFilter(watched, event);
 }

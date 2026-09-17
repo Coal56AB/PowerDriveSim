@@ -1653,8 +1653,48 @@ class InteractionTests : public QObject {
         const auto screenshot = qEnvironmentVariable("PDS_CHANNEL_SCREENSHOT_PATH");
         if (!screenshot.isEmpty())
             QVERIFY(w.grab().save(screenshot));
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(5, 5));
+        QVERIFY(!list->currentItem());
+        QVERIFY(!item(w, resistor)->data(channel_highlight_role).toBool());
+        const auto wires_before_delete = w.project().wires.size();
+        QVERIFY(list->count() >= 2);
+        list->item(0)->setSelected(true);
+        list->item(1)->setSelected(true);
+        list->setCurrentItem(list->item(1), QItemSelectionModel::NoUpdate);
+        list->setFocus();
+        const auto channels_before_delete = w.project().scope_points.size();
+        QTest::keyClick(list, Qt::Key_Delete);
+        QCOMPARE(w.project().scope_points.size(), channels_before_delete - 2);
+        QCOMPARE(w.project().wires.size(), wires_before_delete);
         w.set_scope_enabled(false);
         QVERIFY(!item(w, resistor)->data(channel_highlight_role).toBool());
+    }
+    void wire_current_observation_inserts_probe() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto wire = w.project().wires.front().id;
+        const auto old_wires = w.project().wires.size();
+        const auto old_components = w.project().components.size();
+        w.observe_wire_current(wire);
+        QCOMPARE(w.project().wires.size(), old_wires + 1);
+        QCOMPARE(w.project().components.size(), old_components + 1);
+        const auto probe = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                        [](const Component &component) {
+                                            return component.kind == Kind::current_probe;
+                                        });
+        QVERIFY(probe != w.project().components.end());
+        QVERIFY(std::find(w.project().scope_points.begin(), w.project().scope_points.end(), probe->id) !=
+                w.project().scope_points.end());
+        QVERIFY(std::find(w.project().scope_channels.begin(), w.project().scope_channels.end(), probe->id) !=
+                w.project().scope_channels.end());
+        QVERIFY(w.project().scope_enabled);
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.has_result() && !w.result().samples.empty());
+        QVERIFY(std::any_of(w.result().channels.begin(), w.result().channels.end(),
+                            [&](const Channel &channel) { return channel.object == probe->id; }));
     }
     void independent_label_gestures() {
         QTemporaryDir dir;
@@ -2850,6 +2890,12 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().components.size(), size_t(2));
         // Closing an editor with an active preview must release its callbacks before member teardown.
         QTest::keyClick(w.canvas(), Qt::Key_V, Qt::ControlModifier);
+    }
+    void aligned_route_is_straight() {
+        const auto straight = orthogonal_route({0, 0}, {-20, 0}, {0, 100}, {0, 100}, {});
+        QCOMPARE(straight.elementCount(), 2);
+        QCOMPARE(QPointF(straight.elementAt(0).x, straight.elementAt(0).y), QPointF(0, 0));
+        QCOMPARE(QPointF(straight.elementAt(1).x, straight.elementAt(1).y), QPointF(0, 100));
     }
     void moved_plot_routes_have_no_backtracking() {
         // Fractional bends reproduce the small spur on a saved graph wire.

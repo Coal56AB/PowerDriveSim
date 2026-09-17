@@ -320,17 +320,17 @@ void EditorWindow::fill_inspector() {
     if (targets.size() == 1) {
         const auto type = object_type(project(), targets.front());
         QString label = QString::fromStdString(type);
-        if (auto spec = component_specs_.find(type); spec != component_specs_.end()) {
-            const auto palette = spec->second.value("palette").toObject();
-            if (!palette.isEmpty())
-                label = text(palette.value("label").toString().toUtf8().constData());
-        } else if (type.rfind("instance:", 0) == 0) {
+        if (type.rfind("instance:", 0) == 0) {
             const auto definition_id = type.substr(9);
             for (const auto &definition : project().definitions)
                 if (definition.id == definition_id) {
                     label = QString::fromStdString(definition.name);
                     break;
                 }
+        } else if (auto spec = component_specs_.find(type); spec != component_specs_.end()) {
+            const auto palette = spec->second.value("palette").toObject();
+            if (!palette.isEmpty())
+                label = text(palette.value("label").toString().toUtf8().constData());
         }
         inspector_type_->setText(label);
     }
@@ -458,7 +458,10 @@ void EditorWindow::apply_inspector() {
         for (const auto &target : targets)
             drafts_.erase(target);
         property_error_->clear();
+        setUpdatesEnabled(false);
         refresh();
+        setUpdatesEnabled(true);
+        update();
     } catch (const std::exception &e) {
         property_error_->setText(QString::fromUtf8(e.what()));
         show_error(e);

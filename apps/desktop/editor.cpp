@@ -215,6 +215,14 @@ class Atom final : public QGraphicsItem {
                 library_icon_id = 210;
             else if (lower.contains("thyristor bridge"))
                 library_icon_id = 212;
+            else if (lower.contains("bidirectional") && lower.contains("buck-boost"))
+                library_icon_id = 223;
+            else if (lower.contains("buck-boost"))
+                library_icon_id = 222;
+            else if (lower.contains("boost"))
+                library_icon_id = 221;
+            else if (lower.contains("buck"))
+                library_icon_id = 220;
         }
         if (definition_ports == definition.ports)
             return;
@@ -381,7 +389,7 @@ class Atom final : public QGraphicsItem {
         p->translate(center);
         p->rotate(angle);
         p->scale(transform.determinant() < 0 ? -scale : scale, scale);
-        component_icon(icon_id).paint(p, QRectF(-side / 2.0, -side / 2.0, side, side).toAlignedRect());
+        component_icon(icon_id, false).paint(p, QRectF(-side / 2.0, -side / 2.0, side, side).toAlignedRect());
         p->restore();
     }
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
@@ -415,10 +423,12 @@ class Atom final : public QGraphicsItem {
                 const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
                 fixed_aspect_icon(p, library_icon_id, QRectF(-44, -icon_h / 2, 88, icon_h));
             } else {
-                font.setPointSize(11);
-                font.setBold(true);
-                p->setFont(font);
-                label(p, QRectF(-53, -h + 5, 106, 2 * h - 10), Qt::AlignCenter | Qt::TextWordWrap, name);
+                // Unknown subcircuits still get a neutral schematic mark. Never
+                // substitute their (often long) name inside the already labelled block.
+                p->setPen(QPen(theme_colors().text, 1.5));
+                p->drawRect(QRectF(-30, -18, 22, 16));
+                p->drawRect(QRectF(8, 2, 22, 16));
+                p->drawLine(QPointF(-8, -10), QPointF(8, 10));
             }
             return;
         }
@@ -432,19 +442,30 @@ class Atom final : public QGraphicsItem {
             p->setPen(QPen(theme_colors().grid, 1));
             p->drawLine(-24, 17, -24, -17);
             p->drawLine(-24, 17, 37, 17);
-            p->setPen(QPen(theme_colors().signal, 2));
-            QPainterPath curve;
-            curve.moveTo(-20, 12);
-            curve.cubicTo(-6, 10, -4, -15, 10, -11);
-            curve.cubicTo(25, -8, 20, 7, 36, -4);
-            p->drawPath(curve);
             if (differential_plot) {
-                p->setPen(QPen(QColor("#d24b62"), 1.5));
-                QPainterPath pair(QPointF(15, 20));
-                pair.cubicTo(21, 10, 27, 10, 33, 20);
-                pair.cubicTo(39, 30, 45, 30, 51, 20);
-                p->drawPath(pair);
+                p->setPen(QPen(QColor("#5f7cff"), 2));
+                QPainterPath positive(QPointF(-20, -10));
+                positive.lineTo(-5, -10);
+                positive.lineTo(3, 10);
+                positive.lineTo(18, 10);
+                positive.lineTo(26, -10);
+                positive.lineTo(38, -10);
+                p->drawPath(positive);
+                p->setPen(QPen(QColor("#e05263"), 2));
+                QPainterPath negative(QPointF(-20, 10));
+                negative.lineTo(-5, 10);
+                negative.lineTo(3, -10);
+                negative.lineTo(18, -10);
+                negative.lineTo(26, 10);
+                negative.lineTo(38, 10);
+                p->drawPath(negative);
             } else {
+                p->setPen(QPen(theme_colors().signal, 2));
+                QPainterPath curve;
+                curve.moveTo(-20, 12);
+                curve.cubicTo(-6, 10, -4, -15, 10, -11);
+                curve.cubicTo(25, -8, 20, 7, 36, -4);
+                p->drawPath(curve);
                 p->setPen(QPen(theme_colors().text, 1.2));
                 p->drawLine(39, 20, 39, 25);
                 p->drawLine(32, 25, 46, 25);
@@ -452,7 +473,7 @@ class Atom final : public QGraphicsItem {
                 p->drawLine(38, 33, 40, 33);
             }
             for (unsigned i = 1; i <= input_count; ++i) {
-                double y = (static_cast<double>(i) - 1.0) * 20.0;
+                double y = (static_cast<double>(i) - (static_cast<double>(input_count) + 1.0) / 2.0) * 20.0;
                 p->setPen(QPen(theme_colors().signal, 1.4));
                 p->drawLine(QPointF(-60, y), QPointF(-46, y));
                 const QString port_label = differential_plot
@@ -776,12 +797,14 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         a->input_count = g.differential ? g.inputs * 2 : g.inputs;
         for (unsigned i = 1; i <= g.inputs; ++i) {
             if (g.differential) {
-                const double y = (static_cast<double>(i) - 1.0) * 40.0;
+                const double y = (2.0 * static_cast<double>(i) - static_cast<double>(a->input_count) - 1.0) * 10.0;
                 a->port("p" + QString::number(i), {-60, y}, QColor("#8c67c8"), "+");
                 a->port("n" + QString::number(i), {-60, y + 20.0}, QColor("#8c67c8"), "−");
-            } else
-                a->port("in" + QString::number(i), {-60, (static_cast<double>(i) - 1.0) * 20.0},
+            } else {
+                const double y = (static_cast<double>(i) - (static_cast<double>(g.inputs) + 1.0) / 2.0) * 20.0;
+                a->port("in" + QString::number(i), {-60, y},
                         QColor("#8c67c8"));
+            }
         }
     }
     for (const auto &instance : fragment.instances)
@@ -1011,7 +1034,13 @@ void EditorWindow::build_ui() {
     });
     undo_ = action(edit_menu, "undo", QKeySequence::Undo, [this] { undo(); });
     redo_ = action(edit_menu, "redo", QKeySequence::Redo, [this] { redo(); });
-    action(edit_menu, "delete", QKeySequence::Delete, [this] { delete_selected(); });
+    action(edit_menu, "delete", QKeySequence::Delete, [this] {
+        auto *focus = QApplication::focusWidget();
+        if (channels_ && (focus == channels_ || channels_->isAncestorOf(focus)))
+            remove_scope_point();
+        else
+            delete_selected();
+    });
     action(edit_menu, "rotate", QKeySequence("Space"), [this] { transform_selection(1, false); });
     action(edit_menu, "rotate_back", QKeySequence("Shift+Space"), [this] { transform_selection(-1, false); });
     action(edit_menu, "mirror", QKeySequence("Ctrl+M"), [this] { transform_selection(0, true); });
@@ -1038,14 +1067,7 @@ void EditorWindow::build_ui() {
     action(edit_menu, "grid_settings", {}, [this] { configure_grid(); });
     action(edit_menu, "shortcuts", {}, [this] { show_shortcuts(); });
     auto *search_action = action(edit_menu, "command_search", QKeySequence("Ctrl+Shift+P"), [this] { show_command_search(); });
-    auto *search_button = new QToolButton;
-    search_button->setDefaultAction(search_action);
-    search_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    search_button->setAutoRaise(true);
-    search_button->setFixedSize(112, 28);
-    search_button->setContentsMargins(4, 0, 4, 0);
-    search_button->setObjectName("command_search_button");
-    menuBar()->setCornerWidget(search_button, Qt::TopRightCorner);
+    menuBar()->addAction(search_action);
     build_hierarchy_actions(edit_menu->addMenu(text("hierarchy")));
     auto *wire_action = action(edit_menu, "connect_tool", QKeySequence("Ctrl+W"), [this] {
         if (running())
@@ -1160,8 +1182,7 @@ void EditorWindow::build_ui() {
     stop_button->setIconSize({16, 16});
     stop_button->setFixedSize(132, 36);
     toolbar->addWidget(stop_button);
-    for (auto [command, icon] : {std::pair{continue_action, UiIcon::continue_run},
-                               std::pair{step_action, UiIcon::step}}) {
+    for (auto [command, icon] : {std::pair{step_action, UiIcon::step}}) {
         command->setIcon(ui_icon(icon));
         auto *button = new QToolButton;
         button->setDefaultAction(command);
@@ -1825,12 +1846,14 @@ void EditorWindow::rebuild_scene() {
         std::vector<std::pair<QString, QPointF>> list;
         for (unsigned i = 1; i <= g.inputs; ++i) {
             if (g.differential) {
-                const double y = (static_cast<double>(i) - 1.0) * 40.0;
+                const double y = (2.0 * static_cast<double>(i) - static_cast<double>(port_count) - 1.0) * 10.0;
                 list.push_back({"p" + QString::number(i), {-60, y}});
                 list.push_back({"n" + QString::number(i), {-60, y + 20.0}});
-            } else
+            } else {
+                const double y = (static_cast<double>(i) - (static_cast<double>(g.inputs) + 1.0) / 2.0) * 20.0;
                 list.push_back({"in" + QString::number(i),
-                                {-60, (static_cast<double>(i) - 1.0) * 20.0}});
+                                {-60, y}});
+            }
         }
         ports(a, list, QColor("#8c67c8"));
     }

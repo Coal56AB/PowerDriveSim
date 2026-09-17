@@ -168,10 +168,12 @@ void EditorWindow::sync_scope() {
     layout->setContentsMargins(0, 0, 0, 0);
     channels_ = new QListWidget;
     channels_->setObjectName("channels");
+    channels_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     channels_->setMinimumWidth(240);
     channels_->setMaximumWidth(300);
     channels_->setContextMenuPolicy(Qt::CustomContextMenu);
     channels_->installEventFilter(this);
+    channels_->viewport()->installEventFilter(this);
     layout->addWidget(channels_);
     scope_ = new Scope;
     scope_->set_wheel_modifiers(scope_wheel_x_, scope_wheel_y_);
@@ -212,15 +214,23 @@ void EditorWindow::sync_scope() {
             }
     });
     connect(channels_, &QListWidget::customContextMenuRequested, this, [this](QPoint point) {
-        if (auto *item = channels_->itemAt(point))
+        if (auto *item = channels_->itemAt(point); item && !item->isSelected()) {
+            channels_->clearSelection();
             channels_->setCurrentItem(item);
+            item->setSelected(true);
+        }
         if (!channels_->currentItem())
             return;
         QMenu menu(channels_);
-        const auto key = channels_->currentItem()->data(Qt::UserRole).toString().toStdString();
+        std::vector<std::string> keys;
+        for (auto *item : channels_->selectedItems())
+            keys.push_back(item->data(Qt::UserRole).toString().toStdString());
+        if (keys.empty())
+            keys.push_back(channels_->currentItem()->data(Qt::UserRole).toString().toStdString());
+        const auto key = keys.front();
         auto *multiplier = menu.addAction(text("curve_multiplier_action"));
         connect(multiplier, &QAction::triggered, this,
-                [this, key] { scope_->show_multiplier_settings(key); });
+                [this, keys] { scope_->show_multiplier_settings(keys); });
         auto *appearance = menu.addAction(text("curve_appearance_action"));
         connect(appearance, &QAction::triggered, this, [this, key] { scope_->show_curve_settings(key); });
         menu.addSeparator();
@@ -375,13 +385,80 @@ void EditorWindow::observe_component_terminals(const std::string &id) {
     bottom_->setCurrentIndex(1);
     banner_->setText(text("record_next_run"));
 }
+void EditorWindow::observe_wire_current(const std::string &id) {
+    if (running() || !wires_.count(id))
+        return;
+    auto found = std::find_if(project().wires.begin(), project().wires.end(),
+                              [&](const Wire &wire) { return wire.id == id; });
+    if (found == project().wires.end())
+        return;
+    const auto original = *found;
+    const auto path = wires_.at(id)->path();
+    if (path.elementCount() < 2)
+        return;
+    QPointF center;
+    QPointF direction;
+    double longest = -1;
+    for (int i = 1; i < path.elementCount(); ++i) {
+        const auto ea = path.elementAt(i - 1), eb = path.elementAt(i);
+        const QPointF a(ea.x, ea.y), b(eb.x, eb.y);
+        const double length = QLineF(a, b).length();
+        if (length > longest) {
+            longest = length;
+            center = (a + b) / 2.0;
+            direction = b - a;
+        }
+    }
+    center = canvas_->snap_point(center);
+    const auto probe = new_uuid();
+    unsigned turn = 0;
+    if (std::abs(direction.x()) >= std::abs(direction.y()))
+        turn = direction.x() >= 0 ? 0u : 2u;
+    else
+        turn = direction.y() >= 0 ? 1u : 3u;
+    try {
+        document_->apply("Insert current probe", [&](Project &p) {
+            std::erase_if(p.wires, [&](const Wire &wire) { return wire.id == id; });
+            Component sensor{probe, "IP" + std::to_string(p.components.size() + 1),
+                             Kind::current_probe, "", "", 0, 0, center.x(), center.y(), false};
+            sensor.orientation.quarter_turns = turn;
+            p.components.push_back(std::move(sensor));
+            auto add_wire = [&](Endpoint from, Endpoint to) {
+                Wire wire{new_uuid(), std::move(from), std::move(to), {}};
+                wire.color = original.color;
+                wire.width = original.width;
+                wire.line = original.line;
+                p.wires.push_back(std::move(wire));
+            };
+            add_wire(original.from, {probe, "p"});
+            add_wire({probe, "n"}, original.to);
+            if (std::find(p.scope_points.begin(), p.scope_points.end(), probe) == p.scope_points.end())
+                p.scope_points.push_back(probe);
+            if (std::find(p.scope_channels.begin(), p.scope_channels.end(), probe) == p.scope_channels.end())
+                p.scope_channels.push_back(probe);
+            p.scope_enabled = true;
+        });
+        selected_ = probe;
+        refresh();
+        bottom_->setCurrentIndex(1);
+        banner_->setText(text("record_next_run"));
+    } catch (const std::exception &error) {
+        show_error(error);
+    }
+}
 void EditorWindow::remove_scope_point() {
     if (!channels_ || !channels_->currentItem() || running())
         return;
-    const auto key = channels_->currentItem()->data(Qt::UserRole).toString().toStdString();
+    std::vector<std::string> keys;
+    for (auto *item : channels_->selectedItems())
+        keys.push_back(item->data(Qt::UserRole).toString().toStdString());
+    if (keys.empty())
+        keys.push_back(channels_->currentItem()->data(Qt::UserRole).toString().toStdString());
     document_->apply("Remove scope point", [&](Project &p) {
-        std::erase(p.scope_points, key);
-        std::erase(p.scope_channels, key);
+        for (const auto &key : keys) {
+            std::erase(p.scope_points, key);
+            std::erase(p.scope_channels, key);
+        }
     });
     refresh_channel_catalog();
     choose_channels();
