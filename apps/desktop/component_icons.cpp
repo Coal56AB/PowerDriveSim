@@ -41,12 +41,8 @@ int definition_icon_id(const std::string &id) {
     const auto found = definition_icons.find(id);
     return found == definition_icons.end() ? -1 : found->second;
 }
-QIcon component_icon(int id, bool framed) {
-    QPixmap image(256, 256);
-    image.fill(Qt::transparent);
-    QPainter p(&image);
+void paint_component_symbol(QPainter &p, int id, bool framed) {
     p.setRenderHint(QPainter::Antialiasing);
-    p.scale(8, 8);
     p.setPen(QPen(theme_colors().text, 0.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
     auto title = [&](const QString &s) {
@@ -101,6 +97,7 @@ QIcon component_icon(int id, bool framed) {
         p.drawLine(22, 27, 26, 27);
     } else if (id == 107) {
         p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
+        p.setBrush(Qt::NoBrush);
         p.setPen(QPen(QColor("#5f7cff"), 1.0));
         QPainterPath positive(QPointF(6, 10));
         positive.lineTo(11, 10); positive.lineTo(15, 21); positive.lineTo(21, 21); positive.lineTo(26, 10);
@@ -109,6 +106,8 @@ QIcon component_icon(int id, bool framed) {
         QPainterPath negative(QPointF(6, 21));
         negative.lineTo(11, 21); negative.lineTo(15, 10); negative.lineTo(21, 10); negative.lineTo(26, 21);
         p.drawPath(negative);
+        p.setPen(QPen(QColor("#5f7cff"), 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawLine(QPointF(21, 21), QPointF(26, 10));
     } else if (id == 106) {
         p.setPen(QPen(theme_colors().gate, 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         QPainterPath tag;
@@ -150,9 +149,11 @@ QIcon component_icon(int id, bool framed) {
         p.drawPath(line);
     } else if (id == 270) {
         if (framed) p.drawRoundedRect(QRectF(3, 3, 26, 21), 2, 2);
-        p.drawLine(0, 8, 3, 8); p.drawLine(29, 8, 32, 8);
-        p.drawLine(0, 14, 3, 14); p.drawLine(29, 14, 32, 14);
-        p.drawLine(0, 20, 3, 20); p.drawLine(29, 20, 32, 20);
+        if (framed) {
+            p.drawLine(0, 8, 3, 8); p.drawLine(29, 8, 32, 8);
+            p.drawLine(0, 14, 3, 14); p.drawLine(29, 14, 32, 14);
+            p.drawLine(0, 20, 3, 20); p.drawLine(29, 20, 32, 20);
+        }
         QPainterPath winding(QPointF(8, 8));
         winding.cubicTo(11, 5, 13, 11, 16, 8);
         winding.cubicTo(19, 5, 21, 11, 24, 8);
@@ -170,13 +171,15 @@ QIcon component_icon(int id, bool framed) {
         p.drawLine(2, 15, 7, 15);
         p.drawLine(12, 9, 16, 5);
         p.drawLine(12, 20, 16, 24);
-        p.setPen(QPen(theme_colors().signal, 0.85, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.setPen(QPen(theme_colors().text, 0.85, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         QPolygonF diode;
-        diode << QPointF(21, 20) << QPointF(27, 15) << QPointF(21, 10) << QPointF(21, 20);
+        diode << QPointF(21, 19) << QPointF(29, 19) << QPointF(25, 13) << QPointF(21, 19);
         p.drawPolyline(diode);
-        p.drawLine(27, 9, 27, 21);
-        p.drawLine(16, 5, 24, 5); p.drawLine(24, 5, 24, 10);
-        p.drawLine(16, 24, 24, 24); p.drawLine(24, 20, 24, 24);
+        p.drawLine(21, 11, 29, 11);
+        p.drawLine(25, 5, 25, 11);
+        p.drawLine(25, 19, 25, 24);
+        p.drawLine(16, 5, 25, 5);
+        p.drawLine(16, 24, 25, 24);
         p.setPen(QPen(theme_colors().text, 0.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         title(id == 260 ? "2-Level" : "3-Level");
     } else if (id == 250 || id == 251) {
@@ -207,14 +210,35 @@ QIcon component_icon(int id, bool framed) {
         }
     } else if (id == 230 || id == 231) {
         if (framed) p.drawRoundedRect(QRectF(3, 2, 26, 22), 2, 2);
-        p.drawLine(0, 5, 3, 5); p.drawLine(0, 21, 3, 21);
-        p.drawLine(29, 9, 32, 9);
-        if (id == 231) p.drawLine(29, 17, 32, 17);
-        transistor_mark(14, 13);
+        if (framed) {
+            p.drawLine(0, 5, 3, 5);
+            p.drawLine(0, 21, 3, 21);
+            p.drawLine(29, 9, 32, 9);
+            if (id == 231) p.drawLine(29, 17, 32, 17);
+        }
+        auto bridge_leg = [&](double x, double output_y) {
+            p.drawLine(QPointF(x, 3), QPointF(x, 6));
+            p.drawLine(QPointF(x, 10), QPointF(x, 14));
+            p.drawLine(QPointF(x, 18), QPointF(x, 23));
+            p.drawLine(QPointF(x - 3, 6), QPointF(x - 3, 10));
+            p.drawLine(QPointF(x - 7, 8), QPointF(x - 4, 8));
+            p.drawLine(QPointF(x - 3, 14), QPointF(x - 3, 18));
+            p.drawLine(QPointF(x - 7, 16), QPointF(x - 4, 16));
+            p.drawLine(QPointF(x, 12), QPointF(x + 6, output_y));
+        };
+        if (id == 230) {
+            bridge_leg(16, 12);
+            if (framed) p.drawLine(22, 12, 29, 12);
+        } else {
+            p.drawLine(8, 3, 24, 3);
+            p.drawLine(8, 23, 24, 23);
+            bridge_leg(10, 10);
+            bridge_leg(22, 16);
+        }
         title(id == 230 ? "Half" : "Full");
     } else if (id >= 220 && id <= 223) {
         if (framed) p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
-        p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16);
+        if (framed) { p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16); }
         const int from = id == 220 ? 10 : 22, to = id == 220 ? 22 : 10;
         p.drawLine(9, from, 16, from); p.drawLine(16, from, 16, to);
         p.drawLine(16, to, 23, to);
@@ -223,18 +247,23 @@ QIcon component_icon(int id, bool framed) {
         if (id == 223) { p.drawLine(9, from, 12, from - 3); p.drawLine(9, from, 12, from + 3); }
     } else if (id >= 210 && id <= 213) {
         if (framed) p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
-        p.drawLine(5, 28, 27, 4);
-        p.drawLine(0, 12, 4, 12);
-        p.drawLine(0, 22, 4, 22);
-        if (id == 211 || id == 213) p.drawLine(0, 17, 4, 17);
-        p.drawLine(28, 10, 32, 10);
-        p.drawLine(28, 24, 32, 24);
-        p.drawText(QRectF(5, 4, 13, 13), Qt::AlignCenter, "~");
-        p.drawLine(19, 20, 25, 20);
-        p.drawLine(19, 23, 25, 23);
+        p.drawLine(4, 28, 28, 4);
+        if (framed) {
+            p.drawLine(0, 12, 4, 12);
+            p.drawLine(0, 22, 4, 22);
+            if (id == 211 || id == 213) p.drawLine(0, 17, 4, 17);
+            p.drawLine(28, 10, 32, 10);
+            p.drawLine(28, 24, 32, 24);
+        }
+        auto symbol_font = p.font();
+        symbol_font.setPixelSize(9);
+        p.setFont(symbol_font);
+        p.drawText(QRectF(5, 4, 12, 11), Qt::AlignCenter, "~");
+        p.drawLine(19, 20, 27, 20);
+        p.drawLine(19, 24, 27, 24);
         if (id >= 212) {
             p.setPen(QPen(theme_colors().gate, 1.0));
-            p.drawLine(12, 32, 12, 25);
+            if (framed) p.drawLine(12, 32, 12, 25);
         }
     } else if (id == 10 || id == 200 || id == 201) {
         p.drawLine(1, 22, 8, 22);
@@ -262,8 +291,10 @@ QIcon component_icon(int id, bool framed) {
             p.drawLine(12, 25, 12, 31);
         }
     } else if (id == 280 || id == 281) {
-        p.drawLine(0, 14, 7, 14);
-        for (int y : {7, 14, 21}) p.drawLine(25, y, 32, y);
+        if (framed) {
+            p.drawLine(0, 14, 7, 14);
+            for (int y : {7, 14, 21}) p.drawLine(25, y, 32, y);
+        }
         p.drawEllipse(QRectF(7, 5, 18, 18));
         QPainterPath wave(QPointF(9, 14));
         wave.cubicTo(11, 8, 14, 8, 16, 14);
@@ -308,6 +339,15 @@ QIcon component_icon(int id, bool framed) {
         line.lineTo(30, 7);
         p.drawPath(line);
     }
+}
+QIcon component_icon(int id, bool framed) {
+    // Central component-symbol atlas. Library/toolbar icons are rasterized from
+    // the same vector source that schematic blocks paint directly.
+    QPixmap image(256, 256);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    painter.scale(8, 8);
+    paint_component_symbol(painter, id, framed);
     return QIcon(image);
 }
 void EditorWindow::refresh_component_icons() {

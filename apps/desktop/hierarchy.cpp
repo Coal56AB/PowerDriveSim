@@ -124,14 +124,19 @@ void EditorWindow::update_instance_specs() {
             changed = true;
         }
     }
-    if (changed)
-        build_property_editors();
+    // The inspector owns a complete editor set per buffered page. A changed
+    // dynamic schema is picked up when the next hidden page is built; never
+    // append widgets to the currently visible form.
+    (void)changed;
 }
 void EditorWindow::navigate_hierarchy(const std::vector<std::string> &path) {
-    if (running() || hierarchy_navigation_ || !commit_inline_edit())
+    if (running() || hierarchy_navigation_)
         return;
     QScopedValueRollback<bool> navigation_guard(hierarchy_navigation_, true);
     try {
+        // Locking affects only editing inside a definition. Navigation in both
+        // directions is silent and never commits a stray inline editor.
+        cancel_inline_edit();
         canvas_->cancel_gesture();
         document_->navigate(path);
         refresh(false);

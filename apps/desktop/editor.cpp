@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/instrumentation.hpp"
 #include "apps/desktop/labels.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
@@ -14,6 +15,8 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
@@ -44,6 +47,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QStyle>
@@ -184,6 +188,7 @@ class Atom final : public QGraphicsItem {
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
         setData(0, q(id));
         setData(1, "atom");
+        setData(10, category == 4);
         setFlags(ItemIsSelectable | ItemSendsGeometryChanges);
         setZValue(2);
         setAcceptHoverEvents(true);
@@ -283,7 +288,11 @@ class Atom final : public QGraphicsItem {
             double extent = (std::max(1u, input_count) - 1) * port_spacing() / 2.0;
             for (const auto &[port_name, point] : public_ports) {
                 (void)port_name;
-                extent = std::max(extent, std::abs(point.y()));
+                // Only side ports determine the block height. A port explicitly
+                // placed on the top/bottom edge must not make the body grow on
+                // every scene rebuild.
+                if (std::abs(point.x()) >= 90.0)
+                    extent = std::max(extent, std::abs(point.y()));
             }
             return std::max(42.0, extent + 24.0);
         }
@@ -342,6 +351,7 @@ class Atom final : public QGraphicsItem {
         item->setData(1, "port");
         item->setData(2, port_name);
         item->setData(8, label.isEmpty() ? port_name : label);
+        item->setData(11, color.name(QColor::HexRgb));
         item->setToolTip(label.isEmpty() ? port_name : label);
     }
     void snap_ports_to_grid(double grid) {
@@ -375,21 +385,14 @@ class Atom final : public QGraphicsItem {
         p->restore();
     }
     static void fixed_aspect_icon(QPainter *p, int icon_id, QRectF rect) {
-        const auto transform = p->worldTransform();
-        const auto center = transform.map(rect.center());
-        const double sx = std::hypot(transform.m11(), transform.m12());
-        const double sy = std::hypot(transform.m21(), transform.m22());
-        const double scale = std::min(sx, sy);
-        if (scale <= 0)
-            return;
         const double side = std::min(rect.width(), rect.height());
-        const double angle = std::atan2(transform.m12(), transform.m11()) * 180.0 / std::acos(-1.0);
+        if (side <= 0)
+            return;
         p->save();
-        p->resetTransform();
-        p->translate(center);
-        p->rotate(angle);
-        p->scale(transform.determinant() < 0 ? -scale : scale, scale);
-        component_icon(icon_id, false).paint(p, QRectF(-side / 2.0, -side / 2.0, side, side).toAlignedRect());
+        p->translate(rect.center());
+        p->scale(side / 32.0, side / 32.0);
+        p->translate(-16, -16);
+        paint_component_symbol(*p, icon_id, false);
         p->restore();
     }
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
@@ -413,11 +416,22 @@ class Atom final : public QGraphicsItem {
                     continue;
                 const auto port_name = child->data(8).toString();
                 const auto point = child->pos();
-                const bool left = point.x() < 0;
-                p->drawLine(point, QPointF(left ? -90 : 90, point.y()));
-                label(p, QRectF(left ? -86 : 50, point.y() - 10, 36, 20),
-                      point.x() < 0 ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
-                      QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 34));
+                const double vertical_edge_distance = std::abs(std::abs(point.x()) - 100.0);
+                const double horizontal_edge_distance = std::abs(std::abs(point.y()) - (h + 10.0));
+                const bool horizontal_side = vertical_edge_distance <= horizontal_edge_distance;
+                if (horizontal_side) {
+                    const bool left = point.x() < 0;
+                    p->drawLine(point, QPointF(left ? -90 : 90, std::clamp(point.y(), -h, h)));
+                    label(p, QRectF(left ? -86 : 50, point.y() - 10, 36, 20),
+                          left ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
+                          QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 34));
+                } else {
+                    const bool top = point.y() < 0;
+                    p->drawLine(point, QPointF(std::clamp(point.x(), -90.0, 90.0), top ? -h : h));
+                    label(p, QRectF(point.x() - 24, top ? -h + 3 : h - 21, 48, 18),
+                          Qt::AlignHCenter | (top ? Qt::AlignTop : Qt::AlignBottom),
+                          QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 46));
+                }
             }
             if (library_icon_id >= 0) {
                 const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
@@ -443,6 +457,7 @@ class Atom final : public QGraphicsItem {
             p->drawLine(-24, 17, -24, -17);
             p->drawLine(-24, 17, 37, 17);
             if (differential_plot) {
+                p->setBrush(Qt::NoBrush);
                 p->setPen(QPen(QColor("#5f7cff"), 2));
                 QPainterPath positive(QPointF(-20, -10));
                 positive.lineTo(-5, -10);
@@ -459,6 +474,10 @@ class Atom final : public QGraphicsItem {
                 negative.lineTo(26, 10);
                 negative.lineTo(38, 10);
                 p->drawPath(negative);
+                // Alternate the foreground trace at consecutive crossings:
+                // red on the rising edge, blue on the falling edge.
+                p->setPen(QPen(QColor("#5f7cff"), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+                p->drawLine(QPointF(18, 10), QPointF(26, -10));
             } else {
                 p->setPen(QPen(theme_colors().signal, 2));
                 QPainterPath curve;
@@ -472,14 +491,24 @@ class Atom final : public QGraphicsItem {
                 p->drawLine(35, 29, 43, 29);
                 p->drawLine(38, 33, 40, 33);
             }
+            const auto children = childItems();
             for (unsigned i = 1; i <= input_count; ++i) {
-                double y = (static_cast<double>(i) - (static_cast<double>(input_count) + 1.0) / 2.0) * 20.0;
+                const QString port_id = differential_plot
+                    ? QString(i % 2 ? "p" : "n") + QString::number((i + 1) / 2)
+                    : QString("in") + QString::number(i);
+                const auto found = std::find_if(children.begin(), children.end(), [&](QGraphicsItem *child) {
+                    return child->data(1).toString() == "port" && child->data(2).toString() == port_id;
+                });
+                if (found == children.end())
+                    continue;
+                auto *pin = *found;
+                const auto point = pin->pos();
                 p->setPen(QPen(theme_colors().signal, 1.4));
-                p->drawLine(QPointF(-60, y), QPointF(-46, y));
+                p->drawLine(point, QPointF(-46, point.y()));
                 const QString port_label = differential_plot
                     ? ((i % 2 ? QString("+") : QString("−")) + QString::number((i + 1) / 2))
                     : QString::number(i);
-                label(p, QRectF(-45, y - 9, 20, 18), Qt::AlignCenter, port_label);
+                label(p, QRectF(-45, point.y() - 9, 20, 18), Qt::AlignCenter, port_label);
             }
             p->setPen(theme_colors().text);
             if (!separate_labels)
@@ -636,6 +665,8 @@ void EditorWindow::update_labels() {
     std::set<std::string> present;
     for (const auto &[id, item] : atoms_) {
         auto *atom = static_cast<Atom *>(item);
+        if (!atom->isVisible())
+            continue;
         for (const QString role : {QString("name"), QString("value")}) {
             if (atom->type == 1 && !atom->ground)
                 continue;
@@ -653,6 +684,7 @@ void EditorWindow::update_labels() {
                 canvas_->scene()->addItem(label);
             }
             label->set_text(contents);
+            label->setData(10, atom->type == 4);
             label->setToolTip(text("label_hint"));
             const QPointF anchor = role == "value"   ? QPointF(0, -41)
                                    : atom->type == 1 ? QPointF(0, 41)
@@ -936,6 +968,10 @@ EditorWindow::EditorWindow(const QString &language, const QString &recovery_dir)
     apply_theme(appearance.value("dark_theme", false).toBool());
     build_ui();
     canvas_->set_grid_size(appearance.value("grid_size", 20).toDouble());
+    canvas_->set_grid_style(static_cast<Canvas::GridStyle>(
+        std::clamp(appearance.value("grid_style", int(Canvas::GridStyle::dots)).toInt(), 0, 2)));
+    canvas_->set_grid_line_width(appearance.value("grid_line_width", 1.0).toDouble());
+    canvas_->set_grid_dot_size(appearance.value("grid_dot_size", 1.0).toDouble());
     connect(&watcher_, &QFutureWatcher<Outcome>::finished, this, [this] { finish_simulation(); });
     autosave_timer_ = new QTimer(this);
     connect(autosave_timer_, &QTimer::timeout, this, [this] { autosave(); });
@@ -1064,10 +1100,22 @@ void EditorWindow::build_ui() {
     });
     for (const char *mode : {"left", "right", "top", "bottom", "horizontal", "vertical"})
         action(nullptr, mode, {}, [this, mode] { arrange_selection(mode); });
-    action(edit_menu, "grid_settings", {}, [this] { configure_grid(); });
+    auto *grid_action = action(edit_menu, "grid_settings", QKeySequence("G"), [this] { configure_grid(); });
     action(edit_menu, "shortcuts", {}, [this] { show_shortcuts(); });
     auto *search_action = action(edit_menu, "command_search", QKeySequence("Ctrl+Shift+P"), [this] { show_command_search(); });
-    menuBar()->addAction(search_action);
+    auto *search_button = new QToolButton(menuBar());
+    search_button->setDefaultAction(search_action);
+    search_button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    search_button->setAutoRaise(true);
+    search_button->setObjectName("command_search_button");
+    const int menu_height = menuBar()->fontMetrics().height() + 18;
+    search_button->setFixedSize(search_button->fontMetrics().horizontalAdvance(search_action->text()) + 24,
+                                menu_height - 4);
+    search_button->setStyleSheet(
+        "QToolButton{border:0;background:transparent;padding:5px 12px;border-radius:4px;}"
+        "QToolButton:hover{background:palette(highlight);}");
+    menuBar()->setCornerWidget(search_button, Qt::TopRightCorner);
+    menuBar()->setFixedHeight(menu_height);
     build_hierarchy_actions(edit_menu->addMenu(text("hierarchy")));
     auto *wire_action = action(edit_menu, "connect_tool", QKeySequence("Ctrl+W"), [this] {
         if (running())
@@ -1219,6 +1267,11 @@ void EditorWindow::build_ui() {
     }
     layout->addWidget(canvas_tools);
     canvas_ = new Canvas;
+    // A plain letter shortcut must only be active on the schematic canvas;
+    // otherwise typing a 'g' in a name or script would open the dialog.
+    removeAction(grid_action);
+    canvas_->addAction(grid_action);
+    grid_action->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     layout->addWidget(canvas_, 1);
     banner_ = new QLabel(text("hint"));
     banner_->setStyleSheet(
@@ -1282,34 +1335,13 @@ void EditorWindow::build_ui() {
     auto *left = dock("workspace", left_tabs, Qt::LeftDockWidgetArea);
     left->setMinimumWidth(300);
     left->setMaximumWidth(380);
-    auto *inspector = new QWidget;
-    properties_ = new QFormLayout(inspector);
-    properties_->setContentsMargins(16, 18, 16, 18);
-    properties_->setVerticalSpacing(14);
-    inspector_hint_ = new QLabel(text("inspector_empty"));
-    inspector_hint_->setWordWrap(true);
-    inspector_hint_->setStyleSheet("color:palette(placeholder-text);padding:18px 0;");
-    properties_->addRow(inspector_hint_);
-    inspector_type_ = new QLabel;
-    inspector_type_->setObjectName("property_native_type");
-    inspector_type_->setStyleSheet("color:palette(placeholder-text);");
-    properties_->addRow(text("native_type"), inspector_type_);
-    properties_->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    build_property_editors();
-    auto *apply = new QPushButton(text("apply"));
-    apply->setObjectName("apply_properties");
-    apply_button_ = apply;
-    properties_->addRow(apply);
-    property_error_ = new QLabel;
-    property_error_->setObjectName("property_error");
-    property_error_->setStyleSheet("color:palette(bright-text)");
-    property_error_->setWordWrap(true);
-    properties_->addRow(property_error_);
-    connect(apply, &QPushButton::clicked, this, [this] { apply_inspector(); });
+    inspector_stack_ = new QStackedWidget;
+    inspector_stack_->setObjectName("inspector_stack");
+    inspector_stack_->addWidget(create_inspector_page());
     for (auto *field : {stop_, step_})
         connect(field, &QLineEdit::editingFinished, this, [this] { commit_profile(); });
     connect(method_, &QComboBox::activated, this, [this] { commit_profile(); });
-    auto *right = dock("inspector", inspector, Qt::RightDockWidgetArea);
+    auto *right = dock("inspector", inspector_stack_, Qt::RightDockWidgetArea);
     right->setMinimumWidth(280);
     right->setMaximumWidth(400);
     bottom_ = new QTabWidget;
@@ -1412,6 +1444,8 @@ void EditorWindow::build_ui() {
         return preview_route(a, b, start, end);
     };
     canvas_->wire_endpoint = [this](const std::string &id, bool from) {
+        if (auto view = hidden_current_wire_view(project(), id); view && id == view->primary)
+            return from ? view->from : view->to;
         for (const auto &w : project().wires)
             if (w.id == id)
                 return from ? w.from : w.to;
@@ -1426,8 +1460,12 @@ void EditorWindow::build_ui() {
                 point = {snapped.x(), snapped.y()};
             }
             Endpoint from, to;
+            if (auto view = hidden_current_wire_view(project(), id); view && id == view->primary) {
+                from = view->from;
+                to = view->to;
+            }
             for (const auto &wire : project().wires)
-                if (wire.id == id) {
+                if (wire.id == id && from.object.empty()) {
                     from = wire.from;
                     to = wire.to;
                     break;
@@ -1634,15 +1672,54 @@ void EditorWindow::configure_autosave() {
 }
 void EditorWindow::configure_grid() {
     QSettings settings(recovery_dir_ + "/ui.ini", QSettings::IniFormat);
-    bool ok = false;
-    const int current = int(std::lround(canvas_->grid_size()));
-    const int size = QInputDialog::getInt(this, text("grid_settings"), text("grid_size"), current, 5, 100, 5, &ok);
-    if (!ok)
+    QDialog dialog(this);
+    dialog.setObjectName("grid_settings_dialog");
+    dialog.setWindowTitle(text("grid_settings"));
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *form = new QFormLayout;
+    auto *style = new QComboBox;
+    style->setObjectName("grid_style");
+    style->addItems({text("grid_dots"), text("grid_lines"), text("grid_hidden")});
+    style->setCurrentIndex(int(canvas_->grid_style()));
+    auto *size = new QSpinBox;
+    size->setObjectName("grid_size");
+    size->setRange(5, 100);
+    size->setSingleStep(5);
+    size->setSuffix(" px");
+    size->setValue(int(std::lround(canvas_->grid_size())));
+    auto make_width = [&](const char *name, double value) {
+        auto *spin = new QDoubleSpinBox;
+        spin->setObjectName(name);
+        spin->setRange(0.5, 8.0);
+        spin->setSingleStep(0.25);
+        spin->setDecimals(2);
+        spin->setSuffix(" px");
+        spin->setValue(value);
+        return spin;
+    };
+    auto *line_width = make_width("grid_line_width", canvas_->grid_line_width());
+    auto *dot_size = make_width("grid_dot_size", canvas_->grid_dot_size());
+    form->addRow(text("grid_style"), style);
+    form->addRow(text("grid_size"), size);
+    form->addRow(text("grid_line_width"), line_width);
+    form->addRow(text("grid_dot_size"), dot_size);
+    layout->addLayout(form);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog.exec() != QDialog::Accepted)
         return;
-    settings.setValue("grid_size", size);
+    canvas_->set_grid_style(static_cast<Canvas::GridStyle>(style->currentIndex()));
+    canvas_->set_grid_size(size->value());
+    canvas_->set_grid_line_width(line_width->value());
+    canvas_->set_grid_dot_size(dot_size->value());
+    settings.setValue("grid_style", style->currentIndex());
+    settings.setValue("grid_size", size->value());
+    settings.setValue("grid_line_width", line_width->value());
+    settings.setValue("grid_dot_size", dot_size->value());
     settings.sync();
-    canvas_->set_grid_size(size);
-    banner_->setText(text("grid_updated").arg(size));
+    banner_->setText(text("grid_updated").arg(size->value()));
 }
 bool EditorWindow::recover(const QString &path) {
     if (!open_project(path))
@@ -1708,7 +1785,8 @@ void EditorWindow::refresh(bool invalidate) {
         i->setData(Qt::UserRole, q(id));
     };
     for (const auto &c : project().components)
-        item(c.id, c.name);
+        if (!is_hidden_current_probe(project(), c.id))
+            item(c.id, c.name);
     for (const auto &n : project().nodes)
         item(n.id, n.name);
     for (const auto &t : project().tags)
@@ -1790,6 +1868,7 @@ void EditorWindow::rebuild_scene() {
         a->name = q(name);
         a->symbol = symbol;
         a->type = type;
+        a->setData(10, type == 4);
         return a;
     };
     auto ports = [&](Atom *a, const std::vector<std::pair<QString, QPointF>> &list, const QColor &color) {
@@ -1801,18 +1880,28 @@ void EditorWindow::rebuild_scene() {
         } else
             for (auto *child : a->childItems())
                 for (const auto &[name, point] : list)
-                    if (child->data(2).toString() == name)
+                    if (child->data(2).toString() == name) {
                         child->setPos(point);
+                        child->setData(11, color.name(QColor::HexRgb));
+                    }
     };
     for (const auto &c : project().components) {
         auto *a = atom(c.id, c.name, q(kind_name(c.kind)), 0);
+        const bool hidden_probe = is_hidden_current_probe(project(), c.id);
+        a->setVisible(!hidden_probe);
         a->value = component_label(c);
-        std::vector<std::pair<QString, QPointF>> list{{"p", {-60, 0}}, {"n", {60, 0}}};
+        std::vector<std::pair<QString, QPointF>> list = hidden_probe
+            ? std::vector<std::pair<QString, QPointF>>{{"p", {0, 0}}, {"n", {0, 0}}}
+            : std::vector<std::pair<QString, QPointF>>{{"p", {-60, 0}}, {"n", {60, 0}}};
         if (gate_controlled(c.kind))
             list.push_back({"gate", {0, -40}});
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
             list.push_back({"out", {0, -40}});
         ports(a, list, QColor("#146cca"));
+        if (gate_controlled(c.kind))
+            for (auto *child : a->childItems())
+                if (child->data(2).toString() == "gate")
+                    child->setData(11, QColor("#17866d").name(QColor::HexRgb));
     }
     for (const auto &n : project().nodes) {
         auto *a = atom(n.id, n.ground ? n.name : std::string(), {}, 1);
@@ -1931,8 +2020,16 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
     if (atom->type == 1)
         return point;
     QPointF delta(0, -20);
-    if (atom->type == 4)
-        delta = {atom->mapFromScene(point).x() < 0 ? -20. : 20., 0};
+    if (atom->type == 4) {
+        const QPointF local = atom->mapFromScene(point);
+        const double h = atom->body_half_height();
+        const double vertical_edge_distance = std::abs(std::abs(local.x()) - 100.0);
+        const double horizontal_edge_distance = std::abs(std::abs(local.y()) - (h + 10.0));
+        if (vertical_edge_distance <= horizontal_edge_distance)
+            delta = {local.x() < 0 ? -20. : 20., 0};
+        else
+            delta = {0, local.y() < 0 ? -20. : 20.};
+    }
     else if (e.port == "p" || e.port.rfind("in", 0) == 0)
         delta = {-20, 0};
     else if (e.port == "n" || (e.port == "out" && atom->type == 2))
@@ -1987,7 +2084,7 @@ void EditorWindow::update_wires() {
     std::map<std::string, QRectF> next_boxes;
     for (const auto &[id, item] : atoms_) {
         auto *atom = static_cast<Atom *>(item);
-        if (atom->type == 1)
+        if (atom->type == 1 || !atom->isVisible())
             continue;
         double h = atom->body_half_height();
         auto box =
@@ -2054,14 +2151,24 @@ void EditorWindow::update_wires() {
         auto *item = wires_.at(w.id);
         if (auto *wire_item = dynamic_cast<WireItem *>(item))
             wire_item->junctions.clear();
-        const auto from_domain_opt = port_domain(w.from), to_domain_opt = port_domain(w.to);
+        const auto hidden_view = hidden_current_wire_view(project(), w.id);
+        if (hidden_view && w.id == hidden_view->secondary) {
+            item->setPath({});
+            item->setVisible(false);
+            continue;
+        }
+        item->setVisible(true);
+        const Endpoint visual_from = hidden_view ? hidden_view->from : w.from;
+        const Endpoint visual_to = hidden_view ? hidden_view->to : w.to;
+        const auto from_domain_opt = port_domain(visual_from), to_domain_opt = port_domain(visual_to);
         if (!from_domain_opt || !to_domain_opt) {
             item->setPath({});
             continue;
         }
-        auto a = canvas_->snap_point(port_position(w.from)), b = canvas_->snap_point(port_position(w.to));
-        bool dirty = all || item->path().isEmpty() || route_positions_[endpoint_key(w.from)] != a ||
-                     route_positions_[endpoint_key(w.to)] != b;
+        auto a = canvas_->snap_point(port_position(visual_from)), b = canvas_->snap_point(port_position(visual_to));
+        bool dirty = hidden_view.has_value() || all || item->path().isEmpty() ||
+                     route_positions_[endpoint_key(visual_from)] != a ||
+                     route_positions_[endpoint_key(visual_to)] != b;
         auto old = previous.find(w.id);
         if (old == previous.end() || old->second->bends != w.bends)
             dirty = true;
@@ -2075,7 +2182,7 @@ void EditorWindow::update_wires() {
             routes_changed = true;
             if (auto network = net_cache_.find(endpoint_key(w.from)); network != net_cache_.end())
                 changed_networks.insert(network->second);
-            auto bends = w.bends;
+            auto bends = hidden_view ? hidden_view->bends : w.bends;
             if (canvas_->editing_gesture()) {
                 const bool from_moving = atoms_.count(w.from.object) && atoms_.at(w.from.object)->isSelected();
                 const bool to_moving = atoms_.count(w.to.object) && atoms_.at(w.to.object)->isSelected();
@@ -2086,8 +2193,8 @@ void EditorWindow::update_wires() {
                         point = canvas_->moving_point(w.from.object, w.to.object, point);
             }
             base_wire_routes_[w.id] =
-                bends.empty() ? orthogonal_route(a, canvas_->snap_point(port_stub(w.from, a)),
-                                                 canvas_->snap_point(port_stub(w.to, b)), b, obstacles)
+                bends.empty() ? orthogonal_route(a, canvas_->snap_point(port_stub(visual_from, a)),
+                                                 canvas_->snap_point(port_stub(visual_to, b)), b, obstacles)
                               : manual_route(a, b, bends);
             item->setPath(base_wire_routes_[w.id]);
         }

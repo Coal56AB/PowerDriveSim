@@ -54,8 +54,24 @@ Scope::Scope(QWidget *parent, Domain domain) : QWidget(parent), domain_(domain) 
     setObjectName("scope");
 }
 void Scope::set_result(const Result *result, const std::vector<int> &channels, const Project &p) {
-    const bool new_data = result_ != result || channels_ != channels;
-    if (new_data || !live_) extrema_.clear();
+    const bool result_changed = result_ != result;
+    const bool channels_changed = channels_ != channels;
+    const bool new_data = result_changed || channels_changed;
+    // A recording checkbox only changes the displayed channel set. Do not
+    // discard and rebuild an extrema index over millions of existing samples.
+    if (result_changed || (!live_ && !channels_changed))
+        extrema_.clear();
+    if (result_changed)
+        preview_channels_.clear();
+    else if (channels_changed) {
+        for (int channel : channels)
+            if (std::find(channels_.begin(), channels_.end(), channel) == channels_.end() &&
+                !extrema_.contains(channel))
+                preview_channels_.insert(channel);
+        std::erase_if(preview_channels_, [&](int channel) {
+            return std::find(channels.begin(), channels.end(), channel) == channels.end();
+        });
+    }
     result_ = result && !result->samples.empty() ? result : nullptr;
     if (new_data)
         cancel_drag();
@@ -73,12 +89,14 @@ void Scope::set_result(const Result *result, const std::vector<int> &channels, c
         begin = 0;
         end = std::max(1e-12, result_->samples.back().time);
     }
-    if (new_data) {
+    if (result_changed) {
         fit_y();
-        populate_cursor_channels();
-        update_channel_controls();
         view_history_.clear();
         remember_view();
+    }
+    if (new_data) {
+        populate_cursor_channels();
+        update_channel_controls();
         if (measurements_) {
             delete measurements_.data();
             measurements_ = nullptr;
@@ -105,6 +123,9 @@ void Scope::fit(Axes axes) {
     notify_view();
 }
 void Scope::fit_y() {
+    // Checkbox changes use a bounded preview. A real Y fit opts into the exact
+    // extrema pass over the complete recorded history.
+    preview_channels_.clear();
     if (!result_ || channels_.empty()) {
         y_low = -1;
         y_high = 1;
@@ -265,7 +286,7 @@ void Scope::paintEvent(QPaintEvent *) {
                     const size_t finish = std::min(i + stride, to);
                     const double first_value = sample_value(i, channels_[ch]);
                     size_t imin=i, imax=i;
-                    if (live_) {
+                    if (live_ || preview_channels_.contains(channels_[ch])) {
                         const size_t last_sample=finish-1;
                         if (sample_value(last_sample,channels_[ch])<first_value)imin=last_sample;
                         if (sample_value(last_sample,channels_[ch])>first_value)imax=last_sample;

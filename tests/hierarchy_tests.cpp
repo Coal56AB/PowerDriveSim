@@ -392,14 +392,22 @@ int main() try {
     error("parse_error", [&] { read_project(broken); });
     Document navigating(nested());
     const auto unedited = navigating.root_project();
+    navigating.navigate({id(21), id(31)});
+    require(navigating.project().components[0].value == 2000,
+            "Instance editor shows the effective public parameter override");
     navigating.navigate({id(20), id(31)});
     require(!navigating.can_undo(), "Browsing does not create an edit transaction");
     require(navigating.project().id != navigating.root_project().id &&
                 navigating.project().components.size() == 2,
             "Active hierarchy view");
-    navigating.apply("Edit inside", [](Project &v) { v.components[0].value = 3000; });
-    require(definition(navigating.root_project(), id(10)).parameters[0].value == 3000,
-            "Internal bound edits update shared defaults");
+    navigating.apply("Edit inside", [](Project &v) {
+        v.components[0].value = 3000;
+        v.components[1].value = 3e-6;
+    });
+    require(definition(navigating.root_project(), id(10)).parameters[0].value == 1000,
+            "Internal edits cannot overwrite a public parameter binding");
+    require(definition(navigating.root_project(), id(10)).components[1].value == 3e-6,
+            "Unbound internal fields remain editable");
     require(navigating.root_project().instances.size() == 2, "Editing view retains root instances");
     std::ostringstream whole;
     write_project(navigating.root_project(), whole);
@@ -413,7 +421,9 @@ int main() try {
     require(navigating.can_redo(), "Browsing preserves the pending edit redo");
     navigating.redo();
     require(navigating.location().size() == 2, "Redo restores the edited level");
-    require(navigating.project().components[0].value == 3000, "Redo shared edit");
+    require(navigating.project().components[0].value == 1000 &&
+                navigating.project().components[1].value == 3e-6,
+            "Redo restores unbound edits without overwriting the public parameter");
     navigating.apply("Record both instances", [](Project &p) {
         p.scope_enabled = true;
         p.scope_channels = {expanded_uuid({id(20), id(31)}, id(12)), expanded_uuid({id(21), id(31)}, id(12))};

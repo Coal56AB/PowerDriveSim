@@ -249,7 +249,9 @@ void EditorWindow::build_property_editors() {
                 widget = combo;
                 connect(combo, &QComboBox::activated, this, [this, combo] {
                     combo->setProperty("draft", true);
-                    QTimer::singleShot(0, this, [this] { apply_inspector(); });
+                    // Finish the complete dependent-property rebuild inside
+                    // this UI event. Painting can only happen after it returns.
+                    apply_inspector();
                 });
             } else if (kind == "bool") {
                 auto *check = new QCheckBox;

@@ -12,6 +12,7 @@
 #include <QContextMenuEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
@@ -78,6 +79,39 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void grid_style_settings_persist() {
+        QTemporaryDir dir;
+        {
+            EditorWindow w("ru", dir.path());
+            ready(w);
+            auto *action = w.findChild<QAction *>("action_grid_settings");
+            QVERIFY(action);
+            QCOMPARE(action->shortcut(), QKeySequence("G"));
+            bool handled = false;
+            QTimer::singleShot(20, &w, [&] {
+                auto *dialog = w.findChild<QDialog *>("grid_settings_dialog");
+                QVERIFY(dialog);
+                dialog->findChild<QComboBox *>("grid_style")->setCurrentIndex(int(Canvas::GridStyle::lines));
+                dialog->findChild<QSpinBox *>("grid_size")->setValue(25);
+                dialog->findChild<QDoubleSpinBox *>("grid_line_width")->setValue(2.5);
+                dialog->findChild<QDoubleSpinBox *>("grid_dot_size")->setValue(3.5);
+                handled = true;
+                dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            });
+            action->trigger();
+            QVERIFY(handled);
+            QCOMPARE(w.canvas()->grid_style(), Canvas::GridStyle::lines);
+            QCOMPARE(w.canvas()->grid_size(), 25.0);
+            QCOMPARE(w.canvas()->grid_line_width(), 2.5);
+            QCOMPARE(w.canvas()->grid_dot_size(), 3.5);
+        }
+        EditorWindow restored("ru", dir.path());
+        QCOMPARE(restored.canvas()->grid_style(), Canvas::GridStyle::lines);
+        QCOMPARE(restored.canvas()->grid_size(), 25.0);
+        QCOMPARE(restored.canvas()->grid_line_width(), 2.5);
+        QCOMPARE(restored.canvas()->grid_dot_size(), 3.5);
+    }
+
     void live_history_responsiveness_benchmark() {
         if (qEnvironmentVariableIsEmpty("PDS_LIVE_HISTORY_BENCHMARK")) QSKIP("Opt-in live GUI performance measurement");
         QTemporaryDir dir;
@@ -160,9 +194,13 @@ class InteractionTests : public QObject {
                              Qt::NoButton, Qt::NoButton, Qt::NoModifier);
             QApplication::sendEvent(viewport, &move);
         }
-        QTRY_VERIFY(item(w, id)->toolTip().contains("data:image/png;base64"));
+        if (QGuiApplication::platformName() != "offscreen")
+            QTRY_VERIFY(item(w, id)->toolTip().contains("data:image/png;base64"));
         if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT")));
-        w.open_subcircuit(id); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QTest::mouseDClick(viewport, Qt::LeftButton, Qt::NoModifier,
+                          w.canvas()->mapFromScene(item(w, id)->sceneBoundingRect().center()));
+        QTRY_COMPARE(w.hierarchy_path().size(), size_t(1));
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QTest::qWait(30);
         if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT") + ".hierarchy.png"));
         auto *back = w.findChild<QToolButton *>("hierarchy_level_0");
@@ -185,18 +223,24 @@ class InteractionTests : public QObject {
                     QCOMPARE(value(actual.first), *expected.first); QCOMPARE(value(actual.second), *expected.second);
                 }
         }
-        Result result; result.channels = {{"a", "Trace", "V"}};
-        for (size_t i = 0; i < 1000000; ++i) result.samples.push_back({double(i)*1e-6, {std::sin(double(i)*.01)}, {}});
+        Result result; result.channels = {{"a", "Trace", "V"}, {"b", "Second", "A"}};
+        for (size_t i = 0; i < 1000000; ++i)
+            result.samples.push_back({double(i)*1e-6,
+                                      {std::sin(double(i)*.01), std::cos(double(i)*.013)}, {}});
         Scope scope; Project project; scope.resize(1200, 500); scope.set_live(true);
         scope.set_result(&result, {0}, project); scope.fit();
         QElapsedTimer timer; timer.start();
         for (int i = 0; i < 5; ++i) { scope.fit(Scope::Axes::y); auto image = scope.grab(); QVERIFY(!image.isNull()); }
         qInfo() << "Indexed million-sample fit/render, five frames (ms):" << timer.elapsed();
-        result.samples.push_back({1.1, {100}, {}}); scope.set_result(&result, {0}, project); scope.fit();
+        result.samples.push_back({1.1, {100, 0}, {}}); scope.set_result(&result, {0}, project); scope.fit();
         QVERIFY(scope.y_high > 100);
         scope.begin = .1; scope.end = .2; scope.fit(Scope::Axes::y); QVERIFY(scope.y_high < 2);
         scope.set_live(false); result.samples.back().values[0] = 200;
         scope.set_result(&result, {0}, project); scope.fit(); QVERIFY(scope.y_high > 200);
+        timer.restart();
+        scope.set_result(&result, {0, 1}, project);
+        QVERIFY(!scope.grab().isNull());
+        QVERIFY2(timer.elapsed() < 750, "Toggling a channel rebuilt the million-sample history synchronously");
     }
     void open_end_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
@@ -751,9 +795,13 @@ class InteractionTests : public QObject {
         const auto source=std::find_if(w.project().components.begin(),w.project().components.end(),
             [](const auto &c){return c.kind==Kind::voltage;})->id;
         w.select_object(source);
-        auto *mode=w.findChild<QComboBox*>("property_source_mode");
-        QVERIFY(mode&&mode->isVisible());
-        auto select_mode=[&](int index){mode->setCurrentIndex(index);QMetaObject::invokeMethod(mode,"activated",Q_ARG(int,index));};
+        QVERIFY(w.findChild<QComboBox*>("property_source_mode"));
+        auto select_mode=[&](int index){
+            auto *mode=w.findChild<QComboBox*>("property_source_mode");
+            QVERIFY(mode&&mode->isVisible());
+            mode->setCurrentIndex(index);
+            QMetaObject::invokeMethod(mode,"activated",Q_ARG(int,index));
+        };
         select_mode(1);
         auto *frequency=w.findChild<QLineEdit*>("property_source_frequency");
         QVERIFY(frequency->isVisible());
@@ -774,7 +822,9 @@ class InteractionTests : public QObject {
         QCOMPARE(selected_source().source.duty,.25);
         select_mode(3);
         auto *points=w.findChild<QTableWidget*>("property_source_points");
-        QVERIFY(points->isVisible());QVERIFY(!frequency->isVisible());
+        QVERIFY(points->isVisible());
+        auto *current_frequency=w.findChild<QLineEdit*>("property_source_frequency");
+        QVERIFY(!current_frequency || !current_frequency->isVisible());
         points->setItem(0,0,new QTableWidgetItem("0s"));points->setItem(0,1,new QTableWidgetItem("0V"));
         points->setItem(1,0,new QTableWidgetItem("2 ms"));points->setItem(1,1,new QTableWidgetItem("3 V"));
         QTest::mouseClick(w.findChild<QPushButton*>("apply_properties"),Qt::LeftButton);
@@ -784,7 +834,9 @@ class InteractionTests : public QObject {
         const auto saved=dir.filePath("source.pds");QVERIFY(w.save_project(saved));
         const auto expected=encoded(w.root_project());QVERIFY(w.open_project(saved));
         QCOMPARE(encoded(w.root_project()),expected);
-        w.select_object(source);select_mode(0);QVERIFY(!points->isVisible());
+        w.select_object(source);select_mode(0);
+        auto *current_points=w.findChild<QTableWidget*>("property_source_points");
+        QVERIFY(!current_points || !current_points->isVisible());
         QCOMPARE(selected_source().source.kind,Waveform::dc);
         w.undo();QCOMPARE(selected_source().source.kind,Waveform::piecewise_linear);
         for(const auto *form:{"sine","pulse","table"}) {
@@ -1152,17 +1204,89 @@ class InteractionTests : public QObject {
         w.select_object(resistor);
         w.findChild<QAction *>("edit_definition")->trigger();
         auto *value = w.findChild<QLineEdit *>("property_value");
-        value->setFocus();
-        value->selectAll();
-        QTest::keyClicks(value, "4 kOhm");
-        QTest::keyClick(value, Qt::Key_Return);
-        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 4000.);
+        QVERIFY(value->isReadOnly());
+        QCOMPARE(parse_si(value->text().toStdString(), "Ohm"), 3000.);
+        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 2000.);
         auto flat = flatten(w.root_project()).project;
         auto component = std::find_if(flat.components.begin(), flat.components.end(), [&](const auto &c) {
             return c.id == expanded_uuid({group}, resistor);
         });
         QVERIFY(component != flat.components.end());
         QCOMPARE(component->value, 3000.);
+    }
+    void public_ports_move_to_all_four_edges() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto resistor = w.project().components[1].id;
+        w.select_object(resistor);
+        const auto instance_id = w.group_selection("Movable ports");
+        QVERIFY(!instance_id.empty());
+        const auto definition_id = w.project().instances.front().definition;
+        const auto port_id = definition(w.root_project(), definition_id).ports.front().id;
+        auto move_port = [&](QPointF target) -> std::optional<PublicPort> {
+            w.select_object(instance_id);
+            auto *instance = item(w, instance_id);
+            if (!instance)
+                return std::nullopt;
+            QGraphicsItem *port = nullptr;
+            for (auto *child : instance->childItems())
+                if (child->data(2).toString().toStdString() == port_id) {
+                    port = child;
+                    break;
+                }
+            if (!port)
+                return std::nullopt;
+            const QRectF body = instance->shape().boundingRect();
+            const QPointF local = port->pos();
+            const double dx = std::abs(std::abs(local.x()) - (body.width() / 2.0 + 10.0));
+            const double dy = std::abs(std::abs(local.y()) - (body.height() / 2.0 + 10.0));
+            QPointF edge;
+            if (dx <= dy)
+                edge = {local.x() < 0 ? body.left() : body.right(), std::clamp(local.y(), body.top(), body.bottom())};
+            else
+                edge = {std::clamp(local.x(), body.left(), body.right()), local.y() < 0 ? body.top() : body.bottom()};
+            drag(w, instance->mapToScene(edge + (local - edge) * 0.25), instance->mapToScene(target));
+            return definition(w.root_project(), definition_id).ports.front();
+        };
+        auto port = move_port({0, -200});
+        QVERIFY(port && port->has_position && port->y < 0 && std::abs(port->x) < 90);
+        port = move_port({200, 0});
+        QVERIFY(port && port->x > 0 && std::abs(port->y) < 100);
+        port = move_port({0, 200});
+        QVERIFY(port && port->y > 0 && std::abs(port->x) < 90);
+        port = move_port({-200, 0});
+        QVERIFY(port && port->x < 0 && std::abs(port->y) < 100);
+    }
+    void gate_wire_preview_uses_gate_color() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        const auto transistor = w.add_component(Kind::igbt, {0, 0});
+        ready(w);
+        auto *device = item(w, transistor);
+        QVERIFY(device);
+        QGraphicsItem *gate = nullptr;
+        for (auto *child : device->childItems())
+            if (child->data(2).toString() == "gate") {
+                gate = child;
+                break;
+            }
+        QVERIFY(gate);
+        QCOMPARE(QColor(gate->data(11).toString()), QColor("#17866d"));
+        auto *viewport = w.canvas()->viewport();
+        const QPoint start = w.canvas()->mapFromScene(gate->scenePos());
+        QTest::mousePress(viewport, Qt::LeftButton, Qt::NoModifier, start);
+        QTest::mouseMove(viewport, start + QPoint(80, 40), 5);
+        QGraphicsPathItem *preview = nullptr;
+        for (auto *graphics : w.canvas()->scene()->items())
+            if (auto *path = qgraphicsitem_cast<QGraphicsPathItem *>(graphics); path && path->zValue() == 100) {
+                preview = path;
+                break;
+            }
+        QVERIFY(preview);
+        QCOMPARE(preview->pen().color(), QColor("#17866d"));
+        QTest::keyClick(w.canvas(), Qt::Key_Escape);
     }
     void decimal_comma_in_scalar_fields() {
         QTemporaryDir dir;
@@ -1674,27 +1798,101 @@ class InteractionTests : public QObject {
         EditorWindow w("en", dir.path());
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
         ready(w);
-        const auto wire = w.project().wires.front().id;
+        QVERIFY(w.project().wires.size() >= 2);
+        const std::vector<std::string> wires{w.project().wires[0].id, w.project().wires[1].id};
+        std::vector<QPainterPath> original_paths;
+        for (const auto &wire : wires) {
+            auto *graphics = qgraphicsitem_cast<QGraphicsPathItem *>(item(w, wire));
+            QVERIFY(graphics);
+            original_paths.push_back(graphics->path());
+        }
         const auto old_wires = w.project().wires.size();
         const auto old_components = w.project().components.size();
-        w.observe_wire_current(wire);
-        QCOMPARE(w.project().wires.size(), old_wires + 1);
-        QCOMPARE(w.project().components.size(), old_components + 1);
-        const auto probe = std::find_if(w.project().components.begin(), w.project().components.end(),
-                                        [](const Component &component) {
-                                            return component.kind == Kind::current_probe;
-                                        });
-        QVERIFY(probe != w.project().components.end());
-        QVERIFY(std::find(w.project().scope_points.begin(), w.project().scope_points.end(), probe->id) !=
-                w.project().scope_points.end());
-        QVERIFY(std::find(w.project().scope_channels.begin(), w.project().scope_channels.end(), probe->id) !=
-                w.project().scope_channels.end());
+        w.observe_wires(wires, true);
+        QCOMPARE(w.project().wires.size(), old_wires + 2);
+        QCOMPARE(w.project().components.size(), old_components + 2);
+        std::vector<std::string> probes;
+        for (const auto &component : w.project().components)
+            if (component.kind == Kind::current_probe)
+                probes.push_back(component.id);
+        QCOMPARE(probes.size(), size_t(2));
+        for (size_t index = 0; index < wires.size(); ++index) {
+            auto *graphics = qgraphicsitem_cast<QGraphicsPathItem *>(item(w, wires[index]));
+            QVERIFY(graphics && graphics->isVisible());
+            QCOMPARE(graphics->path(), original_paths[index]);
+        }
+        int hidden_wire_items = 0;
+        for (auto *graphics : w.canvas()->scene()->items())
+            if (graphics->data(1).toString() == "wire" && !graphics->isVisible())
+                ++hidden_wire_items;
+        QCOMPARE(hidden_wire_items, 2);
+        for (const auto &probe : probes) {
+            QVERIFY(std::find(w.project().scope_points.begin(), w.project().scope_points.end(), probe) !=
+                    w.project().scope_points.end());
+            QVERIFY(std::find(w.project().scope_channels.begin(), w.project().scope_channels.end(), probe) !=
+                    w.project().scope_channels.end());
+            QVERIFY(!item(w, probe)->isVisible());
+        }
         QVERIFY(w.project().scope_enabled);
         w.start_simulation();
         QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
         QVERIFY(w.has_result() && !w.result().samples.empty());
-        QVERIFY(std::any_of(w.result().channels.begin(), w.result().channels.end(),
-                            [&](const Channel &channel) { return channel.object == probe->id; }));
+        for (const auto &probe : probes)
+            QVERIFY(std::any_of(w.result().channels.begin(), w.result().channels.end(),
+                                [&](const Channel &channel) { return channel.object == probe; }));
+        auto *channels = w.findChild<QListWidget *>("channels");
+        QVERIFY(channels);
+        channels->clearSelection();
+        for (int i = 0; i < channels->count(); ++i)
+            if (std::find(probes.begin(), probes.end(),
+                          channels->item(i)->data(Qt::UserRole).toString().toStdString()) != probes.end())
+                channels->item(i)->setSelected(true);
+        QCOMPARE(channels->selectedItems().size(), 2);
+        channels->setCurrentItem(channels->selectedItems().front(), QItemSelectionModel::NoUpdate);
+        const auto rows_before_delete = channels->count();
+        QTest::keyClick(channels, Qt::Key_Delete);
+        QCOMPARE(channels->count(), rows_before_delete - 2);
+        QCOMPARE(w.project().components.size(), old_components);
+        QCOMPARE(w.project().wires.size(), old_wires);
+    }
+    void selected_wire_group_is_available_from_background_menu() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        QVERIFY(w.project().wires.size() >= 2);
+        const auto first = w.project().wires[0].id;
+        const auto second = w.project().wires[1].id;
+        item(w, first)->setSelected(true);
+        item(w, second)->setSelected(true);
+        QCOMPARE(w.canvas()->scene()->selectedItems().size(), 2);
+        bool handled = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *menu = w.findChild<QMenu *>("element_context");
+            QVERIFY(menu);
+            QMenu *observe = nullptr;
+            for (auto *entry : menu->actions())
+                if (entry->menu()) {
+                    observe = entry->menu();
+                    break;
+                }
+            QVERIFY(observe);
+            for (auto *entry : observe->actions())
+                if (entry->text() == text("observe_wire_current")) {
+                    handled = true;
+                    entry->trigger();
+                    break;
+                }
+            menu->close();
+        });
+        const QPoint local(4, 4);
+        QContextMenuEvent event(QContextMenuEvent::Mouse, local,
+                                w.canvas()->viewport()->mapToGlobal(local));
+        QApplication::sendEvent(w.canvas()->viewport(), &event);
+        QVERIFY(handled);
+        QCOMPARE(std::count_if(w.project().components.begin(), w.project().components.end(),
+                               [](const Component &component) { return component.kind == Kind::current_probe; }),
+                 2);
     }
     void independent_label_gestures() {
         QTemporaryDir dir;

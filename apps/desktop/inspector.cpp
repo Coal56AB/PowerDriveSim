@@ -50,9 +50,9 @@ void EditorWindow::update_command_state() {
         action->setEnabled(editing_allowed());
     for (const auto &[key, widget] : property_editors_)
         if (auto *line = qobject_cast<QLineEdit *>(widget))
-            line->setReadOnly(!editing_allowed());
+            line->setReadOnly(!editing_allowed() || widget->property("parameter_bound").toBool());
         else
-            widget->setEnabled(editing_allowed());
+            widget->setEnabled(editing_allowed() && !widget->property("parameter_bound").toBool());
     for (auto *field : {stop_, step_})
         if (field)
             field->setReadOnly(running());

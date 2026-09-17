@@ -52,6 +52,18 @@ void Canvas::set_grid_size(double size) {
     grid_size_ = std::clamp(size, 5.0, 100.0);
     viewport()->update();
 }
+void Canvas::set_grid_style(GridStyle style) {
+    grid_style_ = style;
+    viewport()->update();
+}
+void Canvas::set_grid_line_width(double width) {
+    grid_line_width_ = std::clamp(width, 0.1, 8.0);
+    viewport()->update();
+}
+void Canvas::set_grid_dot_size(double size) {
+    grid_dot_size_ = std::clamp(size, 0.5, 8.0);
+    viewport()->update();
+}
 QPointF Canvas::snap_point(QPointF point) const {
     return snap_to(point, grid_size_);
 }
@@ -144,17 +156,26 @@ QGraphicsItem *Canvas::object_at(QPoint p) const {
     return nullptr;
 }
 QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
-    if (port_at(point))
-        return nullptr;
     const auto scene_point = mapToScene(point);
     for (auto *root : scene()->selectedItems()) {
-        if (!root || root->data(1).toString() != "atom")
+        if (!root || root->data(1).toString() != "atom" || !root->data(10).toBool())
             continue;
+        const QRectF body = root->shape().boundingRect();
         for (auto *child : root->childItems()) {
-            if (child->data(1).toString() != "port" || std::abs(child->pos().x()) < 90.0)
+            if (child->data(1).toString() != "port")
                 continue;
+            const QPointF local = child->pos();
+            const double vertical_edge_distance = std::abs(std::abs(local.x()) - (body.width() / 2.0 + 10.0));
+            const double horizontal_edge_distance = std::abs(std::abs(local.y()) - (body.height() / 2.0 + 10.0));
+            QPointF local_edge;
+            if (vertical_edge_distance <= horizontal_edge_distance)
+                local_edge = {local.x() < body.center().x() ? body.left() : body.right(),
+                              std::clamp(local.y(), body.top(), body.bottom())};
+            else
+                local_edge = {std::clamp(local.x(), body.left(), body.right()),
+                              local.y() < body.center().y() ? body.top() : body.bottom()};
             const QPointF port = child->scenePos();
-            const QPointF edge = root->mapToScene(QPointF(child->pos().x() < 0 ? -90.0 : 90.0, child->pos().y()));
+            const QPointF edge = root->mapToScene(local_edge);
             QLineF lead(edge, port);
             if (lead.length() < 1e-6)
                 continue;
@@ -162,8 +183,7 @@ QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
             const QPointF w = scene_point - edge;
             const double t = std::clamp(QPointF::dotProduct(v, w) / QPointF::dotProduct(v, v), 0.0, 1.0);
             const QPointF closest = edge + v * t;
-            if (QLineF(scene_point, closest).length() <= 8.0 / transform().m11() &&
-                QLineF(scene_point, port).length() > 10.0 / transform().m11())
+            if (QLineF(scene_point, closest).length() <= 8.0 / transform().m11())
                 return child;
         }
     }
@@ -283,7 +303,18 @@ void Canvas::begin_wire(WireAnchor source) {
     source_ = std::move(source);
     connect_mode_ = false;
     wire_origin_ = {source_.point.x, source_.point.y};
-    wire_preview_ = scene()->addPath(QPainterPath(wire_origin_), QPen(theme_colors().accent, 1.6, Qt::DashLine));
+    wire_preview_color_ = QColor("#467fe0");
+    if (!source_.endpoint.object.empty())
+        for (auto *item : scene()->items())
+            if (item->data(1).toString() == "port" &&
+                item->data(0).toString().toStdString() == source_.endpoint.object &&
+                item->data(2).toString().toStdString() == source_.endpoint.port) {
+                const QColor color(item->data(11).toString());
+                if (color.isValid())
+                    wire_preview_color_ = color;
+                break;
+            }
+    wire_preview_ = scene()->addPath(QPainterPath(wire_origin_), QPen(wire_preview_color_, 1.6, Qt::DashLine));
     wire_preview_->setZValue(100);
     wire_preview_->setAcceptedMouseButtons(Qt::NoButton);
     gesture_ = Gesture::wiring;
@@ -365,7 +396,10 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
         return;
     }
     if (e->button() != Qt::LeftButton) {
-        QGraphicsView::mousePressEvent(e);
+        // A context click must not collapse an existing multi-selection. The
+        // context handler decides whether an unselected target becomes the
+        // new selection after it has captured the selected group.
+        e->accept();
         return;
     }
     if (editing_gesture() && gesture_ != Gesture::placing) {
@@ -405,9 +439,9 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
         }
         QGraphicsItem *resize_target = object;
         std::optional<ResizeHit> resize_origin;
-        if (resize_target)
+        if (resize_target && !port_at(e->pos()))
             resize_origin = resize_corner(resize_target, e->pos(), this);
-        if (!resize_origin)
+        if (!resize_origin && !port_at(e->pos()))
             for (auto *item : scene()->selectedItems())
                 if ((resize_origin = resize_corner(item, e->pos(), this))) {
                     resize_target = item;
@@ -433,7 +467,7 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
             return;
         }
     }
-    if (editable_ && object) {
+    if (editable_ && object && !port_at(e->pos())) {
         if (auto origin = resize_corner(object, e->pos(), this)) {
             positions_.clear();
             transforms_.clear();
@@ -614,7 +648,16 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
         QPointF local = parent->mapFromScene(pos);
         if (!free)
             local = parent->mapFromScene(snap_point(parent->mapToScene(local)));
-        port_anchor_->setPos(QPointF(local.x() < 0 ? -100.0 : 100.0, local.y()));
+        const QRectF body = parent->shape().boundingRect();
+        const std::array<QPointF, 4> candidates = {
+            QPointF(body.left() - 10.0, std::clamp(local.y(), body.top(), body.bottom())),
+            QPointF(body.right() + 10.0, std::clamp(local.y(), body.top(), body.bottom())),
+            QPointF(std::clamp(local.x(), body.left(), body.right()), body.top() - 10.0),
+            QPointF(std::clamp(local.x(), body.left(), body.right()), body.bottom() + 10.0)};
+        const auto closest = std::min_element(candidates.begin(), candidates.end(), [&](QPointF a, QPointF b) {
+            return QLineF(local, a).length() < QLineF(local, b).length();
+        });
+        port_anchor_->setPos(*closest);
         port_anchor_->setData(9, true);
         if (movement)
             movement();
@@ -637,8 +680,7 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
         auto path =
             route_preview ? route_preview(a, b, wire_origin_, end) : manual_route(wire_origin_, end, {});
         wire_preview_->setPath(path);
-        wire_preview_->setPen(
-            QPen(QColor(!valid ? "#cb5563" : (test ? "#16a085" : "#467fe0")), 1.6, Qt::DashLine));
+        wire_preview_->setPen(QPen(valid ? wire_preview_color_ : QColor("#cb5563"), 1.6, Qt::DashLine));
         viewport()->update();
     } else if (gesture_ == Gesture::routing && route_item_ && dragged_) {
         auto points = original_route_;
@@ -725,6 +767,18 @@ void Canvas::mouseReleaseEvent(QMouseEvent *e) {
         return;
     }
     scroll_timer_.stop();
+    if (gesture_ == Gesture::moving_port && port_anchor_ && !dragged_) {
+        WireAnchor source;
+        source.endpoint = {port_anchor_->data(0).toString().toStdString(),
+                           port_anchor_->data(2).toString().toStdString()};
+        const QPointF point = port_anchor_->scenePos();
+        source.point = {point.x(), point.y()};
+        port_anchor_ = nullptr;
+        gesture_ = Gesture::idle;
+        begin_wire(std::move(source));
+        e->accept();
+        return;
+    }
     if (gesture_ == Gesture::panning)
         gesture_ = resume_;
     if (gesture_ == Gesture::wiring || gesture_ == Gesture::reconnecting) {
@@ -775,6 +829,17 @@ void Canvas::mouseReleaseEvent(QMouseEvent *e) {
     viewport()->update();
 }
 void Canvas::mouseDoubleClickEvent(QMouseEvent *e) {
+    // A composite always opens directly. Do not create an inline name editor
+    // before hierarchy navigation; a stale editor can otherwise keep stealing
+    // focus when entering or leaving a locked definition.
+    if (auto *object = object_at(e->pos()); object && object->data(10).toBool()) {
+        cancel_wire();
+        gesture_ = Gesture::idle;
+        if (open_object)
+            open_object(object->data(0).toString().toStdString());
+        e->accept();
+        return;
+    }
     if (editable_ && edit_text && edit_text(e->pos())) {
         e->accept();
         return;
@@ -819,12 +884,22 @@ void Canvas::wheelEvent(QWheelEvent *e) {
 }
 void Canvas::drawBackground(QPainter *p, const QRectF &rect) {
     p->fillRect(rect, theme_colors().canvas);
-    if (transform().m11() < .3)
+    if (grid_style_ == GridStyle::hidden || transform().m11() < .3)
         return;
-    p->setPen(QPen(theme_colors().grid, 0));
-    for (double x = std::floor(rect.left() / grid_size_) * grid_size_; x < rect.right(); x += grid_size_)
+    if (grid_style_ == GridStyle::lines) {
+        p->setPen(QPen(theme_colors().grid, grid_line_width_));
+        for (double x = std::floor(rect.left() / grid_size_) * grid_size_; x < rect.right(); x += grid_size_)
+            p->drawLine(QLineF(x, rect.top(), x, rect.bottom()));
         for (double y = std::floor(rect.top() / grid_size_) * grid_size_; y < rect.bottom(); y += grid_size_)
-            p->drawPoint(QPointF(x, y));
+            p->drawLine(QLineF(rect.left(), y, rect.right(), y));
+    } else {
+        p->setPen(Qt::NoPen);
+        p->setBrush(theme_colors().grid);
+        const double radius = grid_dot_size_ / 2.0;
+        for (double x = std::floor(rect.left() / grid_size_) * grid_size_; x < rect.right(); x += grid_size_)
+            for (double y = std::floor(rect.top() / grid_size_) * grid_size_; y < rect.bottom(); y += grid_size_)
+                p->drawEllipse(QPointF(x, y), radius, radius);
+    }
 }
 void Canvas::drawForeground(QPainter *p, const QRectF &) {
     p->save();

@@ -1,5 +1,6 @@
 #include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/instrumentation.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "core/model/hierarchy.hpp"
 #include <QCheckBox>
@@ -386,59 +387,124 @@ void EditorWindow::observe_component_terminals(const std::string &id) {
     banner_->setText(text("record_next_run"));
 }
 void EditorWindow::observe_wire_current(const std::string &id) {
-    if (running() || !wires_.count(id))
+    observe_wires({id}, true);
+}
+void EditorWindow::observe_wires(const std::vector<std::string> &ids, bool current) {
+    if (running() || ids.empty())
         return;
-    auto found = std::find_if(project().wires.begin(), project().wires.end(),
-                              [&](const Wire &wire) { return wire.id == id; });
-    if (found == project().wires.end())
-        return;
-    const auto original = *found;
-    const auto path = wires_.at(id)->path();
-    if (path.elementCount() < 2)
-        return;
-    QPointF center;
-    QPointF direction;
-    double longest = -1;
-    for (int i = 1; i < path.elementCount(); ++i) {
-        const auto ea = path.elementAt(i - 1), eb = path.elementAt(i);
-        const QPointF a(ea.x, ea.y), b(eb.x, eb.y);
-        const double length = QLineF(a, b).length();
-        if (length > longest) {
-            longest = length;
-            center = (a + b) / 2.0;
-            direction = b - a;
+    if (!current) {
+        const auto resolved = resolve_connections(root_project());
+        std::vector<std::string> keys;
+        for (const auto &id : ids) {
+            auto found = std::find_if(project().wires.begin(), project().wires.end(),
+                                      [&](const Wire &wire) { return wire.id == id; });
+            if (found == project().wires.end())
+                continue;
+            auto type = port_type(project(), found->from);
+            std::string key;
+            if (type.domain == Domain::electrical) {
+                Endpoint global{expanded_uuid(hierarchy_path(), found->from.object), found->from.port};
+                if (auto net = resolved.nets.find(endpoint_key(global)); net != resolved.nets.end())
+                    key = net->second;
+            } else {
+                auto source = type.domain == Domain::gate
+                                  ? (type.direction == Direction::input ? found->from : found->to)
+                                  : (type.direction == Direction::output ? found->from : found->to);
+                auto global = source;
+                global.object = expanded_uuid(hierarchy_path(), source.object);
+                const auto expanded = flatten(root_project());
+                const auto alias = expanded.terminals.find(endpoint_key(global));
+                key = (port_type(project(), source).domain == Domain::gate ? "gate/" : "") +
+                      (alias == expanded.terminals.end() ? global.object : alias->second.object);
+            }
+            if (!key.empty() && std::find(keys.begin(), keys.end(), key) == keys.end())
+                keys.push_back(std::move(key));
         }
-    }
-    center = canvas_->snap_point(center);
-    const auto probe = new_uuid();
-    unsigned turn = 0;
-    if (std::abs(direction.x()) >= std::abs(direction.y()))
-        turn = direction.x() >= 0 ? 0u : 2u;
-    else
-        turn = direction.y() >= 0 ? 1u : 3u;
-    try {
-        document_->apply("Insert current probe", [&](Project &p) {
-            std::erase_if(p.wires, [&](const Wire &wire) { return wire.id == id; });
-            Component sensor{probe, "IP" + std::to_string(p.components.size() + 1),
-                             Kind::current_probe, "", "", 0, 0, center.x(), center.y(), false};
-            sensor.orientation.quarter_turns = turn;
-            p.components.push_back(std::move(sensor));
-            auto add_wire = [&](Endpoint from, Endpoint to) {
-                Wire wire{new_uuid(), std::move(from), std::move(to), {}};
-                wire.color = original.color;
-                wire.width = original.width;
-                wire.line = original.line;
-                p.wires.push_back(std::move(wire));
-            };
-            add_wire(original.from, {probe, "p"});
-            add_wire({probe, "n"}, original.to);
-            if (std::find(p.scope_points.begin(), p.scope_points.end(), probe) == p.scope_points.end())
-                p.scope_points.push_back(probe);
-            if (std::find(p.scope_channels.begin(), p.scope_channels.end(), probe) == p.scope_channels.end())
-                p.scope_channels.push_back(probe);
+        if (keys.empty())
+            return;
+        document_->apply("Observe wires", [&](Project &p) {
             p.scope_enabled = true;
+            for (const auto &key : keys) {
+                if (std::find(p.scope_points.begin(), p.scope_points.end(), key) == p.scope_points.end())
+                    p.scope_points.push_back(key);
+                if (std::find(p.scope_channels.begin(), p.scope_channels.end(), key) == p.scope_channels.end())
+                    p.scope_channels.push_back(key);
+            }
         });
-        selected_ = probe;
+        refresh();
+        bottom_->setCurrentIndex(1);
+        banner_->setText(text("record_next_run"));
+        return;
+    }
+    struct Request {
+        std::string wire, probe;
+        Wire original;
+        QPointF center;
+        unsigned turn = 0;
+    };
+    std::vector<Request> requests;
+    for (const auto &id : ids) {
+        if (!wires_.count(id) || std::any_of(requests.begin(), requests.end(),
+                                             [&](const Request &request) { return request.wire == id; }))
+            continue;
+        auto found = std::find_if(project().wires.begin(), project().wires.end(),
+                                  [&](const Wire &wire) { return wire.id == id; });
+        if (found == project().wires.end() || port_type(project(), found->from).domain != Domain::electrical ||
+            port_type(project(), found->to).domain != Domain::electrical)
+            continue;
+        const auto path = wires_.at(id)->path();
+        if (path.elementCount() < 2)
+            continue;
+        QPointF center, direction;
+        double longest = -1;
+        for (int i = 1; i < path.elementCount(); ++i) {
+            const auto ea = path.elementAt(i - 1), eb = path.elementAt(i);
+            const QPointF a(ea.x, ea.y), b(eb.x, eb.y);
+            const double length = QLineF(a, b).length();
+            if (length > longest) {
+                longest = length;
+                center = (a + b) / 2.0;
+                direction = b - a;
+            }
+        }
+        unsigned turn = 0;
+        if (std::abs(direction.x()) >= std::abs(direction.y()))
+            turn = direction.x() >= 0 ? 0u : 2u;
+        else
+            turn = direction.y() >= 0 ? 1u : 3u;
+        requests.push_back({id, new_uuid(), *found, canvas_->snap_point(center), turn});
+    }
+    if (requests.empty())
+        return;
+    try {
+        document_->apply("Observe wire currents", [&](Project &p) {
+            p.scope_enabled = true;
+            for (const auto &request : requests) {
+                std::erase_if(p.wires, [&](const Wire &wire) { return wire.id == request.wire; });
+                Component sensor{request.probe, "IP" + std::to_string(p.components.size() + 1),
+                                 Kind::current_probe, "", "", 0, 0,
+                                 request.center.x(), request.center.y(), false};
+                sensor.orientation.quarter_turns = request.turn;
+                p.components.push_back(std::move(sensor));
+                mark_hidden_current_probe(p, request.probe);
+                auto add_wire = [&](std::string id, Endpoint from, Endpoint to, std::vector<Point> bends) {
+                    Wire wire{std::move(id), std::move(from), std::move(to), std::move(bends)};
+                    wire.color = request.original.color;
+                    wire.width = request.original.width;
+                    wire.line = request.original.line;
+                    p.wires.push_back(std::move(wire));
+                };
+                // The primary half retains the original identity and complete
+                // visual route. The editor renders both solver branches as
+                // this single seamless conductor.
+                add_wire(request.original.id, request.original.from, {request.probe, "p"},
+                         request.original.bends);
+                add_wire(new_uuid(), {request.probe, "n"}, request.original.to, {});
+                p.scope_points.push_back(request.probe);
+                p.scope_channels.push_back(request.probe);
+            }
+        });
+        selected_.clear();
         refresh();
         bottom_->setCurrentIndex(1);
         banner_->setText(text("record_next_run"));
@@ -458,10 +524,40 @@ void EditorWindow::remove_scope_point() {
         for (const auto &key : keys) {
             std::erase(p.scope_points, key);
             std::erase(p.scope_channels, key);
+            auto sensor = std::find_if(p.components.begin(), p.components.end(), [&](const Component &component) {
+                return component.id == key && component.kind == Kind::current_probe &&
+                       is_hidden_current_probe(p, component.id);
+            });
+            if (sensor == p.components.end())
+                continue;
+            const auto view = [&]() -> std::optional<HiddenCurrentWireView> {
+                for (const auto &wire : p.wires)
+                    if (wire.from.object == key || wire.to.object == key)
+                        if (auto candidate = hidden_current_wire_view(p, wire.id))
+                            return candidate;
+                return {};
+            }();
+            if (view) {
+                const auto primary = std::find_if(p.wires.begin(), p.wires.end(),
+                                                  [&](const Wire &wire) { return wire.id == view->primary; });
+                Wire merged{view->primary, view->from, view->to, view->bends};
+                if (primary != p.wires.end()) {
+                    merged.color = primary->color;
+                    merged.width = primary->width;
+                    merged.line = primary->line;
+                }
+                std::erase_if(p.wires, [&](const Wire &wire) {
+                    return wire.from.object == key || wire.to.object == key;
+                });
+                if (merged.from != merged.to)
+                    p.wires.push_back(std::move(merged));
+            }
+            std::erase_if(p.components, [&](const Component &component) { return component.id == key; });
+            std::erase_if(p.labels, [&](const LabelLayout &label) { return label.object == key; });
+            unmark_hidden_current_probe(p, key);
         }
     });
-    refresh_channel_catalog();
-    choose_channels();
+    refresh();
 }
 void EditorWindow::open_plot(const std::string &local_id) {
     const auto id = expanded_uuid(hierarchy_path(), local_id);

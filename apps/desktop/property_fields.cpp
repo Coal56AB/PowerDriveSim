@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "core/model/hierarchy.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
@@ -16,6 +17,7 @@
 #include <QPixmap>
 #include <QScopedValueRollback>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QTableWidget>
 #include <algorithm>
 #include <cmath>
@@ -30,6 +32,39 @@ bool same_field_contract(const QJsonObject &a, const QJsonObject &b) {
     return true;
 }
 } // namespace
+QWidget *EditorWindow::create_inspector_page() {
+    auto *page = new QWidget;
+    properties_ = new QFormLayout(page);
+    properties_->setContentsMargins(16, 18, 16, 18);
+    properties_->setVerticalSpacing(14);
+    properties_->setRowWrapPolicy(QFormLayout::DontWrapRows);
+    properties_->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    inspector_hint_ = new QLabel(text("inspector_empty"));
+    inspector_hint_->setWordWrap(true);
+    inspector_hint_->setStyleSheet("color:palette(placeholder-text);padding:18px 0;");
+    properties_->addRow(inspector_hint_);
+    inspector_type_ = new QLabel;
+    inspector_type_->setObjectName("property_native_type");
+    inspector_type_->setStyleSheet("color:palette(placeholder-text);");
+    properties_->addRow(text("native_type"), inspector_type_);
+
+    property_editors_.clear();
+    property_imports_.clear();
+    active_fields_ = {};
+    build_property_editors();
+
+    apply_button_ = new QPushButton(text("apply"));
+    apply_button_->setObjectName("apply_properties");
+    properties_->addRow(apply_button_);
+    property_error_ = new QLabel;
+    property_error_->setObjectName("property_error");
+    property_error_->setStyleSheet("color:palette(bright-text)");
+    property_error_->setWordWrap(true);
+    properties_->addRow(property_error_);
+    connect(apply_button_, &QPushButton::clicked, this, [this] { apply_inspector(); });
+    return page;
+}
 bool property_visible(const Project &project, const std::string &id, const QJsonObject &field) {
     const auto conditions = field.value("when").toObject();
     for (auto condition = conditions.begin(); condition != conditions.end(); ++condition) {
@@ -230,6 +265,22 @@ void EditorWindow::fill_inspector() {
     if (inspector_id_ != selected_)
         remember_draft();
     QScopedValueRollback<bool> loading(inspector_loading_, true);
+    auto *old_page = inspector_stack_->currentWidget();
+    auto *new_page = create_inspector_page();
+    auto publish = [&] {
+        properties_->activate();
+        inspector_stack_->addWidget(new_page);
+        inspector_stack_->setCurrentWidget(new_page);
+        if (old_page) {
+            inspector_stack_->removeWidget(old_page);
+            // The retired page remains alive until the current widget signal
+            // unwinds. Remove its lookup names immediately so all subsequent
+            // queries resolve exclusively to the fully populated new page.
+            for (auto *child : old_page->findChildren<QObject *>())
+                child->setObjectName({});
+            old_page->deleteLater();
+        }
+    };
     inspector_id_ = selected_;
     property_error_->clear();
     active_fields_ = {};
@@ -251,6 +302,7 @@ void EditorWindow::fill_inspector() {
         }
         widget->hide();
         widget->setProperty("draft", false);
+        widget->setProperty("parameter_bound", false);
     }
     auto targets = selected_ids();
     std::erase_if(targets, [&](const std::string &id) { return !atoms_.count(id) && !wires_.count(id); });
@@ -261,8 +313,10 @@ void EditorWindow::fill_inspector() {
     inspector_hint_->setText(text("inspector_empty"));
     inspector_type_->setVisible(valid && targets.size() == 1);
     apply_button_->setVisible(valid);
-    if (!valid)
+    if (!valid) {
+        publish();
         return;
+    }
     std::map<QString, QJsonObject> common;
     std::vector<QString> field_order;
     bool first = true;
@@ -370,15 +424,30 @@ void EditorWindow::fill_inspector() {
         set_field_text(widget, contents);
         widget->setProperty("loaded_text", contents);
         widget->show();
-        const auto label = field.contains("displayLabel")
-                               ? field.value("displayLabel").toString()
-                               : text(field.value("label").toString().toUtf8().constData());
+        auto label = field.contains("displayLabel")
+                         ? field.value("displayLabel").toString()
+                         : text(field.value("label").toString().toUtf8().constData());
+        if (!hierarchy_path().empty()) {
+            const auto &definition = pds::definition(root_project(), document_->current_definition());
+            auto binding = std::find_if(definition.parameters.begin(), definition.parameters.end(),
+                [&](const PublicParameter &parameter) {
+                    return parameter.object == targets.front() && parameter.field == key.toStdString();
+                });
+            if (targets.size() == 1 && binding != definition.parameters.end()) {
+                widget->setProperty("parameter_bound", true);
+                widget->setToolTip(text("parameter_from_parent").arg(QString::fromStdString(binding->name)));
+                label += "  ← " + QString::fromStdString(binding->name);
+            }
+        }
         if (field.value("span").toBool()) {
             properties_->insertRow(row++, widget);
             widget->setAccessibleName(label);
             widget->setToolTip(label);
-        } else
-            properties_->insertRow(row++, label, widget);
+        } else {
+            auto *caption = new QLabel(label);
+            caption->setToolTip(label);
+            properties_->insertRow(row++, caption, widget);
+        }
         if (field.value("editor") == "samples") {
             auto *table = qobject_cast<QTableWidget *>(widget);
             table->setHorizontalHeaderLabels(
@@ -390,6 +459,7 @@ void EditorWindow::fill_inspector() {
         active_fields_.append(field);
     }
     update_command_state();
+    publish();
 }
 void EditorWindow::import_samples(const QString &key) {
     if (!editing_allowed() || inspector_id_ != selected_ || selected_.empty())
@@ -458,10 +528,7 @@ void EditorWindow::apply_inspector() {
         for (const auto &target : targets)
             drafts_.erase(target);
         property_error_->clear();
-        setUpdatesEnabled(false);
         refresh();
-        setUpdatesEnabled(true);
-        update();
     } catch (const std::exception &e) {
         property_error_->setText(QString::fromUtf8(e.what()));
         show_error(e);

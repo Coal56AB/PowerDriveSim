@@ -38,8 +38,11 @@ class QTableWidget;
 class QToolBar;
 class QToolButton;
 class QMenu;
+class QStackedWidget;
+class QPainter;
 namespace pds::desktop {
 QIcon component_icon(int id, bool framed = true);
+void paint_component_symbol(QPainter &painter, int id, bool framed = true);
 int definition_icon_id(const std::string &id);
 bool bundled_example(const QString &path);
 inline constexpr int wire_segment_role = 3; // 1-based path edge; zero selects the whole wire.
@@ -50,6 +53,7 @@ bool property_visible(const Project &project,const std::string &id,const QJsonOb
 void init_language(const QString &language);
 class Canvas : public QGraphicsView {
   public:
+    enum class GridStyle { dots, lines, hidden };
     explicit Canvas(QWidget *parent = nullptr);
     std::function<void(QPointF)> place;
     std::function<void()> movement, released;
@@ -76,6 +80,12 @@ class Canvas : public QGraphicsView {
     std::optional<Endpoint> hovered_port() const;
     void set_grid_size(double size);
     double grid_size() const { return grid_size_; }
+    void set_grid_style(GridStyle style);
+    GridStyle grid_style() const { return grid_style_; }
+    void set_grid_line_width(double width);
+    double grid_line_width() const { return grid_line_width_; }
+    void set_grid_dot_size(double size);
+    double grid_dot_size() const { return grid_dot_size_; }
     QPointF snap_point(QPointF point) const;
 
   protected:
@@ -96,6 +106,9 @@ class Canvas : public QGraphicsView {
     Gesture gesture_ = Gesture::idle, resume_ = Gesture::idle;
     bool editable_ = true, dragged_ = false, connect_mode_ = false;
     double grid_size_ = 20.0;
+    GridStyle grid_style_ = GridStyle::dots;
+    double grid_line_width_ = 1.0;
+    double grid_dot_size_ = 1.0;
     QGraphicsItem *ghost_ = nullptr;
     WireAnchor source_;
     std::string edited_wire_;
@@ -123,6 +136,7 @@ class Canvas : public QGraphicsView {
     void begin_wire(WireAnchor source);
     QPointF wire_origin_;
     QGraphicsPathItem *wire_preview_ = nullptr;
+    QColor wire_preview_color_ = QColor("#467fe0");
     std::optional<Endpoint> port_at(QPoint point) const;
     QPoint pan_origin_, last_mouse_;
 };
@@ -181,6 +195,7 @@ class Scope : public QWidget {
     Domain domain_ = Domain::time;
     const Result *result_ = nullptr;
     std::map<int, ExtremaIndex> extrema_;
+    std::set<int> preview_channels_;
     std::pair<size_t, size_t> sample_extrema(int channel, size_t from, size_t to);
     std::vector<int> channels_;
     std::set<std::string> hidden_channels_;
@@ -318,6 +333,7 @@ class EditorWindow : public QMainWindow {
     void observe_object(const std::string &id);
     void observe_component_terminals(const std::string &id);
     void observe_wire_current(const std::string &id);
+    void observe_wires(const std::vector<std::string> &ids, bool current);
     void remove_scope_point();
 
   protected:
@@ -365,6 +381,7 @@ class EditorWindow : public QMainWindow {
     QLineEdit *name_ = nullptr, *value_ = nullptr, *stop_ = nullptr, *step_ = nullptr;
     QComboBox *method_ = nullptr;
     QFormLayout *properties_ = nullptr;
+    QStackedWidget *inspector_stack_ = nullptr;
     QLabel *banner_ = nullptr;
     QProgressBar *simulation_progress_ = nullptr;
     QLabel *inspector_hint_ = nullptr, *inspector_type_ = nullptr;
@@ -415,6 +432,7 @@ class EditorWindow : public QMainWindow {
     std::map<std::string, QPainterPath> base_wire_routes_;
     void build_ui();
     void load_component_specs();
+    QWidget *create_inspector_page();
     void build_property_editors();
     bool edit_text_at(QPoint position);
     void cancel_inline_edit();

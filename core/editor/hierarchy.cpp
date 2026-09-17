@@ -25,14 +25,29 @@ std::string Document::current_definition() const {
 void Document::rebuild_view() {
     while (!location_.empty()) {
         try {
-            const auto id = current_definition();
-            view_ = definition_project(current_, id);
+            Project level = current_;
+            std::string id;
+            for (const auto &step : location_) {
+                const auto instance = std::find_if(level.instances.begin(), level.instances.end(),
+                    [&](const Instance &candidate) { return candidate.id == step; });
+                if (instance == level.instances.end())
+                    throw Diagnostic("missing_instance", step, "Hierarchy path no longer exists");
+                id = instance->definition;
+                const auto &source = definition(current_, id);
+                auto body = definition_project(current_, id);
+                for (const auto &param : source.parameters) {
+                    auto override = std::find_if(instance->parameters.begin(), instance->parameters.end(),
+                        [&](const auto &value) { return value.first == param.id; });
+                    const double value = override == instance->parameters.end() ? param.value : override->second;
+                    if (param.object != "*")
+                        write_property(body, param.object,
+                                       valid_uuid(param.field) ? "parameter/" + param.field : param.field,
+                                       value);
+                }
+                level = std::move(body);
+            }
+            view_ = std::move(level);
             view_.id = derived_uuid("definition-editor:" + id);
-            for (const auto &param : definition(current_, id).parameters)
-                if (param.object != "*")
-                write_property(view_, param.object,
-                               valid_uuid(param.field) ? "parameter/" + param.field : param.field,
-                               param.value);
             view_.scope_enabled = current_.scope_enabled;
             view_.scope_channels = current_.scope_channels;
             view_.scope_begin = current_.scope_begin;
@@ -60,20 +75,30 @@ Project Document::merge_view(const Project &view) const {
         throw Diagnostic("missing_definition", current_definition(),
                          "Cannot remove the definition being edited");
     if (static_cast<const Schematic &>(view) != static_cast<const Schematic &>(view_)) {
-        static_cast<Schematic &>(*d) = view;
-        std::erase_if(d->view_options, [](const auto &options) { return options.plot.empty(); });
-        for (auto &param : d->parameters) {
-            if (param.object == "*")
-                continue;
-            const auto &old_parameters = definition(current_, current_definition()).parameters;
-            auto old = std::find_if(old_parameters.begin(), old_parameters.end(),
-                                    [&](const auto &old) { return old.id == param.id; });
-            if (old == old_parameters.end() || old->object != param.object || old->field != param.field)
-                continue;
-            const auto key = valid_uuid(param.field) ? "parameter/" + param.field : param.field;
-            if (read_property(view, param.object, key) != read_property(view_, param.object, key))
-                param.value = std::get<double>(read_property(view, param.object, key));
+        auto canonical = view;
+        const auto &original = definition(current_, current_definition());
+        // The instance view contains effective public-parameter overrides.
+        // Never bake those values back into the shared definition while an
+        // unrelated internal edit is merged; bound values are owned by the
+        // public parameter on the enclosing block.
+        for (const auto &param : d->parameters) {
+            const auto previous = std::find_if(original.parameters.begin(), original.parameters.end(),
+                [&](const PublicParameter &candidate) {
+                    return candidate.id == param.id && candidate.object == param.object &&
+                           candidate.field == param.field;
+                });
+            // A grouping operation may move a binding to a newly created
+            // nested instance. In that case its effective value is already
+            // carried by the operation and the stale pre-grouping object must
+            // not be addressed. Stable bindings are restored to their shared
+            // definition value so an instance override can never be baked in.
+            if (previous != original.parameters.end() && param.object != "*")
+                write_property(canonical, param.object,
+                               valid_uuid(param.field) ? "parameter/" + param.field : param.field,
+                               previous->value);
         }
+        static_cast<Schematic &>(*d) = canonical;
+        std::erase_if(d->view_options, [](const auto &options) { return options.plot.empty(); });
     }
     if (view.name != view_.name)
         d->name = view.name;

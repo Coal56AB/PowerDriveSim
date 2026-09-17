@@ -353,6 +353,11 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
         if (item && !item->isSelected())
             select_object(id);
     }
+    std::vector<std::string> selected_wire_ids;
+    for (const auto &selected : selected_ids())
+        if (std::any_of(project().wires.begin(), project().wires.end(),
+                        [&](const Wire &value) { return value.id == selected; }))
+            selected_wire_ids.push_back(selected);
     QMenu menu(this);
     menu.setObjectName("element_context");
     if (!id.empty()) {
@@ -397,9 +402,14 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
         const bool instance = std::any_of(project().instances.begin(), project().instances.end(),
                                           [&](const Instance &value) { return value.id == id; });
         if (wire) {
+            auto wire_ids = selected_wire_ids;
+            if (std::find(wire_ids.begin(), wire_ids.end(), id) == wire_ids.end())
+                wire_ids.push_back(id);
             auto *observe = menu.addMenu(text("observe"));
-            observe->addAction(text("observe_voltage"), this, [this, id] { observe_object(id); });
-            observe->addAction(text("observe_wire_current"), this, [this, id] { observe_wire_current(id); });
+            observe->addAction(text("observe_voltage"), this,
+                               [this, wire_ids] { observe_wires(wire_ids, false); });
+            observe->addAction(text("observe_wire_current"), this,
+                               [this, wire_ids] { observe_wires(wire_ids, true); });
         } else if (component || instance) {
             auto *observe = menu.addMenu(text("observe"));
             observe->addAction(text("observe_terminal_voltages"), this,
@@ -407,6 +417,14 @@ void EditorWindow::show_context(const std::string &id, QPoint global) {
             if (component_current)
                 observe->addAction(text("observe_current"), this, [this, id] { observe_object(id); });
         }
+    }
+    if (id.empty() && !selected_wire_ids.empty()) {
+        auto *observe = menu.addMenu(text("observe"));
+        observe->addAction(text("observe_voltage"), this,
+                           [this, selected_wire_ids] { observe_wires(selected_wire_ids, false); });
+        observe->addAction(text("observe_wire_current"), this,
+                           [this, selected_wire_ids] { observe_wires(selected_wire_ids, true); });
+        menu.addSeparator();
     }
     menu.addAction(commands_.at("paste"));
     menu.addAction(commands_.at("group_subcircuit"));
