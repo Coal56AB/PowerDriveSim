@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include <QAction>
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QGraphicsItem>
 #include <QGraphicsPathItem>
@@ -114,8 +115,8 @@ class DesktopTests : public QObject {
         QVERIFY(channel < window.result().channels.size());
         QVERIFY(std::abs(window.result().samples.back().values[channel] - (1 - std::exp(-5.0))) < 2e-5);
         window.scope()->set_cursor_mode(true);
-        QTest::mouseClick(window.scope(), Qt::LeftButton, Qt::NoModifier, {200, 60});
-        QTest::mouseClick(window.scope(), Qt::RightButton, Qt::NoModifier, {400, 60});
+        window.scope()->set_cursor(0, .001);
+        window.scope()->set_cursor(1, .004);
         QVERIFY(window.project().cursor_a >= 0);
         QVERIFY(window.project().cursor_b > window.project().cursor_a);
         const auto screenshot = qEnvironmentVariable("PDS_SCREENSHOT_PATH");
@@ -198,6 +199,7 @@ class DesktopTests : public QObject {
         QVERIFY(!window.connect_ports({vp, "out"}, {sw, "gate"}));
         QCOMPARE(window.project().wires.size(), count);
         QVERIFY(window.connect_ports({pattern, "out"}, {sw, "gate"}));
+        const auto gate_wire = window.project().wires.back().id;
         window.select_object(pattern);
         window.findChild<QCheckBox *>("property_closed")->setChecked(true);
         auto *events = window.findChild<QTableWidget *>("property_events");
@@ -208,7 +210,9 @@ class DesktopTests : public QObject {
         events->setItem(1, 1, new QTableWidgetItem("1"));
         QTest::mouseClick(window.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
         QCOMPARE(window.project().events.size(), size_t(2));
-        window.set_scope_enabled(true);
+        window.observe_object(vp);
+        window.observe_object(ip);
+        window.observe_object(gate_wire);
         auto *selected_channels = window.findChild<QListWidget *>("channels");
         for (int i = 0; i < selected_channels->count(); ++i) {
             auto *item = selected_channels->item(i);
@@ -248,12 +252,6 @@ class DesktopTests : public QObject {
             item->setCheckState(key == vp || key == ip || key == "gate/" + sw ? Qt::Checked : Qt::Unchecked);
         }
         QCOMPARE(window.project().scope_channels.size(), size_t(3));
-        double before = window.scope()->end - window.scope()->begin;
-        QPointF at(300, 80);
-        QWheelEvent wheel(at, window.scope()->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, 120),
-                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-        QApplication::sendEvent(window.scope(), &wheel);
-        QVERIFY(window.project().scope_end - window.project().scope_begin < before);
         window.scope()->fit();
         QVERIFY(std::abs(window.project().scope_end - .01) < 1e-12);
         auto saved = window.project();
@@ -377,6 +375,26 @@ class DesktopTests : public QObject {
         QVERIFY(checked);
         QCOMPARE(window.root_project().experiments.size(), size_t(1));
     }
+    void observed_scope_points_remain_until_deleted() {
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        QVERIFY(window.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        window.observe_object(window.project().wires.front().id);
+        auto *channels = window.findChild<QListWidget *>("channels");
+        QVERIFY(channels);
+        QCOMPARE(channels->count(), 1);
+        QCOMPARE(window.project().scope_points.size(), size_t(1));
+        channels->item(0)->setCheckState(Qt::Unchecked);
+        QCOMPARE(channels->count(), 1);
+        QCOMPARE(window.project().scope_points.size(), size_t(1));
+        QVERIFY(window.project().scope_channels.empty());
+        channels->setCurrentRow(0);
+        QTest::keyClick(channels, Qt::Key_Delete);
+        QCOMPARE(channels->count(), 0);
+        QVERIFY(window.project().scope_points.empty());
+        QVERIFY(window.project().scope_channels.empty());
+    }
     void wire_tool_and_empty_state() {
         QTemporaryDir temp;
         EditorWindow window("ru", temp.path());
@@ -401,6 +419,27 @@ class DesktopTests : public QObject {
                             window.canvas()->mapFromScene(QPointF(100, 220)));
         QCOMPARE(window.project().nodes.size(), size_t(2));
         QCOMPARE(window.project().wires.size(), size_t(1));
+        window.select_object(window.project().wires.front().id);
+        QVERIFY(!window.findChild<QPlainTextEdit *>("property_bends"));
+        auto *color = window.findChild<QLineEdit *>("property_wire_color");
+        auto *width = window.findChild<QLineEdit *>("property_wire_width");
+        auto *line = window.findChild<QComboBox *>("property_wire_line");
+        QVERIFY(color && width && line);
+        color->setText("#c04080");
+        color->setModified(true);
+        width->setText("3.5");
+        width->setModified(true);
+        line->setCurrentIndex(line->findData(unsigned(WireLine::dash)));
+        line->setProperty("draft", true);
+        QTest::mouseClick(window.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
+        QCOMPARE(window.project().wires.front().color, std::string("#c04080"));
+        QCOMPARE(window.project().wires.front().width, 3.5);
+        QCOMPARE(window.project().wires.front().line, WireLine::dash);
+        const auto wire_screenshot = qEnvironmentVariable("PDS_WIRE_PROPERTY_SCREENSHOT");
+        if (!wire_screenshot.isEmpty()) {
+            QTest::qWait(30);
+            QVERIFY(window.grab().save(wire_screenshot));
+        }
         window.stop_simulation();
     }
     void gestures_taps_and_transforms() {

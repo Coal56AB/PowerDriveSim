@@ -10,6 +10,7 @@
 #include <ostream>
 #include <sstream>
 #include <cmath>
+#include <cctype>
 #include <algorithm>
 namespace pds {
 static Project read_project_impl(std::istream& in,bool definitions_allowed) {
@@ -216,6 +217,19 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 >> std::quoted(wire.to.object) >> std::quoted(wire.to.port) >> count;
             if(count>10000) throw Diagnostic("parse_error",wire.id,"Too many wire routing points");
             for(size_t i=0;i<count;++i) { Point point; row >> point.x >> point.y; wire.bends.push_back(point); }
+            if (p.schema >= 19) {
+                unsigned line_style = 0;
+                row >> std::quoted(wire.color) >> wire.width >> line_style;
+                const bool invalid_color =
+                    !wire.color.empty() &&
+                    (wire.color.size() != 7 || wire.color[0] != '#' ||
+                     !std::all_of(wire.color.begin() + 1, wire.color.end(),
+                                  [](unsigned char c) { return std::isxdigit(c) != 0; }));
+                if (invalid_color || line_style > unsigned(WireLine::dash) || !std::isfinite(wire.width) ||
+                    wire.width < .5 || wire.width > 10)
+                    row.setstate(std::ios::failbit);
+                wire.line = WireLine(line_style);
+            }
             p.wires.push_back(wire);
         } else if(tag=="tag" && p.schema>=16) {
             ConnectionTag t;unsigned domain=0;
@@ -266,6 +280,8 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             row >> p.scope_begin >> p.scope_end >> p.cursor_a >> p.cursor_b;
         } else if(tag=="scope" && p.schema>=4) {
             std::string channel; row >> std::quoted(channel); p.scope_channels.push_back(channel);
+        } else if(tag=="scope_point" && p.schema>=18) {
+            std::string channel; row >> std::quoted(channel); p.scope_points.push_back(channel);
         } else if(tag=="node") {
             Node n; int g=-1;
             row >> std::quoted(n.id) >> std::quoted(n.name) >> g;
@@ -358,6 +374,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         c->semiconductor.holding_current=data.first;c->semiconductor.initial_latched=data.second;
         validate_semiconductor(*c);
     }
+    if(p.schema<18)p.scope_points=p.scope_channels;
     p.schema=project_schema;
     for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.tags);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
@@ -394,9 +411,11 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& wire:p.wires) {
         check_text(wire.id,wire.id); check_text(wire.from.object,wire.id); check_text(wire.from.port,wire.id);
         check_text(wire.to.object,wire.id); check_text(wire.to.port,wire.id);
+        check_text(wire.color, wire.id);
     }
     for(const auto& tag:p.tags) { check_text(tag.id,tag.id); check_text(tag.name,tag.id); }
     for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
+    for(const auto& channel:p.scope_points) check_text(channel,p.id);
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
     for(const auto& plot:p.plots){check_text(plot.id,plot.id);check_text(plot.name,plot.id);}
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
@@ -420,13 +439,22 @@ void write_project(const Project& p, std::ostream& out) {
         out << "wire " << std::quoted(wire.id) << ' ' << std::quoted(wire.from.object) << ' ' << std::quoted(wire.from.port)
             << ' ' << std::quoted(wire.to.object) << ' ' << std::quoted(wire.to.port) << ' ' << wire.bends.size();
         for(const auto& point:wire.bends) out << ' ' << point.x << ' ' << point.y;
-        out << '\n';
+        if (!wire.color.empty() &&
+            (wire.color.size() != 7 || wire.color[0] != '#' ||
+             !std::all_of(wire.color.begin() + 1, wire.color.end(),
+                          [](unsigned char c) { return std::isxdigit(c) != 0; })))
+            throw Diagnostic("invalid_wire_style", wire.id, "Invalid wire color");
+        if (!std::isfinite(wire.width) || wire.width < .5 || wire.width > 10 ||
+            unsigned(wire.line) > unsigned(WireLine::dash))
+            throw Diagnostic("invalid_wire_style", wire.id, "Invalid wire style");
+        out << ' ' << std::quoted(wire.color) << ' ' << wire.width << ' ' << unsigned(wire.line) << '\n';
     }
     for(const auto& tag:p.tags)out<<"tag "<<std::quoted(tag.id)<<' '<<std::quoted(tag.name)<<' '<<tag.x<<' '<<tag.y<<' '<<unsigned(tag.domain)<<'\n';
     for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(g.code)<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
     for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<'\n';
     out<<"scope_enabled "<<p.scope_enabled<<'\n';
     out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';
+    for(const auto& channel:p.scope_points) out << "scope_point " << std::quoted(channel) << '\n';
     for(const auto& channel:p.scope_channels) out << "scope " << std::quoted(channel) << '\n';
     for(const auto& n:p.nodes) out << "node " << std::quoted(n.id) << ' ' << std::quoted(n.name) << ' ' << n.ground << ' ' << n.x << ' ' << n.y << '\n';
     for(const auto& c:p.components) out << "component " << std::quoted(c.id) << ' ' << std::quoted(c.name) << ' '

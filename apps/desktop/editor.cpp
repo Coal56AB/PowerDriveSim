@@ -781,7 +781,9 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         auto path =
             wire.bends.empty() ? orthogonal_route(*a, *a, *b, *b, obstacles) : manual_route(*a, *b, wire.bends);
         auto *item = new QGraphicsPathItem(path);
-        item->setPen(QPen(QColor("#146cca"), 2));
+        const auto line = wire.line == WireLine::dash ? Qt::DashLine : Qt::SolidLine;
+        item->setPen(QPen(wire.color.empty() ? QColor("#146cca") : QColor(QString::fromStdString(wire.color)),
+                          wire.width, line));
         item->setZValue(-2);
         group->addToGroup(item);
     }
@@ -1323,14 +1325,13 @@ void EditorWindow::build_ui() {
     connect(scope_export_, &QPushButton::clicked, this, [this] { export_csv(project().scope_channels); });
     auto *bottom_dock = dock("results", bottom_, Qt::BottomDockWidgetArea);
     bottom_dock->setTitleBarWidget(new QWidget);
-    bottom_dock->setMinimumHeight(96);
-    bottom_->setMinimumHeight(80);
+    bottom_dock->setMinimumHeight(0);
+    bottom_->setMinimumHeight(0);
     scope_page_->setMinimumHeight(0);
     resizeDocks({bottom_dock}, {180}, Qt::Vertical);
-    connect(bottom_, &QTabWidget::currentChanged, this, [this, bottom_dock](int tab) {
-        bottom_dock->setMinimumHeight(96);
-        if (!bottom_dock->isFloating())
-            resizeDocks({bottom_dock}, {tab == 1 ? 240 : 160}, Qt::Vertical);
+    connect(bottom_, &QTabWidget::currentChanged, this, [bottom_dock](int tab) {
+        (void)tab;
+        bottom_dock->setMinimumHeight(0);
     });
     auto *expand_scope = new QToolButton;
     expand_scope->setIcon(ui_icon(UiIcon::undock));
@@ -1354,6 +1355,7 @@ void EditorWindow::build_ui() {
     canvas_->place = [this](QPointF point) { place_at(point); };
     canvas_->cancel_placement = [this] { cancel_placement(); };
     canvas_->quick_insert = [this](QPointF point) { quick_insert(point); };
+    canvas_->add_junction = [this](QPointF point) { add_node(false, point); };
     canvas_->connect_wire = [this](WireAnchor from, WireAnchor to, std::vector<Point> bends,
                                    std::string replace) {
         bends = clean_route_bends(QPointF(from.point.x, from.point.y), QPointF(to.point.x, to.point.y), bends);
@@ -2045,13 +2047,16 @@ void EditorWindow::update_wires() {
                                   (signal_sources_[endpoint_key(w.from)] == channel_object ||
                                    signal_sources_[endpoint_key(w.to)] == channel_object)));
         item->setData(channel_highlight_role, channel_active);
-        item->setPen(QPen(channel_active ? QColor("#b34cce")
-                          : active       ? QColor("#e88b22")
-                                         : QColor(domain == Domain::gate     ? "#17866d"
-                                                  : domain == Domain::signal ? "#8c67c8"
-                                                                             : "#146cca"),
-                          active || channel_active ? 3 : 2,
-                          domain == Domain::gate ? Qt::DashLine : Qt::SolidLine));
+        const QColor default_color(domain == Domain::gate     ? "#17866d"
+                                   : domain == Domain::signal ? "#8c67c8"
+                                                              : "#146cca");
+        const QColor wire_color = w.color.empty() ? default_color : QColor(QString::fromStdString(w.color));
+        const auto default_line = domain == Domain::gate ? Qt::DashLine : Qt::SolidLine;
+        const auto wire_line = w.line == WireLine::automatic
+                                   ? default_line
+                                   : w.line == WireLine::dash ? Qt::DashLine : Qt::SolidLine;
+        item->setPen(QPen(channel_active ? QColor("#b34cce") : active ? QColor("#e88b22") : wire_color,
+                          active || channel_active ? std::max(3.0, w.width + 1.0) : w.width, wire_line));
     }
     (void)routes_changed;
     (void)changed_networks;
@@ -2512,11 +2517,17 @@ void EditorWindow::delete_selected() {
                     const auto node_a = make_node(cut_a), node_b = make_node(cut_b);
                     if (segment > 1) {
                         Wire left{new_uuid(), original.from, {node_a, "node"}, {}};
+                        left.color = original.color;
+                        left.width = original.width;
+                        left.line = original.line;
                         left.bends.assign(points.begin() + 1, points.begin() + segment - 1);
                         p.wires.push_back(std::move(left));
                     }
                     if (segment + 1 < static_cast<int>(points.size())) {
                         Wire right{new_uuid(), {node_b, "node"}, original.to, {}};
+                        right.color = original.color;
+                        right.width = original.width;
+                        right.line = original.line;
                         right.bends.assign(points.begin() + segment + 1, points.end() - 1);
                         p.wires.push_back(std::move(right));
                     }

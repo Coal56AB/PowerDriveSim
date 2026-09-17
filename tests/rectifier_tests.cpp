@@ -179,10 +179,11 @@ int main(int argc, char **argv) try {
                 std::istringstream in(out.str());
                 check(read_project(in) == p, "Bridge roundtrip");
                 Document document(p);
+                const auto before_expansion = document.root_project();
                 document.expand_instance(p.instances[0].id);
                 verify(document.root_project(), three, pwl);
                 document.undo();
-                check(document.root_project() == p, "Bridge expansion undo");
+                check(document.root_project() == before_expansion, "Bridge expansion undo");
                 auto reversed = p;
                 std::reverse(reversed.definitions[0].components.begin(),
                              reversed.definitions[0].components.end());

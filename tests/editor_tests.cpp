@@ -95,7 +95,17 @@ int main(int argc,char** argv) {
         doc.undo();check(save(doc.project())==old_driver,"Driver replacement is one undoable transaction");
         doc.erase({pattern2,sw,pattern});
         check(doc.project().events.empty(),"Deletion removes dependent events and wires");
-        doc.apply("Route and scope",[&](Project& project){project.wires[0].bends={{-120,100},{-120,240}}; project.scope_channels={probe};});
+        doc.apply("Route, style and scope",[&](Project& project){
+            project.wires[0].bends={{-120,100},{-120,240}};
+            project.wires[0].color="#c04080";
+            project.wires[0].width=3.5;
+            project.wires[0].line=WireLine::dash;
+            project.scope_channels={probe};
+        });
+        check(std::get<std::string>(read_property(doc.project(),doc.project().wires[0].id,"wire_color"))=="#c04080" &&
+                  std::abs(std::get<double>(read_property(doc.project(),doc.project().wires[0].id,"wire_width"))-3.5)<1e-12 &&
+                  std::get<unsigned>(read_property(doc.project(),doc.project().wires[0].id,"wire_line"))==unsigned(WireLine::dash),
+              "Wire visual properties are editable");
         const auto encoded=save(doc.project());
         std::istringstream input(encoded); auto roundtrip=read_project(input);
         check(save(roundtrip)==encoded,"Wire geometry, scope, UUID and model round trip");

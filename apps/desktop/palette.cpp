@@ -58,16 +58,19 @@ QIcon component_icon(int id) {
         p.drawText(QRectF(1, 25, 30, 7), Qt::AlignCenter, s);
     };
     auto transistor_mark = [&](double x, double y) {
-        p.drawLine(QPointF(x - 8, y), QPointF(x - 3, y));
-        p.drawLine(QPointF(x - 3, y - 9), QPointF(x - 3, y + 9));
-        p.drawLine(QPointF(x + 3, y - 8), QPointF(x + 3, y + 8));
-        p.drawLine(QPointF(x + 3, y - 6), QPointF(x + 10, y - 10));
-        p.drawLine(QPointF(x + 3, y + 6), QPointF(x + 10, y + 10));
-        p.drawLine(QPointF(x + 10, y - 10), QPointF(x + 10, y + 10));
+        // Compact IGBT with antiparallel diode.  Composite-library icons are only
+        // 32 logical pixels wide, so a single clean device mark is more legible
+        // than several full-size marks superimposed on one another.
+        p.drawLine(QPointF(x - 9, y), QPointF(x - 5, y));
+        p.drawLine(QPointF(x - 5, y - 7), QPointF(x - 5, y + 7));
+        p.drawLine(QPointF(x - 1, y - 6), QPointF(x - 1, y + 6));
+        p.drawLine(QPointF(x - 1, y - 4), QPointF(x + 5, y - 8));
+        p.drawLine(QPointF(x - 1, y + 4), QPointF(x + 5, y + 8));
+        p.drawLine(QPointF(x + 5, y - 8), QPointF(x + 5, y + 8));
         QPolygonF diode;
-        diode << QPointF(x + 14, y + 6) << QPointF(x + 20, y) << QPointF(x + 14, y - 6);
+        diode << QPointF(x + 9, y + 4) << QPointF(x + 13, y) << QPointF(x + 9, y - 4);
         p.drawPolyline(diode);
-        p.drawLine(QPointF(x + 20, y - 6), QPointF(x + 20, y + 6));
+        p.drawLine(QPointF(x + 13, y - 4), QPointF(x + 13, y + 4));
     };
     auto thyristor_mark = [&](double x, double y) {
         p.drawLine(QPointF(x - 13, y), QPointF(x - 7, y));
@@ -132,29 +135,28 @@ QIcon component_icon(int id) {
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
     } else if (id == 270) {
-        p.drawLine(3, 4, 3, 28);
-        p.drawLine(29, 4, 29, 28);
-        for (int y : {8, 16, 24}) {
-            p.drawLine(3, y, 9, y);
-            p.drawLine(23, y, 29, y);
-        }
-        p.drawLine(10, 8, 10, 24);
-        p.drawLine(22, 8, 22, 24);
-        p.drawLine(10, 16, 22, 16);
-        auto f = p.font();
-        f.setPixelSize(7);
-        f.setBold(true);
-        p.setFont(f);
-        p.drawText(QRectF(7, 2, 18, 8), Qt::AlignCenter, "OE");
+        p.drawRoundedRect(QRectF(3, 3, 26, 21), 2, 2);
+        p.drawLine(0, 8, 3, 8); p.drawLine(29, 8, 32, 8);
+        p.drawLine(0, 14, 3, 14); p.drawLine(29, 14, 32, 14);
+        p.drawLine(0, 20, 3, 20); p.drawLine(29, 20, 32, 20);
+        QPainterPath winding(QPointF(8, 8));
+        winding.cubicTo(11, 5, 13, 11, 16, 8);
+        winding.cubicTo(19, 5, 21, 11, 24, 8);
+        p.drawPath(winding);
+        p.drawLine(8, 14, 24, 14);
+        p.drawLine(8, 20, 24, 20);
+        title("Open-end");
     } else if (id == 260 || id == 261) {
-        p.drawLine(3, 3, 3, 23);
-        p.drawLine(29, 3, 29, 23);
-        transistor_mark(10, 11);
-        p.drawLine(3, 5, 18, 5);
-        p.drawLine(3, 21, 18, 21);
+        p.drawRoundedRect(QRectF(3, 2, 26, 22), 2, 2);
+        p.drawLine(0, 5, 3, 5);
+        p.drawLine(0, 21, 3, 21);
+        for (int y : {6, 13, 20}) p.drawLine(29, y, 32, y);
+        transistor_mark(14, 13);
         if (id == 261) {
-            p.setPen(QPen(theme_colors().signal, 0.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-            p.drawLine(3, 13, 25, 13);
+            p.setPen(QPen(theme_colors().signal, 0.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.drawLine(6, 13, 9, 13);
+            p.drawEllipse(QPointF(7.5, 13), 1.1, 1.1);
+            p.setPen(QPen(theme_colors().text, 0.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         }
         title(id == 260 ? "2-Level" : "3-Level");
     } else if (id == 250 || id == 251) {
@@ -188,21 +190,12 @@ QIcon component_icon(int id) {
             }
         }
     } else if (id == 230 || id == 231) {
-        p.drawLine(5, 3, 27, 3);
-        p.drawLine(5, 23, 27, 23);
-        if (id == 230) {
-            p.drawLine(16, 3, 16, 23);
-            transistor_mark(16, 10);
-            p.drawLine(16, 16, 28, 16);
-            title("Half");
-        } else {
-            p.drawLine(9, 3, 9, 23);
-            p.drawLine(23, 3, 23, 23);
-            transistor_mark(9, 10);
-            transistor_mark(23, 16);
-            p.drawLine(9, 16, 23, 10);
-            title("Full");
-        }
+        p.drawRoundedRect(QRectF(3, 2, 26, 22), 2, 2);
+        p.drawLine(0, 5, 3, 5); p.drawLine(0, 21, 3, 21);
+        p.drawLine(29, 9, 32, 9);
+        if (id == 231) p.drawLine(29, 17, 32, 17);
+        transistor_mark(14, 13);
+        title(id == 230 ? "Half" : "Full");
     } else if (id >= 220 && id <= 223) {
         p.drawRoundedRect(QRectF(4, 3, 24, 26), 2, 2);
         p.drawLine(0, 16, 4, 16); p.drawLine(28, 16, 32, 16);
@@ -253,28 +246,25 @@ QIcon component_icon(int id) {
             p.drawLine(12, 25, 12, 31);
         }
     } else if (id == 280 || id == 281) {
-        p.drawRoundedRect(QRectF(4, 4, 24, 18), 2, 2);
-        for (int y : {8, 13, 18}) {
-            p.drawLine(0, y, 4, y);
-            p.drawLine(28, y, 32, y);
-            QPainterPath wave(QPointF(7, y));
-            wave.cubicTo(9, y - 4, 12, y - 4, 14, y);
-            wave.cubicTo(16, y + 4, 19, y + 4, 21, y);
-            wave.cubicTo(23, y - 4, 25, y - 4, 27, y);
-            p.drawPath(wave);
-        }
-        p.setPen(QPen(theme_colors().signal, 0.9, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p.drawRoundedRect(QRectF(3, 3, 26, 21), 2, 2);
+        p.drawLine(0, 14, 3, 14);
+        for (int y : {7, 14, 21}) p.drawLine(29, y, 32, y);
+        p.drawEllipse(QRectF(7, 5, 18, 18));
+        QPainterPath wave(QPointF(9, 14));
+        wave.cubicTo(11, 8, 14, 8, 16, 14);
+        wave.cubicTo(18, 20, 21, 20, 23, 14);
+        p.drawPath(wave);
+        p.setPen(QPen(theme_colors().signal, 0.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         if (id == 280) {
-            p.drawLine(16, 24, 16, 21);
-            p.drawLine(11, 24, 21, 24);
+            p.drawLine(16, 26, 16, 23);
+            p.drawLine(12, 26, 20, 26);
         } else {
-            QPainterPath delta(QPointF(12, 24));
-            delta.lineTo(20, 24);
-            delta.lineTo(16, 20);
+            QPainterPath delta(QPointF(12, 27));
+            delta.lineTo(20, 27);
+            delta.lineTo(16, 23);
             delta.closeSubpath();
             p.drawPath(delta);
         }
-        title("3~");
     } else if (id == 5) {
         p.drawLine(1, 22, 8, 22);
         p.drawLine(8, 22, 24, 12);

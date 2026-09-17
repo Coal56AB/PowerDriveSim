@@ -382,6 +382,15 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
         return;
     }
     auto *object = object_at(e->pos());
+    if (editable_ && connect_mode_ && !object && !port_at(e->pos()) && !wire_at(e->pos())) {
+        const auto point = snap_point(mapToScene(e->pos()));
+        connect_mode_ = false;
+        unsetCursor();
+        if (add_junction)
+            add_junction(point);
+        e->accept();
+        return;
+    }
     if (editable_) {
         if (auto *pin = public_pin_at(e->pos())) {
             positions_.clear();

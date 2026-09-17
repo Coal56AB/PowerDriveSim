@@ -2,9 +2,26 @@
   "type": "wire",
   "fields": [
     {
-      "key": "bends",
-      "editor": "points",
-      "label": "bends"
+      "key": "wire_color",
+      "editor": "color",
+      "label": "wire_color"
+    },
+    {
+      "key": "wire_width",
+      "editor": "number",
+      "label": "wire_width",
+      "min": 0.5,
+      "max": 10
+    },
+    {
+      "key": "wire_line",
+      "editor": "enum",
+      "label": "wire_line",
+      "options": [
+        { "value": 0, "label": "wire_line_auto" },
+        { "value": 1, "label": "wire_line_solid" },
+        { "value": 2, "label": "wire_line_dash" }
+      ]
     }
   ]
 }

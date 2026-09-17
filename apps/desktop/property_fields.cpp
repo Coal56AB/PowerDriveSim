@@ -143,6 +143,15 @@ static PropertyValue parse_field(const QString &input, const QJsonObject &field)
     const auto editor = field.value("editor").toString();
     if (editor == "text" || editor == "code")
         return input.toStdString();
+    if (editor == "color") {
+        const auto value = input.trimmed();
+        if (value.isEmpty())
+            return std::string{};
+        const QColor color(value);
+        if (!color.isValid())
+            throw std::runtime_error("Expected a color such as #146cca");
+        return color.name(QColor::HexRgb).toStdString();
+    }
     if (editor == "bool")
         return input == "1";
     if (editor == "enum") {

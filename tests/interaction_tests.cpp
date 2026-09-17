@@ -83,9 +83,14 @@ class InteractionTests : public QObject {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path()); ready(w);
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/diode-freewheel.pds"));
-        w.set_scope_enabled(true);
+        w.observe_object(w.project().components.front().id);
+        for (const auto &wire : w.project().wires) {
+            w.observe_object(wire.id);
+            if (w.project().scope_points.size() >= 2)
+                break;
+        }
         auto *channels = w.findChild<QListWidget *>("channels");
-        for (int i = 0; i < channels->count(); ++i) channels->item(i)->setCheckState(i < 2 ? Qt::Checked : Qt::Unchecked);
+        QVERIFY(channels && channels->count() >= 2);
         w.findChild<QTabWidget *>("results_tabs")->setCurrentIndex(1);
         w.findChild<QLineEdit *>("sim_stop")->setText("10");
         w.findChild<QLineEdit *>("sim_step")->setText("1e-6");
@@ -1221,10 +1226,6 @@ class InteractionTests : public QObject {
         QTest::keyClicks(search, "R,C");
         QCOMPARE(search->text(), QString("R,C"));
         search->clear();
-        auto *points = w.findChild<QPlainTextEdit *>("property_bends");
-        QVERIFY(points);
-        points->insertPlainText("1,2 3,4");
-        QCOMPARE(points->toPlainText(), QString("1,2 3,4"));
         QTest::mouseDClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
                            w.canvas()->mapFromScene(QPointF(0, -41)));
         auto *inline_value = w.findChild<QLineEdit *>("inline_property");
@@ -1584,7 +1585,31 @@ class InteractionTests : public QObject {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/diode-freewheel.pds"));
-        w.set_scope_enabled(true);
+        const auto resistor = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                           [](const Component &c) { return c.kind == Kind::resistor; })
+                                  ->id;
+        const auto sw = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                     [](const Component &c) { return c.kind == Kind::ideal_switch; })
+                            ->id;
+        auto gate_driven = w.root_project();
+        gate_driven.events.clear();
+        w.set_project(std::move(gate_driven));
+        w.observe_object(resistor);
+        const auto graph = resolve_connections(w.project());
+        const auto net = graph.nets.at(endpoint_key({resistor, "p"}));
+        const auto net_wire = std::find_if(w.project().wires.begin(), w.project().wires.end(), [&](const Wire &wire) {
+            auto found = graph.nets.find(endpoint_key(wire.from));
+            return found != graph.nets.end() && found->second == net;
+        });
+        QVERIFY(net_wire != w.project().wires.end());
+        w.observe_object(net_wire->id);
+        const auto pattern = w.add_pattern({160, -100});
+        QVERIFY(w.connect_ports({pattern, "out"}, {sw, "gate"}));
+        const auto gate_wire = std::find_if(w.project().wires.begin(), w.project().wires.end(), [&](const Wire &wire) {
+            return wire.from == Endpoint{sw, "gate"} || wire.to == Endpoint{sw, "gate"};
+        });
+        QVERIFY(gate_wire != w.project().wires.end());
+        w.observe_object(gate_wire->id);
         ready(w);
         w.findChild<QTabWidget *>("results_tabs")->setCurrentIndex(1);
         auto *list = w.findChild<QListWidget *>("channels");
@@ -1602,15 +1627,10 @@ class InteractionTests : public QObject {
             return false;
         };
         const auto before = encoded(w.project());
-        const auto resistor = std::find_if(w.project().components.begin(), w.project().components.end(),
-                                           [](const Component &c) { return c.kind == Kind::resistor; })
-                                  ->id;
         QVERIFY(click_channel(resistor));
         QVERIFY(item(w, resistor)->data(channel_highlight_role).toBool());
         QVERIFY(!item(w, resistor)->isSelected());
         QCOMPARE(encoded(w.project()), before);
-        const auto graph = resolve_connections(w.project());
-        const auto net = graph.nets.at(endpoint_key({resistor, "p"}));
         QVERIFY(click_channel(net));
         QVERIFY(!item(w, resistor)->data(channel_highlight_role).toBool());
         int highlighted = 0;
@@ -1621,9 +1641,6 @@ class InteractionTests : public QObject {
             highlighted += expected;
         }
         QVERIFY(highlighted > 0);
-        const auto sw = std::find_if(w.project().components.begin(), w.project().components.end(),
-                                     [](const Component &c) { return c.kind == Kind::ideal_switch; })
-                            ->id;
         QVERIFY(click_channel("gate/" + sw));
         QVERIFY(item(w, sw)->data(channel_highlight_role).toBool());
         QCOMPARE(encoded(w.project()), before);
@@ -2032,9 +2049,9 @@ class InteractionTests : public QObject {
         EditorWindow w("ru", dir.path());
         ready(w);
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
-        w.set_scope_enabled(true);
+        w.observe_object(w.project().wires.front().id);
         auto *channels = w.findChild<QListWidget *>("channels");
-        channels->item(0)->setCheckState(Qt::Checked);
+        QVERIFY(channels && channels->count() == 1);
         bool edited = false;
         QTimer::singleShot(0, &w, [&] {
             auto *dialog = w.findChild<QDialog *>("step_settings_dialog");
@@ -2099,10 +2116,9 @@ class InteractionTests : public QObject {
         EditorWindow w("ru", dir.path());
         ready(w);
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
-        w.set_scope_enabled(true);
+        w.observe_object(w.project().wires.front().id);
         auto *channels = w.findChild<QListWidget *>("channels");
-        for (int i = 0; i < channels->count(); ++i)
-            channels->item(i)->setCheckState(Qt::Checked);
+        QVERIFY(channels && channels->count() == 1);
         bool edited = false;
         QTimer::singleShot(0, &w, [&] {
             auto *dialog = w.findChild<QDialog *>("initial_settings_dialog");
@@ -2161,10 +2177,9 @@ class InteractionTests : public QObject {
         EditorWindow w("ru", dir.path());
         ready(w);
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
-        w.set_scope_enabled(true);
+        w.observe_object(w.project().wires.front().id);
         auto *list = w.findChild<QListWidget *>("channels");
         QVERIFY(list && list->count());
-        list->item(0)->setCheckState(Qt::Checked);
         auto *step = w.findChild<QAction *>("action_simulation_step");
         auto *resume = w.findChild<QAction *>("action_continue_state");
         auto *save = w.findChild<QAction *>("action_snapshot_save");
@@ -2232,7 +2247,22 @@ class InteractionTests : public QObject {
         QVERIFY(!w.simulation_snapshot());
         QVERIFY(!save->isEnabled() && !resume->isEnabled());
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/diode-freewheel.pds"));
-        w.set_scope_enabled(true);
+        const auto switch_id = std::find_if(w.project().components.begin(), w.project().components.end(),
+                                            [](const Component &component) {
+                                                return component.kind == Kind::ideal_switch;
+                                            })
+                                   ->id;
+        auto gate_driven = w.root_project();
+        gate_driven.events.clear();
+        w.set_project(std::move(gate_driven));
+        const auto gate_source = w.add_pattern({160, -100});
+        QVERIFY(w.connect_ports({gate_source, "out"}, {switch_id, "gate"}));
+        const auto gate_wire = std::find_if(w.project().wires.begin(), w.project().wires.end(), [&](const Wire &wire) {
+            return port_type(w.project(), wire.from).domain == Domain::gate ||
+                   port_type(w.project(), wire.to).domain == Domain::gate;
+        });
+        QVERIFY(gate_wire != w.project().wires.end());
+        w.observe_object(gate_wire->id);
         list = w.findChild<QListWidget *>("channels");
         bool gate_selected = false;
         for (int i = 0; i < list->count(); ++i) {
@@ -2254,10 +2284,9 @@ class InteractionTests : public QObject {
         EditorWindow w("en", dir.path());
         ready(w);
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
-        w.set_scope_enabled(true);
+        w.observe_object(w.project().wires.front().id);
         auto *list = w.findChild<QListWidget *>("channels");
         QVERIFY(list && list->count());
-        list->item(0)->setCheckState(Qt::Checked);
         w.findChild<QLineEdit *>("sim_stop")->setText("1");
         w.findChild<QLineEdit *>("sim_step")->setText("1e-7");
         w.start_simulation();
@@ -3045,10 +3074,9 @@ class InteractionTests : public QObject {
         EditorWindow w("en", dir.path());
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
         ready(w);
-        w.set_scope_enabled(true);
+        w.observe_object(w.project().wires.front().id);
         auto *channels = w.findChild<QListWidget *>("channels");
         QVERIFY(channels->count() > 0);
-        channels->item(0)->setCheckState(Qt::Checked);
         w.start_simulation();
         QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
         QVERIFY(w.has_result());

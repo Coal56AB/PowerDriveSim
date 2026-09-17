@@ -1,7 +1,10 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "apps/desktop/theme.hpp"
+#include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QColorDialog>
 #include <QComboBox>
 #include <QCompleter>
 #include <QDir>
@@ -13,6 +16,7 @@
 #include <QLineEdit>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QPixmap>
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QSpinBox>
@@ -165,7 +169,7 @@ void EditorWindow::load_component_specs() {
             if (editor == "enum" && field.value("options").toArray().isEmpty())
                 throw std::runtime_error(("Empty choices in " + file.fileName()).toStdString());
             if (key.isEmpty() || !keys.insert(key).second ||
-                !QStringList{"text", "number", "bool", "integer", "enum", "events", "points", "samples", "code"}
+                !QStringList{"text", "number", "bool", "integer", "enum", "events", "points", "samples", "code", "color"}
                      .contains(editor) ||
                 field.value("scale").toDouble(1) <= 0)
                 throw std::runtime_error(("Invalid property in " + file.fileName()).toStdString());
@@ -184,10 +188,34 @@ void EditorWindow::build_property_editors() {
                 continue;
             }
             QWidget *widget = nullptr;
-            if (kind == "text" || kind == "number") {
+            if (kind == "text" || kind == "number" || kind == "color") {
                 auto *line = new QLineEdit;
                 if (kind == "number")
                     normalize_decimal_point(line);
+                if (kind == "color") {
+                    line->setPlaceholderText(text("wire_color_auto"));
+                    auto *picker = line->addAction(QIcon(), QLineEdit::TrailingPosition);
+                    auto update_swatch = [line, picker](const QString &value) {
+                        QPixmap swatch(16, 16);
+                        const QColor color(value);
+                        swatch.fill(color.isValid() ? color : Qt::transparent);
+                        picker->setIcon(QIcon(swatch));
+                    };
+                    connect(line, &QLineEdit::textChanged, this, update_swatch);
+                    connect(picker, &QAction::triggered, this, [this, line] {
+                        QColor initial(line->text());
+                        if (!initial.isValid())
+                            initial = theme_colors().electrical;
+                        const auto selected = QColorDialog::getColor(initial, this, text("wire_color"));
+                        if (selected.isValid()) {
+                            line->setText(selected.name(QColor::HexRgb));
+                            line->setModified(true);
+                            line->setProperty("draft", true);
+                            apply_inspector();
+                        }
+                    });
+                    update_swatch({});
+                }
                 widget = line;
                 connect(line, &QLineEdit::editingFinished, this, [this] {
                     if (!inspector_loading_ && !applying_)

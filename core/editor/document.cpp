@@ -141,6 +141,9 @@ bool merge_one_passthrough_node(Schematic &s) {
         merged.id = first.id;
         merged.from = from;
         merged.to = to;
+        merged.color = first.color;
+        merged.width = first.width;
+        merged.line = first.line;
         std::vector<Point> bends;
         if (joined.size() > 2)
             bends.assign(joined.begin() + 1, joined.end() - 1);
@@ -263,14 +266,14 @@ bool same_simulation(const Project& a,const Project& b) {
         auto strip_tags=[](auto& objects){for(auto& o:objects){o.x=0;o.y=0;o.orientation={};}};
         auto schematic=[&](Schematic& s){
             strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.instances);
-            for(auto& w:s.wires)w.bends.clear();
+            for(auto& w:s.wires){w.bends.clear();w.color.clear();w.width=2;w.line=WireLine::automatic;}
             for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;}
             s.labels.clear();s.view_options.clear();
         };
         schematic(p);
         for(auto& d:p.definitions){d.name.clear();schematic(d);for(auto& port:d.ports)port.name.clear();for(auto& param:d.parameters){param.name.clear();param.unit.clear();}}
         p.scope_begin=0;p.scope_end=-1;p.cursor_a=-1;p.cursor_b=-1;
-        p.scope_enabled=false;p.scope_channels.clear();
+        p.scope_enabled=false;p.scope_points.clear();p.scope_channels.clear();
         return p;
     };
     return normalize(a)==normalize(b);
@@ -305,7 +308,12 @@ void Document::connect(Endpoint from,Endpoint to) {
 }
 void Document::connect_anchors(WireAnchor from,WireAnchor to,const std::vector<Point>& bends,const std::string& replace,bool replace_gate_driver) {
     apply("Connect wire",[&](Project& p){
-        if(!replace.empty())std::erase_if(p.wires,[&](const Wire& w){return w.id==replace;});
+        std::optional<Wire> replaced;
+        if(!replace.empty()) {
+            auto found=std::find_if(p.wires.begin(),p.wires.end(),[&](const Wire& w){return w.id==replace;});
+            if(found!=p.wires.end())replaced=*found;
+            std::erase_if(p.wires,[&](const Wire& w){return w.id==replace;});
+        }
         auto attach=[&](const WireAnchor& anchor)->Endpoint {
             if(!anchor.endpoint.object.empty())return anchor.endpoint;
             if(!anchor.wire.empty()) {
@@ -323,6 +331,7 @@ void Document::connect_anchors(WireAnchor from,WireAnchor to,const std::vector<P
                 auto id=new_uuid();Endpoint joint{id,"node"};
                 p.nodes.push_back({id,"",false,anchor.point.x,anchor.point.y});
                 Wire second{new_uuid(),joint,it->to,{}};
+                second.color=it->color;second.width=it->width;second.line=it->line;
                 second.bends.assign(anchor.route.begin()+segment,anchor.route.end()-1);
                 it->to=joint;it->bends.assign(anchor.route.begin()+1,anchor.route.begin()+segment);
                 it->bends=clean_bends(anchor.route.front(),anchor.point,it->bends);
@@ -335,6 +344,7 @@ void Document::connect_anchors(WireAnchor from,WireAnchor to,const std::vector<P
         if(!from.wire.empty()&&from.wire==to.wire)throw Diagnostic("duplicate_connection",from.wire,"Already connected");
         auto a=attach(from),b=attach(to);
         Wire wire{replace.empty()?new_uuid():replace,a,b,bends};
+        if(replaced){wire.color=replaced->color;wire.width=replaced->width;wire.line=replaced->line;}
         wire.bends=clean_bends(endpoint_point(p,a),endpoint_point(p,b),wire.bends);
         validate_wire(p,wire);
         if(replace_gate_driver) {
@@ -504,6 +514,7 @@ void Document::remove_junction(const std::string& id,std::vector<Point> a,std::v
         std::erase_if(p.nodes,[&](const Node& n){return n.id==id;});
         std::erase_if(p.labels,[&](const LabelLayout& l){return l.object==id;});
         const auto new_net=resolve_connections(p).nets.at(endpoint_key(first.from));
+        for(auto& key:p.scope_points)if(key==old_net)key=new_net;
         for(auto& key:p.scope_channels)if(key==old_net)key=new_net;
     });
 }

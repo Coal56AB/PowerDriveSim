@@ -61,6 +61,7 @@ class Canvas : public QGraphicsView {
     std::function<void(WireAnchor, WireAnchor, std::vector<Point>, std::string)> connect_wire;
     std::function<void(std::string, std::vector<Point>)> edit_route;
     std::function<void(QPointF)> quick_insert;
+    std::function<void(QPointF)> add_junction;
     std::function<bool(QPoint)> edit_text;
     std::function<void()> cancel_placement;
     void cancel_wire();
@@ -313,6 +314,7 @@ class EditorWindow : public QMainWindow {
     void show_shortcuts();
     void set_scope_enabled(bool enabled);
     void observe_object(const std::string &id);
+    void remove_scope_point();
 
   protected:
     void closeEvent(QCloseEvent *) override;

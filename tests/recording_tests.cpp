@@ -37,9 +37,16 @@ int main(int argc, char **argv) {
         std::ostringstream v4;
         std::getline(lines, line);
         v4 << "PowerDriveSim 4\n";
-        while (std::getline(lines, line))
-            if (line.rfind("scope_enabled ", 0) != 0 && line.rfind("initialization ", 0) != 0 && line.rfind("stepping ", 0) != 0)
+        while (std::getline(lines, line)) {
+            if (line.rfind("wire ", 0) == 0) {
+                const auto legacy_suffix = line.rfind(" \"\" 2 0");
+                if (legacy_suffix != std::string::npos && legacy_suffix + 7 == line.size())
+                    line.erase(legacy_suffix);
+            }
+            if (line.rfind("scope_enabled ", 0) != 0 && line.rfind("scope_point ", 0) != 0 &&
+                line.rfind("initialization ", 0) != 0 && line.rfind("stepping ", 0) != 0)
                 v4 << line << '\n';
+        }
         std::istringstream old(v4.str());
         auto migrated = read_project(old);
         check(migrated.schema == project_schema && !migrated.scope_enabled && migrated.plots.empty(),

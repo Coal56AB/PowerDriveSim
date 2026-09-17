@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QTabWidget>
@@ -127,6 +128,8 @@ void EditorWindow::sync_scope() {
     channels_->setObjectName("channels");
     channels_->setMinimumWidth(240);
     channels_->setMaximumWidth(300);
+    channels_->setContextMenuPolicy(Qt::CustomContextMenu);
+    channels_->installEventFilter(this);
     layout->addWidget(channels_);
     scope_ = new Scope;
     scope_->set_wheel_modifiers(scope_wheel_x_, scope_wheel_y_);
@@ -166,6 +169,16 @@ void EditorWindow::sync_scope() {
                 return;
             }
     });
+    connect(channels_, &QListWidget::customContextMenuRequested, this, [this](QPoint point) {
+        if (auto *item = channels_->itemAt(point))
+            channels_->setCurrentItem(item);
+        if (!channels_->currentItem())
+            return;
+        QMenu menu(channels_);
+        auto *remove = menu.addAction(text("delete"));
+        connect(remove, &QAction::triggered, this, &EditorWindow::remove_scope_point);
+        menu.exec(channels_->viewport()->mapToGlobal(point));
+    });
     scope_->changed = [this](double a, double b, double ca, double cb) {
         document_->set_view("", a, b, ca, cb);
         document_->set_view_options(scope_->view_options());
@@ -199,7 +212,17 @@ void EditorWindow::refresh_channel_catalog() {
         channels_->currentItem() ? channels_->currentItem()->data(Qt::UserRole) : QVariant();
     channels_->clear();
     try {
-        for (const auto &channel : available_channels(compile(root_project()))) {
+        const auto available = available_channels(compile(root_project()));
+        std::vector<std::string> points = project().scope_points;
+        for (const auto &active : project().scope_channels)
+            if (std::find(points.begin(), points.end(), active) == points.end())
+                points.push_back(active);
+        for (const auto &key : points) {
+            auto found = std::find_if(available.begin(), available.end(),
+                                      [&](const Channel &channel) { return channel.object == key; });
+            if (found == available.end())
+                continue;
+            const auto &channel = *found;
             auto *item = new QListWidgetItem(QString::fromStdString(channel.name + " [" + channel.unit + "]"),
                                              channels_);
             item->setData(Qt::UserRole, QString::fromStdString(channel.object));
@@ -234,7 +257,9 @@ void EditorWindow::observe_object(const std::string &id) {
             if (type.domain == Domain::electrical)
                 net(w.from);
             else {
-                auto source = type.direction == Direction::output ? w.from : w.to;
+                auto source = type.domain == Domain::gate
+                                  ? (type.direction == Direction::input ? w.from : w.to)
+                                  : (type.direction == Direction::output ? w.from : w.to);
                 auto global = source;
                 global.object = expanded_uuid(hierarchy_path(), source.object);
                 auto expanded = flatten(root_project());
@@ -247,12 +272,15 @@ void EditorWindow::observe_object(const std::string &id) {
         if (node.id == id)
             net({id, "node"});
     for (const auto &c : project().components)
-        if (c.id == id)
-            net({id, "p"});
+        if (c.id == id) {
+            key = expanded_uuid(hierarchy_path(), c.id);
+        }
     if (key.empty())
         return;
     set_scope_enabled(true);
     document_->apply("Observe point", [&](Project &p) {
+        if (std::find(p.scope_points.begin(), p.scope_points.end(), key) == p.scope_points.end())
+            p.scope_points.push_back(key);
         if (std::find(p.scope_channels.begin(), p.scope_channels.end(), key) == p.scope_channels.end())
             p.scope_channels.push_back(key);
     });
@@ -260,6 +288,17 @@ void EditorWindow::observe_object(const std::string &id) {
     choose_channels();
     bottom_->setCurrentIndex(1);
     banner_->setText(text("record_next_run"));
+}
+void EditorWindow::remove_scope_point() {
+    if (!channels_ || !channels_->currentItem() || running())
+        return;
+    const auto key = channels_->currentItem()->data(Qt::UserRole).toString().toStdString();
+    document_->apply("Remove scope point", [&](Project &p) {
+        std::erase(p.scope_points, key);
+        std::erase(p.scope_channels, key);
+    });
+    refresh_channel_catalog();
+    choose_channels();
 }
 void EditorWindow::open_plot(const std::string &local_id) {
     const auto id = expanded_uuid(hierarchy_path(), local_id);

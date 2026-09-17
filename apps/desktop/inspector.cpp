@@ -8,6 +8,7 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScopedValueRollback>
@@ -113,6 +114,11 @@ bool EditorWindow::eventFilter(QObject *watched, QEvent *event) {
     }
     if (event->type() == QEvent::KeyPress) {
         auto *key = static_cast<QKeyEvent *>(event);
+        if (watched == channels_ && key->key() == Qt::Key_Delete && !running()) {
+            remove_scope_point();
+            key->accept();
+            return true;
+        }
         auto *field = qobject_cast<QLineEdit *>(watched);
         if (field && !running() && key->key() == Qt::Key_Escape) {
             if (field == inline_editor_) {

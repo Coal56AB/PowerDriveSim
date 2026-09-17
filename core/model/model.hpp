@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 17;
+inline constexpr unsigned project_schema = 19;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -81,7 +81,17 @@ struct Endpoint {
 };
 enum class Domain { electrical, gate, signal };
 enum class Direction { conserving, input, output };
-struct Wire { std::string id; Endpoint from,to; std::vector<Point> bends; bool operator==(const Wire&) const = default; };
+enum class WireLine { automatic, solid, dash };
+struct Wire {
+    std::string id;
+    Endpoint from, to;
+    std::vector<Point> bends;
+    // Empty color and automatic line preserve the domain/theme defaults.
+    std::string color;
+    double width = 2.0;
+    WireLine line = WireLine::automatic;
+    bool operator==(const Wire &) const = default;
+};
 struct ConnectionTag {
     std::string id,name;
     double x=0,y=0;
@@ -194,6 +204,9 @@ struct Project : Schematic {
     std::vector<Experiment> experiments;
     std::vector<Definition> definitions;
     bool scope_enabled=false;
+    // Points explicitly added by the user. scope_channels is the enabled
+    // subset recorded on the next run.
+    std::vector<std::string> scope_points;
     std::vector<std::string> scope_channels;
     double scope_begin=0,scope_end=-1,cursor_a=-1,cursor_b=-1;
     bool operator==(const Project&) const = default;

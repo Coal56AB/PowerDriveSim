@@ -257,8 +257,14 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return g.inputs;
         }
     for (const auto &w : p.wires)
-        if (w.id == id && key == "bends")
-            return w.bends;
+        if (w.id == id) {
+            if (key == "wire_color")
+                return w.color;
+            if (key == "wire_width")
+                return w.width;
+            if (key == "wire_line")
+                return unsigned(w.line);
+        }
     throw Diagnostic("unknown_property", id, "Unsupported property: " + key);
 }
 void write_property(Project &p, const std::string &id, const std::string &key, const PropertyValue &value) {
@@ -438,7 +444,22 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
         }
     for (auto &w : p.wires)
         if (w.id == id) {
-            w.bends = std::get<std::vector<Point>>(value);
+            if (key == "wire_color") {
+                const auto &color = std::get<std::string>(value);
+                if (!color.empty() && (color.size() != 7 || color[0] != '#'))
+                    throw Diagnostic("invalid_wire_style", id, "Expected #RRGGBB color");
+                w.color = color;
+            } else if (key == "wire_width") {
+                const auto width = std::get<double>(value);
+                if (!std::isfinite(width) || width < .5 || width > 10)
+                    throw Diagnostic("invalid_wire_style", id, "Wire width must be from 0.5 to 10");
+                w.width = width;
+            } else if (key == "wire_line") {
+                const auto line = std::get<unsigned>(value);
+                if (line > unsigned(WireLine::dash))
+                    throw Diagnostic("invalid_wire_style", id, "Unknown wire line style");
+                w.line = WireLine(line);
+            }
             return;
         }
 }
