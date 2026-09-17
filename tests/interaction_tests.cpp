@@ -2915,6 +2915,28 @@ class InteractionTests : public QObject {
         if (qEnvironmentVariableIsSet("PDS_WIRE_SCREENSHOT"))
             QVERIFY(vp->grab().save(qEnvironmentVariable("PDS_WIRE_SCREENSHOT")));
     }
+    void deleting_complete_wire_segment_leaves_no_orphan_nodes() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        const auto left = w.add_component(Kind::resistor, {0, 0});
+        const auto right = w.add_component(Kind::resistor, {240, 0});
+        QVERIFY(w.connect_ports({left, "n"}, {right, "p"}));
+        ready(w);
+        auto *canvas = w.canvas();
+        const auto middle = canvas->mapFromScene(QPointF(120, 0));
+        QTest::mouseClick(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, middle);
+        QTest::mouseClick(canvas->viewport(), Qt::LeftButton, Qt::NoModifier, middle);
+        QTest::keyClick(canvas, Qt::Key_Delete);
+        QVERIFY(w.project().wires.empty());
+        QVERIFY(w.project().nodes.empty());
+
+        Project legacy;
+        legacy.id = new_uuid();
+        legacy.wired = true;
+        legacy.nodes.push_back({new_uuid(), "N", false, 120, 80});
+        w.set_project(legacy);
+        QVERIFY(w.project().nodes.empty());
+    }
     void move_rotate_mirror_pan_and_cancel() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
@@ -3219,6 +3241,20 @@ class InteractionTests : public QObject {
                                                [&](const Node &node) { return node.id == joint; });
         QVERIFY(moved_joint != routed.project().nodes.end());
         QCOMPARE(moved_joint->x, routed.port_position({graph, "in1"}).x());
+
+        const auto branch_wire = routed.project().wires.back().id;
+        routed.select_object(branch_wire);
+        auto *branch_item = static_cast<QGraphicsPathItem *>(item(routed, branch_wire));
+        const auto middle = branch_item->path().pointAtPercent(.5);
+        drag(routed, middle, middle + QPointF(-60, 0));
+        const auto shifted_joint = std::find_if(routed.project().nodes.begin(), routed.project().nodes.end(),
+                                                 [&](const Node &node) { return node.id == joint; });
+        QCOMPARE(shifted_joint->x, 240.0);
+        const auto optimized = branch_item->path();
+        QVERIFY(optimized.elementCount() >= 2);
+        const auto before_end = optimized.elementAt(optimized.elementCount() - 2);
+        const auto end = optimized.elementAt(optimized.elementCount() - 1);
+        QCOMPARE(before_end.x, end.x); // No hidden horizontal tail over the trunk.
     }
     void wires_branch_route_reconnect_and_save() {
         QTemporaryDir dir;

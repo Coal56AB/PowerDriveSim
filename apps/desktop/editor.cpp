@@ -68,6 +68,23 @@ namespace pds::desktop {
 static QString q(const std::string &s) {
     return QString::fromStdString(s);
 }
+static void prune_orphan_nodes(Schematic &schematic) {
+    std::set<std::string> orphaned;
+    for (const auto &node : schematic.nodes) {
+        // The obsolete segment-deletion code used the literal name "N" for
+        // these temporary cut markers. Preserve deliberately placed N1/N2...
+        // nodes even while they are not connected yet.
+        if (node.ground || node.name != "N")
+            continue;
+        const bool connected = std::any_of(schematic.wires.begin(), schematic.wires.end(), [&](const Wire &wire) {
+            return wire.from.object == node.id || wire.to.object == node.id;
+        });
+        if (!connected)
+            orphaned.insert(node.id);
+    }
+    std::erase_if(schematic.nodes, [&](const Node &node) { return orphaned.contains(node.id); });
+    std::erase_if(schematic.labels, [&](const LabelLayout &label) { return orphaned.contains(label.object); });
+}
 static QString component_label(const Component &c) {
     if(c.semiconductor.model==SemiconductorModel::piecewise_linear)return "PWL";
     const auto unit=component_unit(c.kind);
@@ -1492,11 +1509,78 @@ void EditorWindow::build_ui() {
                     to = wire.to;
                     break;
                 }
-            bends = clean_route_bends(port_position(from), port_position(to), bends);
+            struct JunctionMove {
+                std::string id;
+                QPointF point;
+            };
+            std::optional<JunctionMove> junction_move;
+            auto generated_node = [](const Node &node) {
+                if (node.ground)
+                    return false;
+                if (node.name.empty())
+                    return true;
+                return node.name[0] == 'N' &&
+                       std::all_of(node.name.begin() + 1, node.name.end(),
+                                   [](unsigned char c) { return std::isdigit(c); });
+            };
+            auto consider_junction = [&](const Endpoint &endpoint, bool at_start) {
+                if (bends.empty() || endpoint.port != "node")
+                    return;
+                const auto node = std::find_if(project().nodes.begin(), project().nodes.end(),
+                                               [&](const Node &candidate) { return candidate.id == endpoint.object; });
+                if (node == project().nodes.end() || !generated_node(*node))
+                    return;
+                std::vector<QPointF> trunk;
+                for (const auto &wire : project().wires) {
+                    if (wire.id == id || (wire.from.object != node->id && wire.to.object != node->id))
+                        continue;
+                    const auto other = wire.from.object == node->id ? wire.to : wire.from;
+                    trunk.push_back(canvas_->snap_point(port_position(other)));
+                }
+                if (trunk.size() < 2)
+                    return;
+                const auto &bend = at_start ? bends.front() : bends.back();
+                const QPointF candidate = canvas_->snap_point({bend.x, bend.y});
+                auto between = [](double value, double a, double b) {
+                    return value >= std::min(a, b) - 1e-6 && value <= std::max(a, b) + 1e-6;
+                };
+                for (size_t i = 0; i < trunk.size(); ++i)
+                    for (size_t j = i + 1; j < trunk.size(); ++j) {
+                        const bool horizontal = std::abs(trunk[i].y() - trunk[j].y()) < 1e-6 &&
+                                                std::abs(candidate.y() - trunk[i].y()) < 1e-6 &&
+                                                between(candidate.x(), trunk[i].x(), trunk[j].x());
+                        const bool vertical = std::abs(trunk[i].x() - trunk[j].x()) < 1e-6 &&
+                                              std::abs(candidate.x() - trunk[i].x()) < 1e-6 &&
+                                              between(candidate.y(), trunk[i].y(), trunk[j].y());
+                        if (horizontal || vertical) {
+                            junction_move = JunctionMove{node->id, candidate};
+                            return;
+                        }
+                    }
+            };
+            consider_junction(from, true);
+            consider_junction(to, false);
+            QPointF route_from = port_position(from), route_to = port_position(to);
+            if (junction_move) {
+                if (from.object == junction_move->id)
+                    route_from = junction_move->point;
+                if (to.object == junction_move->id)
+                    route_to = junction_move->point;
+            }
+            bends = clean_route_bends(route_from, route_to, bends);
             document_->apply("Edit route", [&](Project &p) {
-                for (auto &w : p.wires)
+                for (auto &w : p.wires) {
+                    if (junction_move && (w.from.object == junction_move->id || w.to.object == junction_move->id))
+                        w.bends.clear();
                     if (w.id == id)
                         w.bends = bends;
+                }
+                if (junction_move)
+                    for (auto &node : p.nodes)
+                        if (node.id == junction_move->id) {
+                            node.x = junction_move->point.x();
+                            node.y = junction_move->point.y();
+                        }
             });
             refresh_canvas(false, false);
         } catch (const std::exception &e) {
@@ -1552,6 +1636,10 @@ void EditorWindow::build_ui() {
             [this](QWidget *, QWidget *) { update_command_state(); });
 }
 void EditorWindow::set_project(Project p) {
+    // Old versions serialized two zero-degree junctions when a complete wire
+    // segment was deleted. They have no electrical meaning and must not return
+    // as detached squares when such a project is opened again.
+    prune_orphan_nodes(p);
     cancel_inline_edit();
     rebuilding_ = true;
     for (auto &[id, window] : plot_windows_) {
@@ -2613,8 +2701,8 @@ void EditorWindow::delete_selected() {
                         p.nodes.push_back({node, "N", false, point.x, point.y});
                         return node;
                     };
-                    const auto node_a = make_node(cut_a), node_b = make_node(cut_b);
                     if (segment > 1) {
+                        const auto node_a = make_node(cut_a);
                         Wire left{new_uuid(), original.from, {node_a, "node"}, {}};
                         left.color = original.color;
                         left.width = original.width;
@@ -2623,6 +2711,7 @@ void EditorWindow::delete_selected() {
                         p.wires.push_back(std::move(left));
                     }
                     if (segment + 1 < static_cast<int>(points.size())) {
+                        const auto node_b = make_node(cut_b);
                         Wire right{new_uuid(), {node_b, "node"}, original.to, {}};
                         right.color = original.color;
                         right.width = original.width;
