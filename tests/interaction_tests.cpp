@@ -1222,9 +1222,13 @@ class InteractionTests : public QObject {
             ports->item(1, 0)->setText("negative");
             auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
             dialog->findChild<QPushButton *>("public_parameters_add")->click();
-            parameters->item(0, 0)->setText("Resistance");
+            dialog->findChild<QTabWidget *>()->setCurrentIndex(1);
+            QCoreApplication::processEvents();
+            QVERIFY(dialog->width() >= 1000);
+            QVERIFY(parameters->columnWidth(1) >= 160);
+            parameters->item(0, 0)->setText("DC-link precharge resistance");
             qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->setText("2 kOhm");
-            parameters->item(0, 3)->setText("Electrical");
+            parameters->item(0, 3)->setText("Electrical parameters of power stage");
             qobject_cast<QLineEdit *>(parameters->cellWidget(0, 5))->setText("1 kOhm");
             qobject_cast<QLineEdit *>(parameters->cellWidget(0, 6))->setText("4 kOhm");
             auto *symbol = dialog->findChild<QComboBox *>("public_symbol");
@@ -1247,7 +1251,8 @@ class InteractionTests : public QObject {
         QCOMPARE(d.ports[0].name, std::string("positive"));
         QCOMPARE(d.parameters.size(), size_t(1));
         QCOMPARE(d.parameters[0].value, 2000.);
-        QCOMPARE(d.parameters[0].group, std::string("Electrical"));
+        QCOMPARE(d.parameters[0].name, std::string("DC-link precharge resistance"));
+        QCOMPARE(d.parameters[0].group, std::string("Electrical parameters of power stage"));
         QVERIFY(d.parameters[0].has_minimum);
         QCOMPARE(d.parameters[0].minimum, 1000.);
         QVERIFY(d.parameters[0].has_maximum);
@@ -1259,10 +1264,11 @@ class InteractionTests : public QObject {
         std::istringstream appearance_input(appearance_stream.str());
         const auto restored_definition = definition(read_project(appearance_input), definition_id);
         QCOMPARE(restored_definition.appearance.symbol, 220);
-        QCOMPARE(restored_definition.parameters[0].group, std::string("Electrical"));
+        QCOMPARE(restored_definition.parameters[0].group,
+                 std::string("Electrical parameters of power stage"));
         const auto labels = w.findChildren<QLabel *>();
         QVERIFY(std::any_of(labels.begin(), labels.end(), [](QLabel *label) {
-            return label->isVisible() && label->text() == "Electrical";
+            return label->isVisible() && label->text() == "Electrical parameters of power stage";
         }));
         auto *parameter =
             w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(d.parameters[0].id));

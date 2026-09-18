@@ -562,7 +562,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     QDialog dialog(this);
     dialog.setObjectName("public_interface_dialog");
     dialog.setWindowTitle(text("public_interface") + " · " + QString::fromStdString(edited.name));
-    dialog.resize(730, 440);
+    dialog.resize(1080, 520);
     auto *layout = new QVBoxLayout(&dialog);
     auto *tabs = new QTabWidget;
     layout->addWidget(tabs);
@@ -679,6 +679,17 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                            b.maximum});
         }
     });
+    auto *parameter_header = parameters.horizontalHeader();
+    parameter_header->setSectionResizeMode(0, QHeaderView::Interactive);
+    parameter_header->setSectionResizeMode(1, QHeaderView::Stretch);
+    for (int column = 2; column < parameters.columnCount(); ++column)
+        parameter_header->setSectionResizeMode(column, QHeaderView::Interactive);
+    parameters.setColumnWidth(0, 170);
+    parameters.setColumnWidth(2, 125);
+    parameters.setColumnWidth(3, 145);
+    parameters.setColumnWidth(4, 75);
+    parameters.setColumnWidth(5, 110);
+    parameters.setColumnWidth(6, 110);
     auto *error = new QLabel;
     error->setWordWrap(true);
     auto *appearance_page = new QWidget;
