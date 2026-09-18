@@ -85,47 +85,227 @@ bool script_identifier(const std::string &value) {
         return std::isalnum(c) || c == '_';
     });
 }
-std::pair<std::map<std::string, std::string>, std::string> script_program(const std::string &code) {
+struct ScriptProgram {
     std::map<std::string, std::string> variables;
     std::string expression;
+};
+ScriptProgram script_program(const std::string &code) {
+    ScriptProgram program;
     for (auto statement : split_statements(code)) {
+        if (statement.rfind("return", 0) == 0) {
+            program.expression = statement.substr(6);
+            continue;
+        }
         const auto eq = statement.find('=');
-        if (eq != std::string::npos && statement.find("==") == std::string::npos) {
+        const bool assignment = eq != std::string::npos &&
+            (eq == 0 || (statement[eq - 1] != '<' && statement[eq - 1] != '>' && statement[eq - 1] != '!' && statement[eq - 1] != '=')) &&
+            (eq + 1 == statement.size() || statement[eq + 1] != '=');
+        if (assignment) {
             auto name = statement.substr(0, eq);
-            if (name.rfind("auto", 0) == 0)
-                name = name.substr(4);
+            for (const auto *prefix : {"constdouble", "constbool", "constauto", "double", "bool", "auto"})
+                if (name.rfind(prefix, 0) == 0) {
+                    name = name.substr(std::char_traits<char>::length(prefix));
+                    break;
+                }
             if (!script_identifier(name))
                 throw Diagnostic("invalid_gate_script", "", "Assignment target must be an identifier");
-            variables[name] = statement.substr(eq + 1);
+            program.variables[name] = statement.substr(eq + 1);
         } else {
-            expression = std::move(statement);
+            program.expression = std::move(statement);
         }
     }
-    return {variables, expression.empty() ? code : expression};
+    if (program.expression.empty())
+        program.expression = code;
+    return program;
 }
+class ScriptExpression {
+public:
+    ScriptExpression(const std::string &text, double time,
+                     const std::map<std::string, std::string> &variables,
+                     std::set<std::string> &resolving)
+        : text_(text), time_(time), variables_(variables), resolving_(resolving) {}
+
+    double parse() {
+        const double value = logical_or();
+        if (position_ != text_.size())
+            fail("Unexpected token");
+        if (!std::isfinite(value))
+            fail("Expression result must be finite");
+        return value;
+    }
+
+private:
+    [[noreturn]] void fail(const std::string &message) const {
+        throw Diagnostic("invalid_gate_script", "", message + " at column " + std::to_string(position_ + 1));
+    }
+    bool take(const std::string &token) {
+        if (text_.compare(position_, token.size(), token) != 0)
+            return false;
+        position_ += token.size();
+        return true;
+    }
+    double logical_or() {
+        double value = logical_and();
+        while (take("||")) {
+            const double rhs = logical_and();
+            value = value != 0 || rhs != 0;
+        }
+        return value;
+    }
+    double logical_and() {
+        double value = equality();
+        while (take("&&")) {
+            const double rhs = equality();
+            value = value != 0 && rhs != 0;
+        }
+        return value;
+    }
+    double equality() {
+        double value = comparison();
+        for (;;) {
+            if (take("==")) value = value == comparison();
+            else if (take("!=")) value = value != comparison();
+            else return value;
+        }
+    }
+    double comparison() {
+        double value = addition();
+        for (;;) {
+            if (take("<=")) value = value <= addition();
+            else if (take(">=")) value = value >= addition();
+            else if (take("<")) value = value < addition();
+            else if (take(">")) value = value > addition();
+            else return value;
+        }
+    }
+    double addition() {
+        double value = multiplication();
+        for (;;) {
+            if (take("+")) value += multiplication();
+            else if (take("-")) value -= multiplication();
+            else return value;
+        }
+    }
+    double multiplication() {
+        double value = unary();
+        for (;;) {
+            if (take("*")) value *= unary();
+            else if (take("/")) {
+                const double divisor = unary();
+                if (divisor == 0)
+                    fail("Division by zero");
+                value /= divisor;
+            } else return value;
+        }
+    }
+    double unary() {
+        if (take("!")) return unary() == 0;
+        if (take("+")) return unary();
+        if (take("-")) return -unary();
+        return primary();
+    }
+    double primary() {
+        if (take("(")) {
+            const double value = logical_or();
+            if (!take(")")) fail("Expected ')'");
+            return value;
+        }
+        if (position_ < text_.size() && (std::isdigit(static_cast<unsigned char>(text_[position_])) || text_[position_] == '.')) {
+            size_t used = 0;
+            const double value = std::stod(text_.substr(position_), &used);
+            position_ += used;
+            return value;
+        }
+        const size_t begin = position_;
+        if (position_ < text_.size() && (std::isalpha(static_cast<unsigned char>(text_[position_])) || text_[position_] == '_')) {
+            ++position_;
+            while (position_ < text_.size() && (std::isalnum(static_cast<unsigned char>(text_[position_])) || text_[position_] == '_'))
+                ++position_;
+        }
+        if (begin == position_)
+            fail("Expected a number, variable or function");
+        const std::string name = text_.substr(begin, position_ - begin);
+        if (take("(")) {
+            std::vector<double> arguments;
+            if (!take(")")) {
+                do arguments.push_back(logical_or()); while (take(","));
+                if (!take(")")) fail("Expected ')' after function arguments");
+            }
+            return call(name, arguments);
+        }
+        if (name == "t") return time_;
+        if (name == "true") return 1;
+        if (name == "false") return 0;
+        const auto variable = variables_.find(name);
+        if (variable == variables_.end())
+            fail("Unknown variable '" + name + "'");
+        if (!resolving_.insert(name).second)
+            fail("Cyclic variable reference '" + name + "'");
+        ScriptExpression nested(variable->second, time_, variables_, resolving_);
+        const double value = nested.parse();
+        resolving_.erase(name);
+        return value;
+    }
+    double call(const std::string &name, const std::vector<double> &a) const {
+        if (name == "ramp") {
+            if (a.size() != 4) fail("Use ramp(t0,t1,value0,value1)");
+            if (a[1] <= a[0]) fail("Ramp end time must be greater than start time");
+            const double k = std::clamp((time_ - a[0]) / (a[1] - a[0]), 0.0, 1.0);
+            return a[2] + (a[3] - a[2]) * k;
+        }
+        if (name == "pwm" || name == "square" || name == "phasepwm") {
+            if (a.size() != 3 || a[0] <= 0 || a[1] < 0 || a[1] > 1 || (name != "phasepwm" && a[2] < 0))
+                fail("Use pwm(frequency,duty,delay) with duty 0..1");
+            if (a[1] == 0) return 0;
+            if (a[1] == 1) return 1;
+            const double period = 1.0 / a[0];
+            double delay = name == "phasepwm" ? std::fmod(a[2], period) : a[2];
+            if (delay < 0) delay += period;
+            if (name != "phasepwm" && time_ < delay) return 0;
+            double phase = std::fmod(time_ - delay, period);
+            if (phase < 0) phase += period;
+            return phase < a[1] * period;
+        }
+        if (name == "abs" && a.size() == 1) return std::abs(a[0]);
+        if (name == "min" && a.size() == 2) return std::min(a[0], a[1]);
+        if (name == "max" && a.size() == 2) return std::max(a[0], a[1]);
+        if (name == "sqrt" && a.size() == 1 && a[0] >= 0) return std::sqrt(a[0]);
+        if (name == "pow" && a.size() == 2) return std::pow(a[0], a[1]);
+        fail("Unknown function or invalid argument count for '" + name + "'");
+    }
+
+    const std::string &text_;
+    double time_;
+    const std::map<std::string, std::string> &variables_;
+    std::set<std::string> &resolving_;
+    size_t position_ = 0;
+};
+
 double script_number(const std::string &token, double t,
                      const std::map<std::string, std::string> &variables = {}) {
-    if (token == "t")
-        return t;
-    if (auto variable = variables.find(token); variable != variables.end())
-        return script_number(variable->second, t, variables);
-    if (token.rfind("ramp(", 0) == 0 && token.back() == ')') {
-        const auto args = split_arguments(token.substr(5, token.size() - 6));
-        if (args.size() != 4)
-            throw Diagnostic("invalid_gate_script", "", "Use ramp(t0,t1,value0,value1)");
-        std::vector<double> values;
-        for (const auto &arg : args)
-            values.push_back(script_number(arg, t, variables));
-        if (values[1] <= values[0])
-            throw Diagnostic("invalid_gate_script", "", "Ramp end time must be greater than start time");
-        const double k = std::clamp((t - values[0]) / (values[1] - values[0]), 0.0, 1.0);
-        return values[2] + (values[3] - values[2]) * k;
+    std::set<std::string> resolving;
+    return ScriptExpression(token, t, variables, resolving).parse();
+}
+
+bool expression_depends_on_time(const std::string &text,
+                                const std::map<std::string, std::string> &variables,
+                                std::set<std::string> &checking) {
+    for (size_t i = 0; i < text.size();) {
+        if (!(std::isalpha(static_cast<unsigned char>(text[i])) || text[i] == '_')) {
+            ++i;
+            continue;
+        }
+        const size_t begin = i++;
+        while (i < text.size() && (std::isalnum(static_cast<unsigned char>(text[i])) || text[i] == '_')) ++i;
+        const auto name = text.substr(begin, i - begin);
+        if (name == "t" || name == "ramp") return true;
+        if (const auto variable = variables.find(name); variable != variables.end() && checking.insert(name).second) {
+            const bool result = expression_depends_on_time(variable->second, variables, checking);
+            checking.erase(name);
+            if (result) return true;
+        }
     }
-    size_t used = 0;
-    const double value = std::stod(token, &used);
-    if (used != token.size() || !std::isfinite(value))
-        throw Diagnostic("invalid_gate_script", "", "Gate script argument must be finite");
-    return value;
+    return false;
 }
 std::vector<double> script_arguments(const std::string &code, const std::string &name, std::optional<double> t = {},
                                      const std::map<std::string, std::string> &variables = {}) {
@@ -135,16 +315,20 @@ std::vector<double> script_arguments(const std::string &code, const std::string 
     for (const auto &token : split_arguments(code.substr(name.size() + 1, code.size() - name.size() - 2))) {
         if (token.empty())
             throw Diagnostic("invalid_gate_script", "", "Gate script argument is empty");
-        if (!t && (token.find('t') != std::string::npos || token.find("ramp(") != std::string::npos ||
-                   variables.contains(token)))
-            return {};
+        if (!t) {
+            std::set<std::string> checking;
+            if (expression_depends_on_time(token, variables, checking))
+                return {};
+        }
         result.push_back(script_number(token, t.value_or(0), variables));
     }
     return result;
 }
-std::vector<double> script_pwm_arguments(const GatePattern &g, std::optional<double> t = {}) {
-    const auto code = compact_script(g.code);
-    const auto [variables, expression] = script_program(code);
+std::vector<double> script_pwm_arguments(const GatePattern &g, std::optional<double> t = {},
+                                         const ScriptProgram *prepared = nullptr) {
+    const auto parsed = prepared ? ScriptProgram{} : script_program(compact_script(g.code));
+    const auto &variables = prepared ? prepared->variables : parsed.variables;
+    const auto &expression = prepared ? prepared->expression : parsed.expression;
     for (const auto *name : {"pwm", "square"}) {
         auto args = script_arguments(expression, name, t, variables);
         if (!args.empty()) {
@@ -166,7 +350,8 @@ std::optional<std::array<double, 4>> ramp_arguments(std::string token,
         throw Diagnostic("invalid_gate_script", "", "Use ramp(t0,t1,value0,value1)");
     std::array<double, 4> values{};
     for (size_t i = 0; i < args.size(); ++i) {
-        if (args[i].find('t') != std::string::npos || args[i].find("ramp(") != std::string::npos)
+        std::set<std::string> checking;
+        if (expression_depends_on_time(args[i], variables, checking))
             return {};
         values[i] = script_number(args[i], 0, variables);
     }
@@ -175,16 +360,19 @@ std::optional<std::array<double, 4>> ramp_arguments(std::string token,
     return values;
 }
 bool generate_phase_pwm_edges(const GatePattern &g, double stop,
-                              const std::function<void(double, bool)> &edge) {
-    const auto code = compact_script(g.code);
-    const auto [variables, expression] = script_program(code);
+                              const std::function<void(double, bool)> &edge,
+                              const ScriptProgram *prepared = nullptr) {
+    const auto parsed = prepared ? ScriptProgram{} : script_program(compact_script(g.code));
+    const auto &variables = prepared ? prepared->variables : parsed.variables;
+    const auto &expression = prepared ? prepared->expression : parsed.expression;
     if (expression.rfind("phasepwm(", 0) != 0 || expression.back() != ')')
         return false;
     const auto args = split_arguments(expression.substr(9, expression.size() - 10));
     if (args.size() != 3)
         throw Diagnostic("invalid_gate_script", g.id, "Use phasepwm(frequency,duty,delay) with duty 0..1");
-    if (args[0].find('t') != std::string::npos || args[1].find('t') != std::string::npos ||
-        args[0].find("ramp(") != std::string::npos || args[1].find("ramp(") != std::string::npos)
+    std::set<std::string> frequency_checking, duty_checking;
+    if (expression_depends_on_time(args[0], variables, frequency_checking) ||
+        expression_depends_on_time(args[1], variables, duty_checking))
         return false;
     const double frequency = script_number(args[0], 0, variables);
     const double duty = script_number(args[1], 0, variables);
@@ -227,29 +415,10 @@ bool generate_phase_pwm_edges(const GatePattern &g, double stop,
     emit_interval(std::max(0.0, t1), stop, 0, d1);
     return true;
 }
-bool compare_time(double t, const std::string &condition) {
-    const std::pair<const char *, int> ops[] = {{">=", 2}, {"<=", 2}, {">", 1}, {"<", 1}, {"==", 2}};
-    for (const auto &[op, size] : ops) {
-        const auto pos = condition.find(op);
-        if (pos == std::string::npos)
-            continue;
-        if (condition.substr(0, pos) != "t")
-            throw Diagnostic("invalid_gate_script", "", "Left side must be t");
-        size_t used = 0;
-        const double rhs = std::stod(condition.substr(pos + size), &used);
-        if (used != condition.size() - pos - size || !std::isfinite(rhs))
-            throw Diagnostic("invalid_gate_script", "", "Comparison value must be finite");
-        if (std::string(op) == ">=") return t >= rhs;
-        if (std::string(op) == "<=") return t <= rhs;
-        if (std::string(op) == ">") return t > rhs;
-        if (std::string(op) == "<") return t < rhs;
-        return t == rhs;
-    }
-    throw Diagnostic("invalid_gate_script", "", "Expected comparison with t");
-}
-bool gate_script_value(const GatePattern &g, double t) {
-    const auto code = compact_script(g.code);
-    const auto [variables, expression] = script_program(code);
+bool gate_script_value(const GatePattern &g, double t, const ScriptProgram *prepared = nullptr) {
+    const auto parsed = prepared ? ScriptProgram{} : script_program(compact_script(g.code));
+    const auto &variables = prepared ? prepared->variables : parsed.variables;
+    const auto &expression = prepared ? prepared->expression : parsed.expression;
     if (expression == "1" || expression == "true") return true;
     if (expression == "0" || expression == "false") return false;
     if (auto args = script_arguments(expression, "phasepwm", t, variables); !args.empty()) {
@@ -268,27 +437,13 @@ bool gate_script_value(const GatePattern &g, double t) {
             phase += period;
         return phase < args[1] * period;
     }
-    if (auto args = script_pwm_arguments(g, t); !args.empty()) {
+    if (auto args = script_pwm_arguments(g, t, prepared ? prepared : &parsed); !args.empty()) {
             if (t < args[2] || args[1] == 0) return false;
             if (args[1] == 1) return true;
             const double phase = std::fmod((t - args[2]) * args[0], 1.0);
             return phase >= 0 && phase < args[1];
     }
-    const auto split = [](const std::string &value, const std::string &separator) {
-        std::vector<std::string> parts;
-        size_t start = 0;
-        for (;;) {
-            const auto pos = value.find(separator, start);
-            parts.push_back(value.substr(start, pos == std::string::npos ? pos : pos - start));
-            if (pos == std::string::npos) break;
-            start = pos + separator.size();
-        }
-        return parts;
-    };
-    bool result = true;
-    for (const auto &term : split(expression, "&&"))
-        result = result && compare_time(t, term);
-    return result;
+    return script_number(expression, t, variables) != 0;
 }
 } // namespace
 
@@ -415,15 +570,17 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=g.delay+static_cast<double>(k)/g.frequency;double fall=g.delay+(static_cast<double>(k)+g.duty)/g.frequency;edge(rise,true);edge(fall,false);}
     }
     for(auto& g:project.patterns)if(g.script){
+      try {
+        const auto program=script_program(compact_script(g.code));
         if(std::any_of(project.events.begin(),project.events.end(),[&](const GateEvent& e){return e.target==g.id;}))throw Diagnostic("conflicting_gate_events",g.id,"Gate script cannot have manually recorded events");
         {
             auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
-            if(generate_phase_pwm_edges(g,project.profile.stop,edge)) {
-                g.initial=gate_script_value(g,0);
+            if(generate_phase_pwm_edges(g,project.profile.stop,edge,&program)) {
+                g.initial=gate_script_value(g,0,&program);
                 continue;
             }
         }
-        if(auto args=script_pwm_arguments(g);!args.empty()) {
+        if(auto args=script_pwm_arguments(g,{},&program);!args.empty()) {
             g.initial=args[2]==0&&args[1]>0;
             if(args[1]==0||args[2]>project.profile.stop)continue;
             auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
@@ -433,18 +590,23 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
             for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=args[2]+static_cast<double>(k)/args[0];double fall=args[2]+(static_cast<double>(k)+args[1])/args[0];edge(rise,true);edge(fall,false);}
             continue;
         }
-        bool previous=gate_script_value(g,0);
+        bool previous=gate_script_value(g,0,&program);
         g.initial=previous;
         const auto steps=project.profile.stop/g.script_step;
         if(!std::isfinite(steps)||steps>1000000)throw Diagnostic("pwm_event_limit",g.id,"Gate script exceeds one million probes; increase script step or reduce duration");
         for(size_t k=1;k<=static_cast<size_t>(std::ceil(steps));++k) {
             const double t=std::min(project.profile.stop,static_cast<double>(k)*g.script_step);
-            const bool value=gate_script_value(g,t);
+            const bool value=gate_script_value(g,t,&program);
             if(value!=previous) {
                 generated_edge(g,t,value,generated);
                 previous=value;
             }
         }
+      } catch(const Diagnostic& diagnostic) {
+        if(diagnostic.code=="invalid_gate_script"&&diagnostic.object.empty())
+            throw Diagnostic(diagnostic.code,g.id,diagnostic.what(),diagnostic.time);
+        throw;
+      }
     }
 
     auto ir=compile_flat(resolve_connections(project,origins).project);

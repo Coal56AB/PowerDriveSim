@@ -127,7 +127,9 @@ int main(int argc, char **argv) {
         check(pasted.size()==1&&pasted[0]!=pwm&&doc.project().patterns.back().pwm,"Copy preserves PWM and assigns independent UUID");
         doc.undo();check(doc.project().patterns.back().id==pwm,"Paste undo");
         auto script=doc.add_pattern(180,100);
-        doc.apply("Gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;g.name="Script";g.code="pwm(1000, 0.25, 0.0001)";g.script_step=1e-5;});
+        doc.apply("Gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;g.name="Script";
+            g.code="const double base = 500; double frequency = base * 2; double duty = 1.0 / 4.0; "
+                   "return pwm(frequency, duty, 100e-6);";g.script_step=1e-5;});
         check(std::get<unsigned>(read_property(doc.project(),script,"gate_mode"))==2,"Script is exposed as one Gate mode");
         Recording scripted;scripted.all=false;scripted.channels={"gate/"+script};
         auto script_result=execute(compile(doc.project()),nullptr,nullptr,&scripted);
@@ -140,16 +142,39 @@ int main(int argc, char **argv) {
         }
         check(script_rise&&script_fall,"Gate script schedules reproducible PWM edges");
         std::ostringstream scripted_roundtrip;write_project(doc.project(),scripted_roundtrip);std::istringstream scripted_reload(scripted_roundtrip.str());auto scripted_restored=read_project(scripted_reload);
-        check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("pwm(")==0,"Gate script roundtrip");
+        check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("return pwm")!=std::string::npos,"Gate script roundtrip");
         doc.apply("Gate timing mode",[&](Project& p){write_property(p,script,"gate_mode",unsigned(0));});
         check(!doc.project().patterns.back().pwm&&!doc.project().patterns.back().script,"Gate can switch back to timing mode");
-        doc.apply("Dynamic gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;g.code="pwm(1000,0.25,ramp(0,0.001,0.0004,0))";g.script_step=1e-5;});
+        doc.apply("Dynamic gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;
+            g.code="double frequency = 500 * 2; return pwm(frequency, 1.0 / 4.0, "
+                   "ramp(0, 0.001, 0.0004, 0));";g.script_step=1e-5;});
         Recording dynamic;dynamic.all=false;dynamic.channels={"gate/"+script};
         auto dynamic_result=execute(compile(doc.project()),nullptr,nullptr,&dynamic);
         bool dynamic_edge=false;
         for(const auto& sample:dynamic_result.samples)
             dynamic_edge|=sample.time>0&&sample.gates[0];
         check(dynamic_edge,"Gate script PWM can use ramped parameters based on simulation time");
+        doc.apply("Boolean gate script",[&](Project& p){auto& g=p.patterns.back();
+            g.code="const double begin = 0.0002; const double width = 0.0003; "
+                   "return t >= begin && t < begin + width;";});
+        auto boolean_result=execute(compile(doc.project()),nullptr,nullptr,&dynamic);
+        bool boolean_rise=false,boolean_fall=false,previous_boolean=false;
+        for(const auto& sample:boolean_result.samples){
+            const bool gate=sample.gates[0];
+            if(!previous_boolean&&gate&&std::abs(sample.time-.0002)<1e-9)boolean_rise=true;
+            if(previous_boolean&&!gate&&std::abs(sample.time-.0005)<1e-9)boolean_fall=true;
+            previous_boolean=gate;
+        }
+        check(boolean_rise&&boolean_fall,"C-like gate script evaluates declarations, arithmetic, return and logic");
+        doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().code=
+            "double a = b; double b = a; return a;";});
+        bool addressed_script_error=false;
+        try {
+            (void)compile(doc.project());
+        } catch(const Diagnostic& diagnostic) {
+            addressed_script_error=diagnostic.code=="invalid_gate_script"&&diagnostic.object==script;
+        }
+        check(addressed_script_error,"Gate script errors address the edited gate block");
         std::cout << "PASS plots, schema5, selective recording, no-history execution, signal edges and "
                      "export subsets\n";
         return 0;
