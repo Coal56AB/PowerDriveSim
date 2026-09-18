@@ -289,6 +289,10 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     Project project=source;
     (void)resolve_connections(project); // Validate parameters before generating scheduled edges.
     if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
+    // Manual table edges remain in the document while another gate mode is
+    // active. They are inactive input, not a second driver of the same signal.
+    for(const auto& g:project.patterns)if(g.pwm||g.script)
+        std::erase_if(project.events,[&](const GateEvent& event){return event.target==g.id;});
     size_t generated=0;
     auto generated_edge = [&](const GatePattern &g, double time, bool state, size_t &generated) {
         if(time>0&&time<=project.profile.stop){
@@ -297,7 +301,6 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         }
     };
     for(auto& g:project.patterns)if(g.pwm){
-        if(std::any_of(project.events.begin(),project.events.end(),[&](const GateEvent& e){return e.target==g.id;}))throw Diagnostic("conflicting_gate_events",g.id,"PWM cannot have manually recorded events");
         g.initial=g.delay==0&&g.duty>0;
         if(g.duty==0||g.delay>project.profile.stop)continue;
         auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
@@ -309,7 +312,6 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     for(auto& g:project.patterns)if(g.script){
       try {
         const auto program=script_program(g.code);
-        if(std::any_of(project.events.begin(),project.events.end(),[&](const GateEvent& e){return e.target==g.id;}))throw Diagnostic("conflicting_gate_events",g.id,"Gate script cannot have manually recorded events");
         {
             auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
             if(generate_phase_pwm_edges(g,project.profile.stop,edge,&program)) {

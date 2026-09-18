@@ -424,8 +424,6 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                     g.frequency = 1000;
                 if (g.script && g.code.empty())
                     g.code = "pwm(1000, 0.5, 0)";
-                if (g.pwm || g.script)
-                    std::erase_if(p.events, [&](const GateEvent &e) { return e.target == id; });
                 return;
             }
             if (key == "closed")

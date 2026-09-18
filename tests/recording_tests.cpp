@@ -127,9 +127,13 @@ int main(int argc, char **argv) {
         check(pasted.size()==1&&pasted[0]!=pwm&&doc.project().patterns.back().pwm,"Copy preserves PWM and assigns independent UUID");
         doc.undo();check(doc.project().patterns.back().id==pwm,"Paste undo");
         auto script=doc.add_pattern(180,100);
-        doc.apply("Gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;g.name="Script";
+        doc.apply("Gate table",[&](Project& p){p.events.push_back({.0002,script,true});});
+        doc.apply("Gate script",[&](Project& p){auto& g=p.patterns.back();g.name="Script";
+            write_property(p,script,"gate_mode",unsigned(2));
             g.code="const double base = 500; double frequency = base * 2; double duty = 1.0 / 4.0; "
                    "return pwm(frequency, duty, 100e-6);";g.script_step=1e-5;});
+        check(std::get<std::vector<GateEvent>>(read_property(doc.project(),script,"events")).size()==1,
+              "Switching to code preserves the inactive gate table");
         check(std::get<unsigned>(read_property(doc.project(),script,"gate_mode"))==2,"Script is exposed as one Gate mode");
         Recording scripted;scripted.all=false;scripted.channels={"gate/"+script};
         auto script_result=execute(compile(doc.project()),nullptr,nullptr,&scripted);
@@ -144,7 +148,9 @@ int main(int argc, char **argv) {
         std::ostringstream scripted_roundtrip;write_project(doc.project(),scripted_roundtrip);std::istringstream scripted_reload(scripted_roundtrip.str());auto scripted_restored=read_project(scripted_reload);
         check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("return pwm")!=std::string::npos,"Gate script roundtrip");
         doc.apply("Gate timing mode",[&](Project& p){write_property(p,script,"gate_mode",unsigned(0));});
-        check(!doc.project().patterns.back().pwm&&!doc.project().patterns.back().script,"Gate can switch back to timing mode");
+        check(!doc.project().patterns.back().pwm&&!doc.project().patterns.back().script&&
+                  std::get<std::vector<GateEvent>>(read_property(doc.project(),script,"events")).size()==1,
+              "Gate can switch back to its preserved timing table");
         doc.apply("Dynamic gate script",[&](Project& p){auto& g=p.patterns.back();g.script=true;
             g.code="double frequency = 500 * 2; return pwm(frequency, 1.0 / 4.0, "
                    "ramp(0, 0.001, 0.0004, 0));";g.script_step=1e-5;});
