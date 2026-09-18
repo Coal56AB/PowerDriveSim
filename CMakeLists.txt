@@ -3,7 +3,7 @@ project(PowerDriveSim VERSION 0.4.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-add_library(powerdrive core/model/model.cpp core/model/waveform.cpp core/model/connectivity.cpp core/model/hierarchy.cpp core/model/units.cpp core/editor/document.cpp core/editor/properties.cpp formats/project/project.cpp formats/snapshot/snapshot.cpp
+add_library(powerdrive core/model/model.cpp core/model/expression.cpp core/model/waveform.cpp core/model/connectivity.cpp core/model/hierarchy.cpp core/model/units.cpp core/editor/document.cpp core/editor/properties.cpp formats/project/project.cpp formats/snapshot/snapshot.cpp
   core/model/experiment.cpp core/experiment/sweep.cpp formats/experiment/experiment.cpp results/experiment_csv.cpp
   core/model/semiconductor.cpp core/editor/hierarchy.cpp core/compiler/compiler.cpp core/compiler/topology.cpp core/ir/snapshot.cpp core/solver/reference/reference.cpp core/solver/reference/factorization.cpp core/solver/reference/equation_cache.cpp formats/samples/table.cpp results/csv.cpp results/measurements.cpp results/integrals.cpp results/spectrum.cpp)
 target_include_directories(powerdrive PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

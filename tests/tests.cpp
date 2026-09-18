@@ -1,6 +1,7 @@
 #include "formats/project/project.hpp"
 #include "results/csv.hpp"
 #include "core/solver/reference/factorization.hpp"
+#include "core/model/expression.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -82,6 +83,15 @@ static void unit() {
     std::ostringstream csv; write_csv(r,csv);
     require(csv.str().find("backend=Reference CPU")!=std::string::npos,"Metadata");
     require(csv.str().find("[V]")!=std::string::npos,"CSV units");
+    const auto expression=parse_expression_program(
+        "const double base = 20; double scaled = base * 2.5; return max(scaled, 10);");
+    near(evaluate_expression(expression.expression,expression.variables),50,1e-12,
+         "Shared expression evaluator");
+    error("invalid_expression",[]{
+        const auto cyclic=parse_expression_program("double a = b; double b = a;");
+        (void)evaluate_expression("a",cyclic.variables);
+    });
+    error("invalid_expression",[]{(void)evaluate_expression("t + 1");});
 }
 static double rc_error(Project p) {
     auto r=execute(compile(p)); double max_error=0;
