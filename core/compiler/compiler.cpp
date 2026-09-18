@@ -287,12 +287,12 @@ static SimulationIR compile_flat(const Project& p) {
 }
 static SimulationIR compile_wired(const Project& source, const std::map<std::string,ObjectPath>& origins) {
     Project project=source;
-    (void)resolve_connections(project); // Validate parameters before generating scheduled edges.
-    if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
     // Manual table edges remain in the document while another gate mode is
     // active. They are inactive input, not a second driver of the same signal.
     for(const auto& g:project.patterns)if(g.pwm||g.script)
         std::erase_if(project.events,[&](const GateEvent& event){return event.target==g.id;});
+    (void)resolve_connections(project); // Validate active parameters before generating scheduled edges.
+    if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
     size_t generated=0;
     auto generated_edge = [&](const GatePattern &g, double time, bool state, size_t &generated) {
         if(time>0&&time<=project.profile.stop){
@@ -358,10 +358,17 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
 }
 
 SimulationIR compile(const Project& source) {
-    auto resolved=resolve_parameter_expressions(source);
+    Project active=source;
+    auto select_gate_modes=[](Schematic& schematic) {
+        for(const auto& gate:schematic.patterns)if(gate.pwm||gate.script)
+            std::erase_if(schematic.events,[&](const GateEvent& event){return event.target==gate.id;});
+    };
+    select_gate_modes(active);
+    for(auto& definition:active.definitions)select_gate_modes(definition);
+    auto resolved=resolve_parameter_expressions(active);
     auto expanded=flatten(resolved);
     try {
-        if(!source.instances.empty()) {
+        if(!active.instances.empty()) {
             for(const auto& [terminal,net]:resolve_connections(expanded.project).nets) {
                 auto origin=expanded.origins.find(terminal.substr(0,terminal.find('/')));
                 if(origin!=expanded.origins.end())expanded.origins.try_emplace(net,origin->second);
