@@ -4,6 +4,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QCompleter>
@@ -13,6 +14,8 @@
 #include <QFontDatabase>
 #include <QHeaderView>
 #include <QJsonDocument>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -26,6 +29,8 @@
 #include <QTableWidget>
 #include <QTextCharFormat>
 #include <array>
+#include <utility>
+#include <vector>
 namespace pds::desktop {
 namespace {
 class EventTimeDelegate final : public QStyledItemDelegate {
@@ -37,6 +42,47 @@ class EventTimeDelegate final : public QStyledItemDelegate {
         if (auto *line = qobject_cast<QLineEdit *>(editor))
             normalize_decimal_point(line);
         return editor;
+    }
+};
+class EventTableWidget final : public QTableWidget {
+  public:
+    explicit EventTableWidget(QWidget *parent = nullptr) : QTableWidget(1, 2, parent) {}
+
+  protected:
+    void keyPressEvent(QKeyEvent *event) override {
+        if (!event->matches(QKeySequence::Paste)) {
+            QTableWidget::keyPressEvent(event);
+            return;
+        }
+        QString source = QApplication::clipboard()->text();
+        for (const auto bracket : QString("{}[]()"))
+            source.replace(bracket, ' ');
+        const auto tokens = source.split(QRegularExpression(R"([,;\s]+)"), Qt::SkipEmptyParts);
+        if (tokens.empty() || tokens.size() % 2 != 0) {
+            QTableWidget::keyPressEvent(event);
+            return;
+        }
+        std::vector<std::pair<QString, QString>> pairs;
+        try {
+            for (int i = 0; i < tokens.size(); i += 2) {
+                const auto state = tokens[i + 1].trimmed();
+                if (state != "0" && state != "1")
+                    throw std::runtime_error("state");
+                (void)parse_si(tokens[i].toStdString(), "s");
+                pairs.emplace_back(tokens[i], state);
+            }
+        } catch (...) {
+            QTableWidget::keyPressEvent(event);
+            return;
+        }
+        const int first = currentRow() >= 0 ? currentRow() : 0;
+        setRowCount(std::max(rowCount(), first + int(pairs.size()) + 1));
+        for (int i = 0; i < int(pairs.size()); ++i) {
+            setItem(first + i, 0, new QTableWidgetItem(pairs[size_t(i)].first));
+            setItem(first + i, 1, new QTableWidgetItem(pairs[size_t(i)].second));
+        }
+        setCurrentCell(first + int(pairs.size()) - 1, 1);
+        event->accept();
     }
 };
 class GateCodeHighlighter final : public QSyntaxHighlighter {
@@ -269,7 +315,8 @@ void EditorWindow::build_property_editors() {
                         apply_inspector();
                 });
             } else if (kind == "events" || kind == "samples") {
-                auto *table = new QTableWidget(1, 2);
+                auto *table = kind == "events" ? static_cast<QTableWidget *>(new EventTableWidget)
+                                                : new QTableWidget(1, 2);
                 table->setItemDelegateForColumn(0, new EventTimeDelegate(table));
                 if (kind == "samples")
                     table->setItemDelegateForColumn(1, new EventTimeDelegate(table));
@@ -279,6 +326,8 @@ void EditorWindow::build_property_editors() {
                 table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
                 table->verticalHeader()->hide();
                 table->setMaximumHeight(160);
+                if (kind == "events")
+                    table->setToolTip(text("events_paste_hint"));
                 connect(table, &QTableWidget::cellChanged, this, [this, table](int row, int) {
                     if (inspector_loading_)
                         return;

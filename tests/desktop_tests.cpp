@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include <QAction>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
 #include <QGraphicsItem>
@@ -236,11 +237,15 @@ class DesktopTests : public QObject {
         window.select_object(pattern);
         window.findChild<QCheckBox *>("property_closed")->setChecked(true);
         auto *events = window.findChild<QTableWidget *>("property_events");
-        events->setRowCount(3);
-        events->setItem(0, 0, new QTableWidgetItem("1e-3"));
-        events->setItem(0, 1, new QTableWidgetItem("0"));
-        events->setItem(1, 0, new QTableWidgetItem("2e-3"));
-        events->setItem(1, 1, new QTableWidgetItem("1"));
+        QVERIFY(events->toolTip().contains("Ctrl+V"));
+        events->setCurrentCell(0, 0);
+        QApplication::clipboard()->setText("{{1e-3, 0}, {2e-3, 1}}");
+        QTest::keyClick(events, Qt::Key_V, Qt::ControlModifier);
+        QCOMPARE(events->item(0, 0)->text(), QString("1e-3"));
+        QCOMPARE(events->item(0, 1)->text(), QString("0"));
+        QCOMPARE(events->item(1, 0)->text(), QString("2e-3"));
+        QCOMPARE(events->item(1, 1)->text(), QString("1"));
+        QCOMPARE(window.findChild<QComboBox *>("property_gate_mode")->currentText(), QString("Table"));
         QTest::mouseClick(window.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
         QCOMPARE(window.project().events.size(), size_t(2));
         window.observe_object(vp);
