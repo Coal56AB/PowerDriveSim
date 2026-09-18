@@ -1367,6 +1367,54 @@ class InteractionTests : public QObject {
         port = move_port({-200, 0});
         QVERIFY(port && port->x < 0 && std::abs(port->y) < 100);
     }
+    void transformed_public_ports_render_on_world_grid() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        w.canvas()->set_grid_size(20);
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        Definition definition;
+        definition.id = derived_uuid("grid-definition");
+        definition.name = "Grid definition";
+        definition.wired = true;
+        const auto positive_node = derived_uuid("grid-positive-node");
+        const auto negative_node = derived_uuid("grid-negative-node");
+        definition.nodes = {{positive_node, "+", false, 0, -40},
+                            {negative_node, "-", false, 0, 40}};
+        definition.ports = {
+            {derived_uuid("grid-positive-port"), "+", {positive_node, "node"},
+             Domain::electrical, Direction::conserving, true, 0, -54},
+            {derived_uuid("grid-negative-port"), "-", {negative_node, "node"},
+             Domain::electrical, Direction::conserving, true, 0, 54}};
+        project.definitions.push_back(definition);
+        Instance instance;
+        instance.id = derived_uuid("grid-instance");
+        instance.name = "Scaled DC-link";
+        instance.definition = definition.id;
+        instance.x = 200;
+        instance.y = 220;
+        instance.orientation.quarter_turns = 1;
+        instance.orientation.scale_x = .604938271604938;
+        instance.orientation.scale_y = 1.22222222222222;
+        project.instances.push_back(instance);
+        w.set_project(project);
+        ready(w);
+
+        auto *block = item(w, instance.id);
+        QVERIFY(block);
+        int ports = 0;
+        for (auto *child : block->childItems())
+            if (child->data(1).toString() == "port") {
+                const auto point = child->scenePos();
+                QVERIFY(std::abs(point.x() / 20.0 - std::round(point.x() / 20.0)) < 1e-6);
+                QVERIFY(std::abs(point.y() / 20.0 - std::round(point.y() / 20.0)) < 1e-6);
+                ++ports;
+            }
+        QCOMPARE(ports, 2);
+        QCOMPARE(pds::definition(w.root_project(), definition.id).ports[0].y, -54.0);
+        QCOMPARE(pds::definition(w.root_project(), definition.id).ports[1].y, 54.0);
+    }
     void plot_pins_move_to_all_edges_without_overlap() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());

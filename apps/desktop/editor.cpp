@@ -385,9 +385,7 @@ class Atom final : public QGraphicsItem {
     }
     void snap_ports_to_grid(double grid) {
         auto snap = [&](QPointF point) {
-            const auto coordinate = [grid](double value) {
-                return std::floor(value / grid + 0.5) * grid;
-            };
+            const auto coordinate = [grid](double value) { return std::round(value / grid) * grid; };
             return QPointF(coordinate(point.x()), coordinate(point.y()));
         };
         int index = 0;
@@ -508,6 +506,35 @@ class Atom final : public QGraphicsItem {
         paint_component_symbol(*p, icon_id, false);
         p->restore();
     }
+    static void fixed_converter_marks(QPainter *p, double h) {
+        const auto world = p->worldTransform();
+        const double sx = std::hypot(world.m11(), world.m12());
+        const double sy = std::hypot(world.m21(), world.m22());
+        const double scale = std::min(sx, sy);
+        if (scale <= 0)
+            return;
+        const double angle = std::atan2(world.m12(), world.m11()) * 180.0 / std::acos(-1.0);
+        auto mark = [&](QPointF local, bool alternating) {
+            p->save();
+            p->resetTransform();
+            p->translate(world.map(local));
+            p->rotate(angle);
+            p->scale(world.determinant() < 0 ? -scale : scale, scale);
+            p->setPen(QPen(theme_colors().text, 1.7, Qt::SolidLine, Qt::RoundCap));
+            if (alternating) {
+                auto font = p->font();
+                font.setPixelSize(19);
+                p->setFont(font);
+                p->drawText(QRectF(-15, -13, 30, 26), Qt::AlignCenter, "~");
+            } else {
+                p->drawLine(QPointF(-11, -4), QPointF(11, -4));
+                p->drawLine(QPointF(-11, 4), QPointF(11, 4));
+            }
+            p->restore();
+        };
+        mark({-48, -h + 24}, true);
+        mark({48, h - 24}, false);
+    }
     static void fixed_aspect_image(QPainter *p, const QImage &image, QRectF rect) {
         if (image.isNull())
             return;
@@ -575,9 +602,11 @@ class Atom final : public QGraphicsItem {
                     // geometry and reaches the frame at both ends.
                     p->setPen(main_pen);
                     p->drawLine(QPointF(-70, h), QPointF(70, -h));
+                    fixed_converter_marks(p, h);
+                } else {
+                    const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
+                    fixed_aspect_icon(p, library_icon_id, QRectF(-44, -icon_h / 2, 88, icon_h));
                 }
-                const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
-                fixed_aspect_icon(p, library_icon_id, QRectF(-44, -icon_h / 2, 88, icon_h));
             } else {
                 // Unknown subcircuits still get a neutral schematic mark. Never
                 // substitute their (often long) name inside the already labelled block.
@@ -2251,10 +2280,10 @@ void EditorWindow::rebuild_scene() {
     for (auto &[id, item] : atoms_) {
         (void)id;
         auto *atom_item = static_cast<Atom *>(item);
-        // Movable plot/public ports already snap during their own drag. Snapping
-        // every sibling again on each scene refresh makes untouched pins jump.
-        if (atom_item->type != 3 && atom_item->type != 4)
-            atom_item->snap_ports_to_grid(canvas_->grid_size());
+        // Port endpoints are always rendered on the world grid, including
+        // transformed/scaled subcircuits. Collision repair below only changes
+        // an exactly overlapping pin, so untouched neighbours stay in place.
+        atom_item->snap_ports_to_grid(canvas_->grid_size());
         atom_item->separate_overlapping_ports(canvas_->grid_size());
     }
     update_labels();

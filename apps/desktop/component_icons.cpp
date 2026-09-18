@@ -256,11 +256,11 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
             p.drawLine(28, 24, 32, 24);
         }
         auto symbol_font = p.font();
-        symbol_font.setPixelSize(12);
+        symbol_font.setPixelSize(9);
         p.setFont(symbol_font);
-        p.drawText(QRectF(1, 1, 15, 14), Qt::AlignCenter, "~");
-        p.drawLine(20, 22, 30, 22);
-        p.drawLine(20, 27, 30, 27);
+        p.drawText(QRectF(5, 4, 12, 11), Qt::AlignCenter, "~");
+        p.drawLine(19, 20, 27, 20);
+        p.drawLine(19, 24, 27, 24);
         if (id >= 212) {
             p.setPen(QPen(theme_colors().gate, 1.0));
             if (framed) p.drawLine(12, 32, 12, 25);
