@@ -98,6 +98,22 @@ int main(int argc,char** argv) {
             check(legacy.instances.front().parameters.front().first==kind_parameter,
                   "Legacy three-phase source stores voltage kind when edited");
         }
+        {
+            Project masked; masked.id=new_uuid(); masked.wired=true;
+            Definition body; body.id=new_uuid(); body.name="Masked"; body.wired=true;
+            const auto resistor=new_uuid(), parameter=new_uuid();
+            body.components.push_back({resistor,"R",Kind::resistor,"","",1000});
+            body.parameters.push_back({parameter,"Resistance","Ohm",resistor,"value",1000,
+                                       "Electrical",true,100,true,4000});
+            masked.definitions.push_back(body);
+            masked.instances.push_back({new_uuid(),"Masked",body.id,0,0});
+            write_property(masked,masked.instances.front().id,"parameter/"+parameter,3000.);
+            check(masked.instances.front().parameters.front().second==3000,
+                  "Public parameter accepts a value inside its mask range");
+            error("invalid_instance_parameter",[&]{
+                write_property(masked,masked.instances.front().id,"parameter/"+parameter,5000.);
+            });
+        }
         Document doc(p);
         doc.set_view("",.001,.005,.002,.004);
         check(!doc.can_undo(),"Viewing results does not create model history");

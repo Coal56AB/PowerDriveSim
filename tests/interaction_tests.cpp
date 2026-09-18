@@ -1224,6 +1224,9 @@ class InteractionTests : public QObject {
             dialog->findChild<QPushButton *>("public_parameters_add")->click();
             parameters->item(0, 0)->setText("Resistance");
             qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->setText("2 kOhm");
+            parameters->item(0, 3)->setText("Electrical");
+            qobject_cast<QLineEdit *>(parameters->cellWidget(0, 5))->setText("1 kOhm");
+            qobject_cast<QLineEdit *>(parameters->cellWidget(0, 6))->setText("4 kOhm");
             auto *symbol = dialog->findChild<QComboBox *>("public_symbol");
             QVERIFY(symbol);
             symbol->setCurrentIndex(symbol->findData(220));
@@ -1244,12 +1247,23 @@ class InteractionTests : public QObject {
         QCOMPARE(d.ports[0].name, std::string("positive"));
         QCOMPARE(d.parameters.size(), size_t(1));
         QCOMPARE(d.parameters[0].value, 2000.);
+        QCOMPARE(d.parameters[0].group, std::string("Electrical"));
+        QVERIFY(d.parameters[0].has_minimum);
+        QCOMPARE(d.parameters[0].minimum, 1000.);
+        QVERIFY(d.parameters[0].has_maximum);
+        QCOMPARE(d.parameters[0].maximum, 4000.);
         QCOMPARE(d.appearance.symbol, 220);
         QVERIFY(!d.appearance.image_png.empty());
         std::ostringstream appearance_stream;
         write_project(w.root_project(), appearance_stream);
         std::istringstream appearance_input(appearance_stream.str());
-        QCOMPARE(definition(read_project(appearance_input), definition_id).appearance.symbol, 220);
+        const auto restored_definition = definition(read_project(appearance_input), definition_id);
+        QCOMPARE(restored_definition.appearance.symbol, 220);
+        QCOMPARE(restored_definition.parameters[0].group, std::string("Electrical"));
+        const auto labels = w.findChildren<QLabel *>();
+        QVERIFY(std::any_of(labels.begin(), labels.end(), [](QLabel *label) {
+            return label->isVisible() && label->text() == "Electrical";
+        }));
         auto *parameter =
             w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(d.parameters[0].id));
         QVERIFY(parameter && parameter->isVisible());

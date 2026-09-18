@@ -51,6 +51,11 @@ Project definition_project(const Project &p, const std::string &id) {
     body.definitions = p.definitions;
     return body;
 }
+bool public_parameter_accepts(const PublicParameter &parameter, double value) {
+    return std::isfinite(value) &&
+           (!parameter.has_minimum || value >= parameter.minimum) &&
+           (!parameter.has_maximum || value <= parameter.maximum);
+}
 std::string expanded_uuid(const std::vector<std::string> &path, const std::string &object) {
     auto id = object;
     // Compose from the leaf outwards so replacing a nested instance with its
@@ -61,8 +66,9 @@ std::string expanded_uuid(const std::vector<std::string> &path, const std::strin
 }
 namespace {
 void parameter_value(Schematic &s, const Project &catalog, const PublicParameter &p, double value) {
-    if (!std::isfinite(value))
-        throw Diagnostic("invalid_parameter", p.id, "Public parameter must be finite");
+    if (!public_parameter_accepts(p, value))
+        throw Diagnostic("invalid_public_parameter_value", p.id,
+                         "Public parameter value is outside its configured range");
     if (p.object == "*") {
         if (p.field == "source_voltage_kind")
             return;
@@ -171,11 +177,12 @@ void validate_schematic(const Project &p) {
         const auto &d = definition(p, i.definition);
         std::set<std::string> parameters;
         for (const auto &[key, value] : i.parameters) {
-            if (!parameters.insert(key).second || !std::isfinite(value) ||
-                std::none_of(d.parameters.begin(), d.parameters.end(),
-                             [&](const auto &v) { return v.id == key; }))
+            const auto parameter = std::find_if(d.parameters.begin(), d.parameters.end(),
+                                                [&](const auto &v) { return v.id == key; });
+            if (!parameters.insert(key).second || parameter == d.parameters.end() ||
+                !public_parameter_accepts(*parameter, value))
                 throw Diagnostic("invalid_instance_parameter", i.id,
-                                 "Unknown, duplicate or non-finite parameter override");
+                                 "Unknown, duplicate or out-of-range parameter override");
         }
     }
     if (!p.instances.empty() && !p.wired)
@@ -250,9 +257,13 @@ void validate_hierarchy(const Project &p) {
         names.clear();
         for (const auto &param : d.parameters) {
             if (!valid_uuid(param.id) || !ids.insert(param.id).second || param.name.empty() ||
-                !names.insert(param.name).second || !bindings.insert(param.object + "/" + param.field).second)
+                !names.insert(param.name).second || !bindings.insert(param.object + "/" + param.field).second ||
+                (param.has_minimum && !std::isfinite(param.minimum)) ||
+                (param.has_maximum && !std::isfinite(param.maximum)) ||
+                (param.has_minimum && param.has_maximum && param.minimum > param.maximum) ||
+                !public_parameter_accepts(param, param.value))
                 throw Diagnostic("invalid_public_parameter", param.id,
-                                 "Public parameters require unique names, UUIDs and bindings");
+                                 "Public parameters require unique bindings and a valid value range");
             parameter_value(body, p, param, param.value);
         }
     }

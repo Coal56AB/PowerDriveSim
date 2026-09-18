@@ -75,6 +75,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                     continue;
                 } else if(kind=="public_parameter") {
                     PublicParameter param;meta>>std::quoted(param.id)>>std::quoted(param.name)>>std::quoted(param.unit)>>std::quoted(param.object)>>std::quoted(param.field)>>param.value;
+                    if(p.schema>=21) {
+                        int has_minimum=0,has_maximum=0;
+                        meta>>std::quoted(param.group)>>has_minimum>>param.minimum>>has_maximum>>param.maximum;
+                        if((has_minimum!=0&&has_minimum!=1)||(has_maximum!=0&&has_maximum!=1))meta.setstate(std::ios::failbit);
+                        param.has_minimum=has_minimum==1;param.has_maximum=has_maximum==1;
+                    }
                     d.parameters.push_back(param);
                     if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
                     meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata: "+line);
@@ -533,8 +539,8 @@ void write_project(const Project& p, std::ostream& out) {
             out<<'\n';
         }
         for(const auto& v:d.parameters) {
-            for(const auto* value:{&v.id,&v.name,&v.unit,&v.object,&v.field})check_text(*value,d.id);
-            out<<"public_parameter "<<std::quoted(v.id)<<' '<<std::quoted(v.name)<<' '<<std::quoted(v.unit)<<' '<<std::quoted(v.object)<<' '<<std::quoted(v.field)<<' '<<v.value<<'\n';
+            for(const auto* value:{&v.id,&v.name,&v.unit,&v.object,&v.field,&v.group})check_text(*value,d.id);
+            out<<"public_parameter "<<std::quoted(v.id)<<' '<<std::quoted(v.name)<<' '<<std::quoted(v.unit)<<' '<<std::quoted(v.object)<<' '<<std::quoted(v.field)<<' '<<v.value<<' '<<std::quoted(v.group)<<' '<<v.has_minimum<<' '<<v.minimum<<' '<<v.has_maximum<<' '<<v.maximum<<'\n';
         }
         if(d.appearance!=DefinitionAppearance{}) {
             check_text(d.appearance.image_png,d.id);

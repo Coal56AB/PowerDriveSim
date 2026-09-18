@@ -193,7 +193,9 @@ QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
             const QPointF w = scene_point - edge;
             const double t = std::clamp(QPointF::dotProduct(v, w) / QPointF::dotProduct(v, v), 0.0, 1.0);
             const QPointF closest = edge + v * t;
-            if (QLineF(scene_point, closest).length() <= 8.0 / transform().m11())
+            // The outer end remains a normal connection target. Drag the inner
+            // part of the short lead to relocate the public pin.
+            if (t <= .7 && QLineF(scene_point, closest).length() <= 8.0 / transform().m11())
                 return child;
         }
     }

@@ -159,6 +159,11 @@ int main() try {
     require(flatten(p).origins.count(internal) == 1, "UUID stability after names and geometry edits");
     p.instances[0].orientation = {1, true};
     p.labels.push_back({id(20), "name", 20, 10, {2, false}});
+    p.definitions[0].parameters[0].group = "Electrical";
+    p.definitions[0].parameters[0].has_minimum = true;
+    p.definitions[0].parameters[0].minimum = 100;
+    p.definitions[0].parameters[0].has_maximum = true;
+    p.definitions[0].parameters[0].maximum = 5000;
     std::ostringstream out;
     write_project(p, out);
     std::istringstream in(out.str());
@@ -182,6 +187,14 @@ int main() try {
     bad.instances[0].parameters = {{id(99), 3}};
     error("invalid_instance_parameter", [&] { compile(bad); });
     bad = p;
+    bad.instances[0].parameters = {{id(17), 6000}};
+    error("invalid_public_parameter_value", [&] { compile(bad); });
+    bad = p;
+    bad.definitions[0].parameters[0].minimum = 2000;
+    error("invalid_public_parameter", [&] { compile(bad); });
+    bad = p;
+    bad.definitions[0].parameters[0].has_minimum = false;
+    bad.definitions[0].parameters[0].has_maximum = false;
     bad.instances[0].parameters = {{id(17), -1}};
     try {
         compile(bad);

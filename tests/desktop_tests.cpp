@@ -112,9 +112,9 @@ class DesktopTests : public QObject {
         wire({v, "n"}, {g, "node"});
         wire({c, "n"}, {g, "node"});
         QCOMPARE(window.project().wires.size(), size_t(4));
+        window.select_object(r);
         auto *value = window.findChild<QLineEdit *>("property_value");
         auto *apply = window.findChild<QPushButton *>("apply_properties");
-        window.select_object(r);
         value->setText("2kOhm");
         QTest::mouseClick(apply, Qt::LeftButton);
         QCOMPARE(window.project().components[1].value, 2000.0);
@@ -123,6 +123,8 @@ class DesktopTests : public QObject {
         window.redo();
         QCOMPARE(window.project().components[1].value, 2000.0);
         window.undo();
+        value = window.findChild<QLineEdit *>("property_value");
+        apply = window.findChild<QPushButton *>("apply_properties");
         value->setText("not a resistance");
         QTest::mouseClick(apply, Qt::LeftButton);
         QCOMPARE(window.project().components[1].value, 1000.0);

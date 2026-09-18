@@ -27,7 +27,7 @@
 namespace pds::desktop {
 namespace {
 bool same_field_contract(const QJsonObject &a, const QJsonObject &b) {
-    const QStringList keys{"key", "editor", "unit", "scale", "min", "max", "exclusiveMin", "options", "span"};
+    const QStringList keys{"key", "editor", "unit", "scale", "min", "max", "exclusiveMin", "options", "span", "group"};
     for (const auto &key : keys)
         if (a.value(key) != b.value(key))
             return false;
@@ -413,12 +413,23 @@ void EditorWindow::fill_inspector() {
         inspector_type_->setText(label);
     }
     int row = 2;
+    QString current_group;
     for (const auto &ordered_key : field_order) {
         const auto found = common.find(ordered_key);
         if (found == common.end())
             continue;
         auto field = found->second;
         auto key = field.value("key").toString();
+        const auto group = field.value("group").toString().trimmed();
+        if (!group.isEmpty() && group != current_group) {
+            auto *heading = new QLabel(group);
+            auto font = heading->font();
+            font.setBold(true);
+            heading->setFont(font);
+            heading->setContentsMargins(0, current_group.isEmpty() ? 2 : 10, 0, 2);
+            properties_->insertRow(row++, heading);
+            current_group = group;
+        }
         auto *widget = property_editors_.at(key);
         if (key == "name" && targets.size() == 1 && object_type(project(), targets.front()) == "tag")
             if (auto *line = qobject_cast<QLineEdit *>(widget)) {

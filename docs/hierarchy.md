@@ -28,6 +28,13 @@ only and never changes connectivity; manual entry always remains available.
 
 Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Symbolic parameter expressions are not implemented by this step.
 
+Schema 21 extends the existing `PublicParameter` mask metadata with an optional
+group and inclusive minimum/maximum values. The interface editor stores these
+constraints with the definition, the instance inspector renders group headings,
+and both direct property edits and flattening reject overrides outside the
+configured range. Older projects load with an empty group and no additional
+range; the bound atomic property still performs its own physical validation.
+
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 
 ## Editor transactions

@@ -30,6 +30,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <optional>
 #include <set>
 namespace pds::desktop {
 namespace {
@@ -119,6 +120,12 @@ void EditorWindow::update_instance_specs() {
             field["editor"] = "number";
             field["displayLabel"] = QString::fromStdString(p.name);
             field["unit"] = QString::fromStdString(p.unit);
+            field["group"] = QString::fromStdString(p.group);
+            const double scale = field.value("scale").toDouble(1);
+            if (p.has_minimum)
+                field["min"] = p.minimum * scale;
+            if (p.has_maximum)
+                field["max"] = p.maximum * scale;
             fields.append(field);
         }
         QJsonObject spec{{"fields", fields}};
@@ -516,6 +523,10 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         QString name;
         std::string object, field, unit;
         double value, scale = 1;
+        bool has_minimum = false;
+        double minimum = 0;
+        bool has_maximum = false;
+        double maximum = 0;
     };
     std::vector<Binding> bindings;
     auto fields = [&](const auto &objects) {
@@ -531,10 +542,14 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                 const auto value = read_property(body, object.id, key);
                 if (!std::holds_alternative<double>(value))
                     continue;
+                const double scale = field.value("scale").toDouble(1);
                 bindings.push_back({QString::fromStdString(object.name) + " / " +
                                         text(field.value("label").toString().toUtf8().constData()),
                                     object.id, key, field.value("unit").toString().toStdString(),
-                                    std::get<double>(value), field.value("scale").toDouble(1)});
+                                    std::get<double>(value), scale,
+                                    field.contains("min") && !field.value("exclusiveMin").toBool(),
+                                    field.value("min").toDouble() / scale,
+                                    field.contains("max"), field.value("max").toDouble() / scale});
             }
         }
     };
@@ -542,8 +557,8 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     fields(body.patterns);
     for (const auto &i : body.instances)
         for (const auto &p : definition(body, i.definition).parameters)
-            bindings.push_back(
-                {QString::fromStdString(i.name + " / " + p.name), i.id, p.id, p.unit, p.value});
+            bindings.push_back({QString::fromStdString(i.name + " / " + p.name), i.id, p.id, p.unit,
+                                p.value, 1, p.has_minimum, p.minimum, p.has_maximum, p.maximum});
     QDialog dialog(this);
     dialog.setObjectName("public_interface_dialog");
     dialog.setWindowTitle(text("public_interface") + " · " + QString::fromStdString(edited.name));
@@ -551,11 +566,13 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     auto *layout = new QVBoxLayout(&dialog);
     auto *tabs = new QTabWidget;
     layout->addWidget(tabs);
-    QTableWidget ports(0, 2), parameters(0, 3);
+    QTableWidget ports(0, 2), parameters(0, 7);
     ports.setObjectName("public_ports");
     parameters.setObjectName("public_parameters");
     ports.setHorizontalHeaderLabels({text("name"), text("internal_terminal")});
-    parameters.setHorizontalHeaderLabels({text("name"), text("parameter_binding"), text("default_value")});
+    parameters.setHorizontalHeaderLabels({text("name"), text("parameter_binding"), text("default_value"),
+                                          text("parameter_group"), text("unit"), text("minimum"),
+                                          text("maximum")});
     auto page = [&](QTableWidget &table, const QString &title, const std::function<void()> &append) {
         auto *widget = new QWidget;
         auto *box = new QVBoxLayout(widget);
@@ -611,9 +628,35 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         auto *value = new QLineEdit(QString::number(p.value * bindings.at(size_t(selected)).scale, 'g', 12));
         normalize_decimal_point(value);
         parameters.setCellWidget(row, 2, value);
-        connect(combo, &QComboBox::activated, &dialog, [&, value](int n) {
-            value->setText(
-                QString::number(bindings.at(size_t(n)).value * bindings.at(size_t(n)).scale, 'g', 12));
+        parameters.setItem(row, 3, new QTableWidgetItem(QString::fromStdString(p.group)));
+        auto *unit = new QTableWidgetItem(QString::fromStdString(bindings.at(size_t(selected)).unit));
+        unit->setFlags(unit->flags() & ~Qt::ItemIsEditable);
+        parameters.setItem(row, 4, unit);
+        auto *minimum = new QLineEdit;
+        auto *maximum = new QLineEdit;
+        normalize_decimal_point(minimum);
+        normalize_decimal_point(maximum);
+        const auto &selected_binding = bindings.at(size_t(selected));
+        if (p.has_minimum || selected_binding.has_minimum)
+            minimum->setText(QString::number((p.has_minimum ? p.minimum : selected_binding.minimum) *
+                                                 selected_binding.scale,
+                                             'g', 12));
+        if (p.has_maximum || selected_binding.has_maximum)
+            maximum->setText(QString::number((p.has_maximum ? p.maximum : selected_binding.maximum) *
+                                                 selected_binding.scale,
+                                             'g', 12));
+        parameters.setCellWidget(row, 5, minimum);
+        parameters.setCellWidget(row, 6, maximum);
+        connect(combo, &QComboBox::activated, &dialog, [&, row, value, minimum, maximum](int n) {
+            const auto &binding = bindings.at(size_t(n));
+            value->setText(QString::number(binding.value * binding.scale, 'g', 12));
+            parameters.item(row, 4)->setText(QString::fromStdString(binding.unit));
+            minimum->setText(binding.has_minimum
+                                 ? QString::number(binding.minimum * binding.scale, 'g', 12)
+                                 : QString{});
+            maximum->setText(binding.has_maximum
+                                 ? QString::number(binding.maximum * binding.scale, 'g', 12)
+                                 : QString{});
         });
     };
     page(ports, text("public_ports"), [&] {
@@ -628,7 +671,12 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                            b.unit,
                            b.object,
                            b.field,
-                           b.value});
+                           b.value,
+                           {},
+                           b.has_minimum,
+                           b.minimum,
+                           b.has_maximum,
+                           b.maximum});
         }
     });
     auto *error = new QLabel;
@@ -739,10 +787,28 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                 auto b = bindings.at(size_t(combo->currentIndex()));
                 auto value = parse_si(
                     qobject_cast<QLineEdit *>(parameters.cellWidget(row, 2))->text().toStdString(), b.unit);
-                updated.parameters.push_back(
-                    {parameters.item(row, 0)->data(Qt::UserRole).toString().toStdString(),
-                     parameters.item(row, 0)->text().trimmed().toStdString(), b.unit, b.object, b.field,
-                     value / b.scale});
+                auto limit = [&](int column) -> std::optional<double> {
+                    const auto input = qobject_cast<QLineEdit *>(parameters.cellWidget(row, column))
+                                           ->text().trimmed();
+                    if (input.isEmpty())
+                        return {};
+                    return parse_si(input.toStdString(), b.unit) / b.scale;
+                };
+                const auto minimum = limit(5);
+                const auto maximum = limit(6);
+                PublicParameter parameter;
+                parameter.id = parameters.item(row, 0)->data(Qt::UserRole).toString().toStdString();
+                parameter.name = parameters.item(row, 0)->text().trimmed().toStdString();
+                parameter.unit = b.unit;
+                parameter.object = b.object;
+                parameter.field = b.field;
+                parameter.value = value / b.scale;
+                parameter.group = parameters.item(row, 3)->text().trimmed().toStdString();
+                parameter.has_minimum = minimum.has_value();
+                parameter.minimum = minimum.value_or(0);
+                parameter.has_maximum = maximum.has_value();
+                parameter.maximum = maximum.value_or(0);
+                updated.parameters.push_back(std::move(parameter));
             }
             document_->edit_definition(definition_id, [&](Definition &d) {
                 d.ports = updated.ports;

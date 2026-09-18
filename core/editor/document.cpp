@@ -271,7 +271,7 @@ bool same_simulation(const Project& a,const Project& b) {
             s.labels.clear();s.view_options.clear();
         };
         schematic(p);
-        for(auto& d:p.definitions){d.name.clear();d.appearance={};schematic(d);for(auto& port:d.ports)port.name.clear();for(auto& param:d.parameters){param.name.clear();param.unit.clear();}}
+        for(auto& d:p.definitions){d.name.clear();d.appearance={};schematic(d);for(auto& port:d.ports)port.name.clear();for(auto& param:d.parameters){param.name.clear();param.unit.clear();param.group.clear();param.has_minimum=false;param.minimum=0;param.has_maximum=false;param.maximum=0;}}
         p.scope_begin=0;p.scope_end=-1;p.cursor_a=-1;p.cursor_b=-1;
         p.scope_enabled=false;p.scope_points.clear();p.scope_channels.clear();
         return p;

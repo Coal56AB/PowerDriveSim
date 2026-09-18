@@ -318,9 +318,20 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                     return;
                 }
             }
-            (void)definition(p,i.definition);
+            const auto &parameter_definition = definition(p,i.definition);
+            const auto public_parameter = std::find_if(parameter_definition.parameters.begin(),
+                                                       parameter_definition.parameters.end(),
+                                                       [&](const auto &candidate) {
+                                                           return candidate.id == parameter;
+                                                       });
+            if (public_parameter == parameter_definition.parameters.end())
+                throw Diagnostic("unknown_property", i.id, "Unsupported property: " + key);
+            const double number = std::get<double>(value);
+            if (!public_parameter_accepts(*public_parameter, number))
+                throw Diagnostic("invalid_instance_parameter", i.id,
+                                 "Parameter value is outside its configured range");
             auto v=std::find_if(i.parameters.begin(),i.parameters.end(),[&](const auto& v){return v.first==parameter;});
-            if(v==i.parameters.end())i.parameters.emplace_back(parameter,std::get<double>(value));else v->second=std::get<double>(value);
+            if(v==i.parameters.end())i.parameters.emplace_back(parameter,number);else v->second=number;
             return;
         }
     }
