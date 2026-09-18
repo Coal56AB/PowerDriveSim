@@ -639,14 +639,36 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
             sx = std::clamp(std::abs(current.x() / start.x()), 0.25, 4.0);
         if (!scale_x_axis_ && scale_y_axis_ && std::abs(start.y()) > 1.0)
             sy = std::clamp(std::abs(current.y() / start.y()), 0.25, 4.0);
-        const double step = std::max(0.05, grid_size_ / 180.0);
-        sx = std::clamp(std::round(sx / step) * step, 0.25, 4.0);
-        sy = std::clamp(std::round(sy / step) * step, 0.25, 4.0);
-        QTransform scale;
-        scale.scale(sx, sy);
         for (auto [item, original_pos] : positions_) {
-            (void)original_pos;
-            item->setTransform(transforms_.at(item) * scale);
+            double item_sx = sx, item_sy = sy;
+            const auto base = transforms_.at(item);
+            const bool framed = item->data(10).toBool() || item->data(12).toBool();
+            if (framed) {
+                const QRectF local_frame = item->data(14).toRectF();
+                const QPointF origin = base.map(QPointF());
+                const double base_x = QLineF(origin, base.map(QPointF(1, 0))).length();
+                const double base_y = QLineF(origin, base.map(QPointF(0, 1))).length();
+                const double width = std::max(grid_size_, std::round(local_frame.width() * base_x * item_sx / grid_size_) * grid_size_);
+                const double height = std::max(grid_size_, std::round(local_frame.height() * base_y * item_sy / grid_size_) * grid_size_);
+                item_sx = width / (local_frame.width() * base_x);
+                item_sy = height / (local_frame.height() * base_y);
+            } else {
+                const double step = std::max(0.05, grid_size_ / 180.0);
+                item_sx = std::clamp(std::round(item_sx / step) * step, 0.25, 4.0);
+                item_sy = std::clamp(std::round(item_sy / step) * step, 0.25, 4.0);
+            }
+            QTransform scale;
+            scale.scale(item_sx, item_sy);
+            item->setPos(original_pos);
+            item->setTransform(base * scale);
+            if (framed) {
+                const QRectF frame = item->mapRectToScene(item->data(14).toRectF());
+                const auto half_grid = [this](double value) {
+                    return std::round((value - grid_size_ / 2.0) / grid_size_) * grid_size_ + grid_size_ / 2.0;
+                };
+                item->setPos(item->pos() + QPointF(half_grid(frame.left()) - frame.left(),
+                                                    half_grid(frame.top()) - frame.top()));
+            }
         }
         if (movement)
             movement();
@@ -669,8 +691,30 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
             return QLineF(local, a).length() < QLineF(local, b).length();
         });
         QPointF target = *closest;
+        if (parent->data(10).toBool() || plot) {
+            const std::array<QPointF, 4> edges = {
+                QPointF(body.left(), std::clamp(local.y(), body.top(), body.bottom())),
+                QPointF(body.right(), std::clamp(local.y(), body.top(), body.bottom())),
+                QPointF(std::clamp(local.x(), body.left(), body.right()), body.top()),
+                QPointF(std::clamp(local.x(), body.left(), body.right()), body.bottom())};
+            const auto edge = *std::min_element(edges.begin(), edges.end(), [&](QPointF a, QPointF b) {
+                return QLineF(local, a).length() < QLineF(local, b).length();
+            });
+            QPointF outward;
+            if (edge.x() == body.left()) outward = {-1, 0};
+            else if (edge.x() == body.right()) outward = {1, 0};
+            else if (edge.y() == body.top()) outward = {0, -1};
+            else outward = {0, 1};
+            const QPointF edge_scene = parent->mapToScene(edge);
+            QPointF direction = parent->mapToScene(edge + outward) - edge_scene;
+            const double length = std::hypot(direction.x(), direction.y());
+            if (length > 1e-9)
+                target = parent->mapFromScene(snap_point(edge_scene + direction / length * (grid_size_ / 2.0)));
+        }
         const bool vertical_side = target.x() < body.left() || target.x() > body.right();
-        const double step = std::max(1.0, grid_size_);
+        const QPointF tangent = vertical_side ? QPointF(0, 1) : QPointF(1, 0);
+        const double tangent_scale = QLineF(parent->mapToScene(QPointF()), parent->mapToScene(tangent)).length();
+        const double step = std::max(1e-6, grid_size_ / std::max(1e-9, tangent_scale));
         const auto siblings = parent->childItems();
         auto occupied = [&](QPointF point) {
             return std::any_of(siblings.begin(), siblings.end(), [&](QGraphicsItem *sibling) {

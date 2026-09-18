@@ -392,7 +392,32 @@ class Atom final : public QGraphicsItem {
         for (auto *child : childItems()) {
             if (child->data(1).toString() != "port")
                 continue;
-            const QPointF local = mapFromScene(snap(child->scenePos()));
+            QPointF scene = child->scenePos();
+            if (type == 3 || type == 4) {
+                const double h = type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
+                const QRectF body = type == 3 ? QRectF(-46, -h, 104, 2 * h)
+                                              : QRectF(-90, -h, 180, 2 * h);
+                const QPointF current = child->pos();
+                const std::array<QPointF, 4> edges = {
+                    QPointF(body.left(), std::clamp(current.y(), body.top(), body.bottom())),
+                    QPointF(body.right(), std::clamp(current.y(), body.top(), body.bottom())),
+                    QPointF(std::clamp(current.x(), body.left(), body.right()), body.top()),
+                    QPointF(std::clamp(current.x(), body.left(), body.right()), body.bottom())};
+                const auto edge = *std::min_element(edges.begin(), edges.end(), [&](QPointF a, QPointF b) {
+                    return QLineF(current, a).length() < QLineF(current, b).length();
+                });
+                QPointF outward;
+                if (edge.x() == body.left()) outward = {-1, 0};
+                else if (edge.x() == body.right()) outward = {1, 0};
+                else if (edge.y() == body.top()) outward = {0, -1};
+                else outward = {0, 1};
+                const QPointF edge_scene = mapToScene(edge);
+                QPointF direction = mapToScene(edge + outward) - edge_scene;
+                const double length = std::hypot(direction.x(), direction.y());
+                if (length > 1e-9)
+                    scene = edge_scene + direction / length * (grid / 2.0);
+            }
+            const QPointF local = mapFromScene(snap(scene));
             child->setPos(local);
             if (index < int(public_ports.size()))
                 public_ports[size_t(index)].second = local;
@@ -404,21 +429,34 @@ class Atom final : public QGraphicsItem {
             return;
         const double h = type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
         const QRectF body = type == 3 ? QRectF(-46, -h, 104, 2 * h) : QRectF(-90, -h, 180, 2 * h);
-        const double step = std::max(1.0, grid);
         std::vector<QPointF> occupied;
         for (auto *child : childItems()) {
             if (child->data(1).toString() != "port")
                 continue;
             const QPointF current = child->pos();
+            auto endpoint = [&](QPointF edge, QPointF outward) {
+                const QPointF edge_scene = mapToScene(edge);
+                QPointF direction = mapToScene(edge + outward) - edge_scene;
+                const double length = std::hypot(direction.x(), direction.y());
+                if (length <= 1e-9)
+                    return edge;
+                QPointF target = edge_scene + direction / length * (grid / 2.0);
+                target.setX(std::round(target.x() / grid) * grid);
+                target.setY(std::round(target.y() / grid) * grid);
+                return mapFromScene(target);
+            };
             const std::array<QPointF, 4> projected = {
-                QPointF(type == 3 ? -60.0 : body.left() - 10.0, std::clamp(current.y(), body.top(), body.bottom())),
-                QPointF(type == 3 ? 60.0 : body.right() + 10.0, std::clamp(current.y(), body.top(), body.bottom())),
-                QPointF(std::clamp(current.x(), body.left(), body.right()), type == 3 ? body.top() - 20.0 : body.top() - 10.0),
-                QPointF(std::clamp(current.x(), body.left(), body.right()), type == 3 ? body.bottom() + 20.0 : body.bottom() + 10.0)};
+                endpoint({body.left(), std::clamp(current.y(), body.top(), body.bottom())}, {-1, 0}),
+                endpoint({body.right(), std::clamp(current.y(), body.top(), body.bottom())}, {1, 0}),
+                endpoint({std::clamp(current.x(), body.left(), body.right()), body.top()}, {0, -1}),
+                endpoint({std::clamp(current.x(), body.left(), body.right()), body.bottom()}, {0, 1})};
             const QPointF edge = *std::min_element(projected.begin(), projected.end(), [&](QPointF a, QPointF b) {
                 return QLineF(current, a).length() < QLineF(current, b).length();
             });
             const bool vertical_side = edge.x() < body.left() || edge.x() > body.right();
+            const QPointF tangent = vertical_side ? QPointF(0, 1) : QPointF(1, 0);
+            const double tangent_scale = QLineF(mapToScene(QPointF()), mapToScene(tangent)).length();
+            const double step = std::max(1e-6, grid / std::max(1e-9, tangent_scale));
             auto free = [&](QPointF point) {
                 return std::none_of(occupied.begin(), occupied.end(), [&](QPointF prior) {
                     return QLineF(point, prior).length() < .5;
@@ -575,8 +613,10 @@ class Atom final : public QGraphicsItem {
                     continue;
                 const auto port_name = child->data(8).toString();
                 const auto point = child->pos();
-                const double vertical_edge_distance = std::abs(std::abs(point.x()) - 100.0);
-                const double horizontal_edge_distance = std::abs(std::abs(point.y()) - (h + 10.0));
+                const double vertical_edge_distance = std::min(std::abs(point.x() + 90.0),
+                                                               std::abs(point.x() - 90.0));
+                const double horizontal_edge_distance = std::min(std::abs(point.y() + h),
+                                                                 std::abs(point.y() - h));
                 const bool horizontal_side = vertical_edge_distance <= horizontal_edge_distance;
                 if (horizontal_side) {
                     const bool left = point.x() < 0;
@@ -676,10 +716,10 @@ class Atom final : public QGraphicsItem {
                 const auto point = pin->pos();
                 p->setPen(QPen(theme_colors().signal, 1.4));
                 const QRectF body(-46, -h, 104, 2 * h);
-                const double left_distance = std::abs(point.x() + 60.0);
-                const double right_distance = std::abs(point.x() - 60.0);
-                const double top_distance = std::abs(point.y() - (body.top() - 20.0));
-                const double bottom_distance = std::abs(point.y() - (body.bottom() + 20.0));
+                const double left_distance = std::abs(point.x() - body.left());
+                const double right_distance = std::abs(point.x() - body.right());
+                const double top_distance = std::abs(point.y() - body.top());
+                const double bottom_distance = std::abs(point.y() - body.bottom());
                 const double nearest = std::min({left_distance, right_distance, top_distance, bottom_distance});
                 const QString port_label = differential_plot
                     ? ((i % 2 ? QString("+") : QString("−")) + QString::number((i + 1) / 2))
@@ -1788,6 +1828,13 @@ void EditorWindow::build_ui() {
     canvas_->context_menu = [this](std::string id, QPoint point) { show_context(id, point); };
     load_shortcuts();
     canvas_->movement = [this] {
+        for (auto *item : canvas_->scene()->selectedItems())
+            if (item->data(1).toString() == "atom" &&
+                (item->data(10).toBool() || item->data(12).toBool())) {
+                auto *atom = static_cast<Atom *>(item);
+                atom->snap_ports_to_grid(canvas_->grid_size());
+                atom->separate_overlapping_ports(canvas_->grid_size());
+            }
         update_labels();
         update_wires();
     };
@@ -2018,6 +2065,7 @@ void EditorWindow::configure_grid() {
     settings.setValue("grid_line_width", line_width->value());
     settings.setValue("grid_dot_size", dot_size->value());
     settings.sync();
+    refresh_canvas(false, false);
     banner_->setText(text("grid_updated").arg(size->value()));
 }
 bool EditorWindow::recover(const QString &path) {
@@ -2280,6 +2328,34 @@ void EditorWindow::rebuild_scene() {
     for (auto &[id, item] : atoms_) {
         (void)id;
         auto *atom_item = static_cast<Atom *>(item);
+        if (atom_item->type == 3 || atom_item->type == 4) {
+            const double grid = canvas_->grid_size();
+            const double half_height = atom_item->type == 3
+                ? std::max(40.0, atom_item->input_count * 20.0)
+                : atom_item->body_half_height();
+            const QRectF local_frame = atom_item->type == 3
+                ? QRectF(-46, -half_height, 104, 2 * half_height)
+                : QRectF(-90, -half_height, 180, 2 * half_height);
+            auto transform = atom_item->transform();
+            const QPointF origin = transform.map(QPointF());
+            const double scale_x = QLineF(origin, transform.map(QPointF(1, 0))).length();
+            const double scale_y = QLineF(origin, transform.map(QPointF(0, 1))).length();
+            const double width = std::max(grid, std::round(local_frame.width() * scale_x / grid) * grid);
+            const double height = std::max(grid, std::round(local_frame.height() * scale_y / grid) * grid);
+            if (scale_x > 1e-9 && scale_y > 1e-9) {
+                transform.scale(width / (local_frame.width() * scale_x),
+                                height / (local_frame.height() * scale_y));
+                atom_item->setTransform(transform);
+            }
+            const QRectF frame = atom_item->mapRectToScene(local_frame);
+            const auto half_grid = [grid](double value) {
+                return std::round((value - grid / 2.0) / grid) * grid + grid / 2.0;
+            };
+            atom_item->setPos(atom_item->pos() +
+                              QPointF(half_grid(frame.left()) - frame.left(),
+                                      half_grid(frame.top()) - frame.top()));
+            atom_item->setData(14, local_frame);
+        }
         // Port endpoints are always rendered on the world grid, including
         // transformed/scaled subcircuits. Collision repair below only changes
         // an exactly overlapping pin, so untouched neighbours stay in place.
@@ -2750,6 +2826,16 @@ void EditorWindow::commit_positions() {
         auto_connect_nearby_pins();
         return;
     }
+    std::set<std::string> moved_ids;
+    for (auto *item : canvas_->scene()->selectedItems()) {
+        if (item->data(1).toString() == "wire" || item->data(1).toString() == "label")
+            continue;
+        const auto id = item->data(0).toString().toStdString();
+        if (!id.empty())
+            moved_ids.insert(id);
+    }
+    if (moved_ids.empty())
+        return;
     bool moved = false;
     auto orientation = [](QGraphicsItem *item) {
         const auto t = item->transform();
@@ -2763,6 +2849,8 @@ void EditorWindow::commit_positions() {
         return o;
     };
     auto check = [&](const auto &a) {
+        if (!moved_ids.contains(a.id))
+            return;
         if (atoms_.at(a.id)->pos() != QPointF(a.x, a.y) || orientation(atoms_.at(a.id)) != a.orientation)
             moved = true;
     };
@@ -2781,14 +2869,6 @@ void EditorWindow::commit_positions() {
     if (!moved)
         return;
     document_->apply("Move objects", [&](Project &p) {
-        std::set<std::string> moved_ids;
-        for (auto *item : canvas_->scene()->selectedItems()) {
-            if (item->data(1).toString() == "wire" || item->data(1).toString() == "label")
-                continue;
-            const auto id = item->data(0).toString().toStdString();
-            if (!id.empty())
-                moved_ids.insert(id);
-        }
         auto live_position = [&](const Endpoint &endpoint) {
             return canvas_->snap_point(port_position(endpoint));
         };
@@ -2901,6 +2981,8 @@ void EditorWindow::commit_positions() {
             }
         }
         auto move = [&](auto &a) {
+            if (!moved_ids.contains(a.id))
+                return;
             auto pos = atoms_.at(a.id)->pos();
             a.x = pos.x();
             a.y = pos.y();

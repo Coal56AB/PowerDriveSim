@@ -1415,6 +1415,104 @@ class InteractionTests : public QObject {
         QCOMPARE(pds::definition(w.root_project(), definition.id).ports[0].y, -54.0);
         QCOMPARE(pds::definition(w.root_project(), definition.id).ports[1].y, 54.0);
     }
+    void framed_blocks_use_half_grid_pins_and_grid_sized_frames() {
+        auto close = [](double a, double b) { return std::abs(a - b) < 1e-5; };
+        for (double grid : {10.0, 20.0, 30.0}) {
+            QTemporaryDir dir;
+            EditorWindow w("en", dir.path());
+            w.canvas()->set_grid_size(grid);
+            Project project;
+            project.id = new_uuid();
+            project.wired = true;
+            Definition definition;
+            definition.id = derived_uuid("frame-grid-definition-" + std::to_string(int(grid)));
+            definition.name = "Grid framed block";
+            definition.wired = true;
+            const auto first_node = derived_uuid(definition.id + "-first-node");
+            const auto second_node = derived_uuid(definition.id + "-second-node");
+            definition.nodes = {{first_node, "1", false, 0, -40},
+                                {second_node, "2", false, 0, 40}};
+            definition.ports = {
+                {derived_uuid(definition.id + "-first-port"), "1", {first_node, "node"},
+                 Domain::electrical, Direction::conserving, true, 0, -54},
+                {derived_uuid(definition.id + "-second-port"), "2", {second_node, "node"},
+                 Domain::electrical, Direction::conserving, true, 0, 54}};
+            project.definitions.push_back(definition);
+            Instance instance;
+            instance.id = derived_uuid(definition.id + "-instance");
+            instance.name = "Grid framed block";
+            instance.definition = definition.id;
+            instance.x = 200;
+            instance.y = 220;
+            instance.orientation.scale_x = .93;
+            instance.orientation.scale_y = 1.17;
+            project.instances.push_back(instance);
+            PlotBlock plot;
+            plot.id = derived_uuid(definition.id + "-plot");
+            plot.name = "Grid plot";
+            plot.x = 500;
+            plot.y = 220;
+            plot.orientation.scale_x = 1.13;
+            plot.orientation.scale_y = .91;
+            project.plots.push_back(plot);
+            w.set_project(project);
+            ready(w);
+
+            auto verify = [&](const std::string &id) {
+                auto *block = item(w, id);
+                QVERIFY(block);
+                const QRectF frame = block->shape().boundingRect();
+                const QRectF scene_frame = block->mapRectToScene(frame);
+                QVERIFY(close(scene_frame.width() / grid, std::round(scene_frame.width() / grid)));
+                QVERIFY(close(scene_frame.height() / grid, std::round(scene_frame.height() / grid)));
+                QVERIFY(close((scene_frame.left() - grid / 2.0) / grid,
+                              std::round((scene_frame.left() - grid / 2.0) / grid)));
+                QVERIFY(close((scene_frame.top() - grid / 2.0) / grid,
+                              std::round((scene_frame.top() - grid / 2.0) / grid)));
+                int ports = 0;
+                for (auto *pin : block->childItems()) {
+                    if (pin->data(1).toString() != "port")
+                        continue;
+                    const QPointF local = pin->pos();
+                    const std::array<QPointF, 4> edges = {
+                        QPointF(frame.left(), std::clamp(local.y(), frame.top(), frame.bottom())),
+                        QPointF(frame.right(), std::clamp(local.y(), frame.top(), frame.bottom())),
+                        QPointF(std::clamp(local.x(), frame.left(), frame.right()), frame.top()),
+                        QPointF(std::clamp(local.x(), frame.left(), frame.right()), frame.bottom())};
+                    const auto edge = *std::min_element(edges.begin(), edges.end(), [&](QPointF a, QPointF b) {
+                        return QLineF(local, a).length() < QLineF(local, b).length();
+                    });
+                    const QPointF endpoint = pin->scenePos();
+                    QVERIFY(close(endpoint.x() / grid, std::round(endpoint.x() / grid)));
+                    QVERIFY(close(endpoint.y() / grid, std::round(endpoint.y() / grid)));
+                    QVERIFY(close(QLineF(block->mapToScene(edge), endpoint).length(), grid / 2.0));
+                    ++ports;
+                }
+                QVERIFY(ports > 0);
+            };
+            verify(instance.id);
+            verify(plot.id);
+
+            if (close(grid, 20.0)) {
+                auto *block = item(w, instance.id);
+                QVERIFY(block);
+                const double old_width = block->mapRectToScene(block->shape().boundingRect()).width();
+                w.select_object(instance.id);
+                block = item(w, instance.id);
+                const QPointF handle = block->mapToScene(
+                    {block->boundingRect().right(), block->boundingRect().center().y()});
+                QPointF direction = block->mapToScene(QPointF(1, 0)) - block->mapToScene(QPointF());
+                direction /= std::hypot(direction.x(), direction.y());
+                drag(w, handle, handle + direction * 37.0);
+                block = item(w, instance.id);
+                QVERIFY(block);
+                const double new_width = block->mapRectToScene(block->shape().boundingRect()).width();
+                QVERIFY(!close(new_width, old_width));
+                QVERIFY(close(new_width / grid, std::round(new_width / grid)));
+                verify(instance.id);
+            }
+        }
+    }
     void plot_pins_move_to_all_edges_without_overlap() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
@@ -1462,33 +1560,53 @@ class InteractionTests : public QObject {
                 return QPointF(qQNaN(), qQNaN());
             return QPointF(found->x, found->y);
         };
+        auto on_side = [&](const std::string &port_id, int expected_side) {
+            auto *plot = item(w, plot_id);
+            auto *pin = pin_item(port_id);
+            if (!plot || !pin)
+                return false;
+            const QRectF body = plot->shape().boundingRect();
+            const QPointF local = pin->pos();
+            const std::array<QPointF, 4> edges = {
+                QPointF(body.left(), std::clamp(local.y(), body.top(), body.bottom())),
+                QPointF(body.right(), std::clamp(local.y(), body.top(), body.bottom())),
+                QPointF(std::clamp(local.x(), body.left(), body.right()), body.top()),
+                QPointF(std::clamp(local.x(), body.left(), body.right()), body.bottom())};
+            const auto found = std::min_element(edges.begin(), edges.end(), [&](QPointF a, QPointF b) {
+                return QLineF(local, a).length() < QLineF(local, b).length();
+            });
+            return int(std::distance(edges.begin(), found)) == expected_side &&
+                   std::abs(QLineF(plot->mapToScene(*found), pin->scenePos()).length() -
+                            w.canvas()->grid_size() / 2.0) < 1e-5;
+        };
 
         const auto untouched_in2 = pin_item("in2")->pos();
         move_pin("in1", {0, -120});
-        QCOMPARE(position("in1"), QPointF(0, -60));
+        QVERIFY(on_side("in1", 2));
         QCOMPARE(pin_item("in2")->pos(), untouched_in2);
         move_pin("in1", {160, 0});
-        QCOMPARE(position("in1"), QPointF(60, 0));
+        QVERIFY(on_side("in1", 1));
         QCOMPARE(pin_item("in2")->pos(), untouched_in2);
         move_pin("in1", {0, 120});
-        QCOMPARE(position("in1"), QPointF(0, 60));
+        QVERIFY(on_side("in1", 3));
         QCOMPARE(pin_item("in2")->pos(), untouched_in2);
         move_pin("in1", {-160, 0});
-        QCOMPARE(position("in1"), QPointF(-60, 0));
+        QVERIFY(on_side("in1", 0));
         QCOMPARE(pin_item("in2")->pos(), untouched_in2);
         QVERIFY(same_simulation(simulation_before, w.project()));
 
         move_pin("in1", {0, -120});
         move_pin("in2", {20, -120});
-        QCOMPARE(position("in1"), QPointF(0, -60));
-        QCOMPARE(position("in2"), QPointF(20, -60));
+        QVERIFY(on_side("in1", 2));
+        QVERIFY(on_side("in2", 2));
+        QCOMPARE(QLineF(pin_item("in1")->scenePos(), pin_item("in2")->scenePos()).length(), 20.0);
         move_pin("in2", {-160, 20});
         const auto before_collision = encoded(w.project());
         move_pin("in2", {0, -120});
         const auto first = position("in1");
         const auto second = position("in2");
         QVERIFY(first != second);
-        QVERIFY(QLineF(first, second).length() >= 14.0);
+        QVERIFY(QLineF(pin_item("in1")->scenePos(), pin_item("in2")->scenePos()).length() >= 20.0 - 1e-5);
         const auto after_collision = encoded(w.project());
         w.undo();
         QCOMPARE(encoded(w.project()), before_collision);
