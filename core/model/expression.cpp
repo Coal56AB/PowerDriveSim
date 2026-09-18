@@ -1,5 +1,7 @@
 #include "core/model/expression.hpp"
 #include "core/model/model.hpp"
+#include "core/model/hierarchy.hpp"
+#include "core/editor/properties.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -183,6 +185,7 @@ ExpressionProgram parse_expression_program(const std::string &source,const Expre
             for(const auto *prefix:{"constdouble","constbool","constauto","double","bool","auto"})
                 if(name.rfind(prefix,0)==0){name=name.substr(std::char_traits<char>::length(prefix));break;}
             if(!identifier(name))fail(options,"Assignment target must be an identifier");
+            if(program.variables.contains(name))fail(options,"Duplicate variable '"+name+"'");
             program.variables[name]=statement.substr(eq+1);
         } else program.expression=std::move(statement);
     }
@@ -192,10 +195,56 @@ ExpressionProgram parse_expression_program(const std::string &source,const Expre
 
 double evaluate_expression(const std::string &expression,const std::map<std::string,std::string> &variables,
                            double time,const ExpressionOptions &options) {
-    std::set<std::string> resolving;return Parser(expression,variables,time,options,resolving).parse();
+    const auto compact=compact_source(expression,options);
+    std::set<std::string> resolving;return Parser(compact,variables,time,options,resolving).parse();
 }
 
 bool expression_depends_on_time(const std::string &expression,const std::map<std::string,std::string> &variables) {
-    std::set<std::string> checking;return depends(expression,variables,checking);
+    const auto compact=compact_source(expression,{});
+    std::set<std::string> checking;return depends(compact,variables,checking);
+}
+
+namespace {
+void resolve_schematic(Project &body,const std::string &identity) {
+    const ExpressionOptions initialization_options{"invalid_initialization",identity,false,false};
+    const auto program=parse_expression_program(body.initialization_code,initialization_options);
+    for(const auto &[name,source]:program.variables) {
+        (void)name;
+        (void)evaluate_expression(source,program.variables,0,initialization_options);
+    }
+    std::set<std::pair<std::string,std::string>> bindings;
+    for(const auto &binding:body.parameter_expressions) {
+        if(binding.object.empty()||binding.field.empty()||binding.source.empty()||
+           !bindings.emplace(binding.object,binding.field).second)
+            throw Diagnostic("invalid_parameter_expression",binding.object,
+                             "Parameter expression binding is empty or duplicated");
+        const ExpressionOptions options{"invalid_parameter_expression",binding.object,false,false};
+        const double value=evaluate_expression(binding.source,program.variables,0,options);
+        try {
+            const auto current=read_property(body,binding.object,binding.field);
+            if(!std::holds_alternative<double>(current))
+                throw Diagnostic("invalid_parameter_expression",binding.object,
+                                 "Expressions can only target numeric properties");
+            write_property(body,binding.object,binding.field,value);
+        } catch(const Diagnostic &diagnostic) {
+            if(diagnostic.code=="invalid_parameter_expression")throw;
+            throw Diagnostic("invalid_parameter_expression",binding.object,diagnostic.what());
+        }
+    }
+}
+} // namespace
+
+Project resolve_parameter_expressions(const Project &source) {
+    Project result=source;
+    for(auto &definition:result.definitions) {
+        Project body;
+        static_cast<Schematic&>(body)=definition;
+        body.id=definition.id;body.name=definition.name;body.profile=result.profile;
+        body.definitions=result.definitions;
+        resolve_schematic(body,definition.id);
+        static_cast<Schematic&>(definition)=static_cast<const Schematic&>(body);
+    }
+    resolve_schematic(result,result.id);
+    return result;
 }
 } // namespace pds

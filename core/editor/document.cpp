@@ -372,6 +372,8 @@ Project Document::copy(const std::vector<std::string>& list) const {
     if(!result.instances.empty())result.definitions=project().definitions;
     for(const auto& w:project().wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
     for(const auto& e:project().events)if(ids.count(e.target))result.events.push_back(e);
+    for(const auto& expression:project().parameter_expressions)if(ids.count(expression.object))result.parameter_expressions.push_back(expression);
+    if(!result.parameter_expressions.empty())result.initialization_code=project().initialization_code;
     const auto fragment=flatten(result);
     const auto source=flatten(current_);
     std::map<std::string,std::string> channels;
@@ -433,6 +435,11 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
         copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy_tags(fragment.tags,p.tags);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}
         for(auto event:fragment.events)if(ids.count(event.target)){event.target=ids.at(event.target);p.events.push_back(event);}
+        const bool compatible_initialization=p.initialization_code.empty()||p.initialization_code==fragment.initialization_code;
+        if(p.initialization_code.empty()&&!fragment.parameter_expressions.empty())p.initialization_code=fragment.initialization_code;
+        if(compatible_initialization)for(auto expression:fragment.parameter_expressions)if(ids.count(expression.object)){
+            expression.object=ids.at(expression.object);p.parameter_expressions.push_back(std::move(expression));
+        }
         if(!fragment.view_options.empty()) {
             std::map<std::string,std::string> channels;
             for(const auto& [old,origin]:original_fragment.origins) {
@@ -506,6 +513,7 @@ void Document::erase(const std::vector<std::string>& list) {
         std::erase_if(p.patterns,[&](const GatePattern& g){return ids.count(g.id);});
         std::erase_if(p.instances,[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.events,[&](const GateEvent& e){return ids.count(e.target);});
+        std::erase_if(p.parameter_expressions,[&](const ParameterExpression& expression){return ids.count(expression.object);});
         std::erase_if(p.wires,[&](const Wire& w){return ids.count(w.id)||ids.count(w.from.object)||ids.count(w.to.object);});
         // A junction without a single incident conductor has no electrical or
         // visual meaning. Keeping it produced a small unexplained square after

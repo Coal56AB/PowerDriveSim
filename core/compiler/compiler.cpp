@@ -356,7 +356,8 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
 }
 
 SimulationIR compile(const Project& source) {
-    auto expanded=flatten(source);
+    auto resolved=resolve_parameter_expressions(source);
+    auto expanded=flatten(resolved);
     try {
         if(!source.instances.empty()) {
             for(const auto& [terminal,net]:resolve_connections(expanded.project).nets) {

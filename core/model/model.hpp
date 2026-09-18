@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 21;
+inline constexpr unsigned project_schema = 22;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -197,6 +197,10 @@ struct DefinitionAppearance {
     std::string image_png;
     bool operator==(const DefinitionAppearance&) const = default;
 };
+struct ParameterExpression {
+    std::string object, field, source;
+    bool operator==(const ParameterExpression&) const = default;
+};
 struct Schematic {
     std::vector<Node> nodes;
     std::vector<Component> components;
@@ -210,6 +214,8 @@ struct Schematic {
     std::vector<LabelLayout> labels;
     std::vector<ViewOptions> view_options;
     std::vector<Instance> instances;
+    std::string initialization_code;
+    std::vector<ParameterExpression> parameter_expressions;
     bool operator==(const Schematic&) const = default;
 };
 struct Definition : Schematic {

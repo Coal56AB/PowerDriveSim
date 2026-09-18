@@ -82,6 +82,21 @@ int main(int argc,char** argv) {
                   "Orphan cleanup is part of the same undoable deletion");
         }
         {
+            Project expressions;expressions.id=new_uuid();expressions.wired=true;
+            expressions.initialization_code="double base = 1000;";
+            Document drawing(expressions);const auto resistor=drawing.add_component(Kind::resistor,0,0);
+            drawing.apply("Expression",[&](Project &project){
+                project.parameter_expressions.push_back({resistor,"value","base * 2"});
+            });
+            const auto copied=drawing.copy({resistor});const auto pasted=drawing.paste(copied,100,0);
+            check(pasted.size()==1&&drawing.project().parameter_expressions.size()==2&&
+                      drawing.project().parameter_expressions.back().object==pasted.front(),
+                  "Copy and paste preserve parameter expressions with remapped object identity");
+            drawing.erase({resistor});
+            check(drawing.project().parameter_expressions.size()==1,
+                  "Deleting an object removes only its parameter expressions");
+        }
+        {
             constexpr const char *source_definition = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
             constexpr const char *voltage_parameter = "6c1aaf47-7a4f-5dac-ab25-cdd71f6816b3";
             constexpr const char *kind_parameter = "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b";

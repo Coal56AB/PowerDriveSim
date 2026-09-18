@@ -1,5 +1,6 @@
 #include "core/editor/document.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/model/expression.hpp"
 #include "core/solver/reference/reference.hpp"
 #include "formats/project/project.hpp"
 #include <algorithm>
@@ -122,6 +123,12 @@ static void net_display_names() {
 int main() try {
     net_display_names();
     auto p = fixture();
+    auto expressed=p;
+    expressed.definitions[0].initialization_code="double capacitance = 2e-6;";
+    expressed.definitions[0].parameter_expressions={{id(13),"value","capacitance"}};
+    const auto resolved_expressions=resolve_parameter_expressions(expressed);
+    require(resolved_expressions.definitions[0].components[1].value==2e-6,
+            "Definition-local variables resolve before hierarchy flattening");
     auto flat = flatten(p);
     require(flat.project.components.size() == 5 && flat.project.instances.empty() &&
                 flat.project.definitions.empty(),

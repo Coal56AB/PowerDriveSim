@@ -2802,6 +2802,36 @@ class InteractionTests : public QObject {
         QVERIFY(!w.simulation_snapshot());
         QVERIFY(w.result().cancelled && w.result().samples.empty());
     }
+    void expression_initialization_and_numeric_properties() {
+        QTemporaryDir dir;
+        EditorWindow w("ru",dir.path());ready(w);
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR)+"/examples/rc.pds"));
+        bool edited=false;
+        QTimer::singleShot(0,&w,[&]{
+            auto *dialog=w.findChild<QDialog *>("expression_settings_dialog");QVERIFY(dialog);
+            QTimer::singleShot(3000,dialog,&QDialog::reject);
+            auto *code=dialog->findChild<QPlainTextEdit *>("expression_initialization_code");QVERIFY(code);
+            code->setPlainText("const double base = 2e3;\ndouble factor = 2;");
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();edited=true;
+        });
+        w.show_expression_settings();QVERIFY(edited);
+        const auto resistor=std::find_if(w.project().components.begin(),w.project().components.end(),
+                                         [](const Component &component){return component.kind==Kind::resistor;})->id;
+        w.select_object(resistor);
+        auto *value=w.findChild<QLineEdit *>("property_value");QVERIFY(value);
+        value->setText("base * factor");
+        QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
+        QCOMPARE(w.project().components[1].value,4000.0);
+        QCOMPARE(w.project().parameter_expressions.size(),size_t(1));
+        QVERIFY(w.save_project(dir.filePath("expressions.pds")));
+        QVERIFY(w.open_project(dir.filePath("expressions.pds")));
+        w.select_object(resistor);
+        QCOMPARE(w.findChild<QLineEdit *>("property_value")->text(),QString("base * factor"));
+        value=w.findChild<QLineEdit *>("property_value");value->setText("3 kOhm");
+        QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
+        QCOMPARE(w.project().components[1].value,3000.0);
+        QVERIFY(w.project().parameter_expressions.empty());
+    }
     void simulation_snapshots_and_step() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
+#include "core/model/expression.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include <QCheckBox>
 #include <QComboBox>
@@ -10,6 +11,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QPlainTextEdit>
 #include <QSaveFile>
 #include <QVBoxLayout>
 #include <array>
@@ -17,6 +19,34 @@
 #include <sstream>
 
 namespace pds::desktop {
+void EditorWindow::show_expression_settings() {
+    if(running()||!commit_inline_edit())return;
+    QDialog dialog(this);dialog.setObjectName("expression_settings_dialog");
+    dialog.setWindowTitle(text("expression_settings"));dialog.resize(720,500);
+    auto *layout=new QVBoxLayout(&dialog);
+    auto *hint=new QLabel(text("expression_hint"));hint->setWordWrap(true);layout->addWidget(hint);
+    auto *code=new QPlainTextEdit;code->setObjectName("expression_initialization_code");
+    code->setPlainText(QString::fromStdString(project().initialization_code));
+    code->setPlaceholderText("const double udc = 540;\ndouble load = 10;\n");
+    layout->addWidget(code,1);
+    auto *error=new QLabel;error->setObjectName("expression_error");error->setWordWrap(true);layout->addWidget(error);
+    auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Cancel)->setText(text("dialog_cancel"));layout->addWidget(buttons);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    connect(code,&QPlainTextEdit::textChanged,error,&QLabel::clear);
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{
+        try {
+            const auto source=code->toPlainText().toStdString();
+            const ExpressionOptions options{"invalid_initialization",project().id,false,false};
+            const auto program=parse_expression_program(source,options);
+            for(const auto &[name,value]:program.variables){(void)name;(void)evaluate_expression(value,program.variables,0,options);}
+            document_->apply("Initialization variables",[&](Project &p){p.initialization_code=source;});
+            dialog.accept();
+        } catch(const std::exception &exception) { error->setText(QString::fromUtf8(exception.what())); }
+    });
+    if(dialog.exec()==QDialog::Accepted)refresh();
+}
+
 void EditorWindow::show_step_settings() {
     if (running() || !commit_inline_edit())
         return;

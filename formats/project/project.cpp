@@ -13,6 +13,21 @@
 #include <cctype>
 #include <algorithm>
 namespace pds {
+namespace {
+std::string hex_text(const std::string &value) {
+    static constexpr char digits[]="0123456789abcdef";
+    std::string result;result.reserve(value.size()*2);
+    for(const auto byte:value){const auto c=static_cast<unsigned char>(byte);result.push_back(digits[c>>4]);result.push_back(digits[c&15]);}
+    return result;
+}
+std::string unhex_text(const std::string &value,const std::string &object) {
+    auto digit=[](char c)->int{if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;};
+    if(value.size()%2||value.size()>2*1024*1024)throw Diagnostic("parse_error",object,"Invalid encoded expression text");
+    std::string result;result.reserve(value.size()/2);
+    for(size_t i=0;i<value.size();i+=2){const int high=digit(value[i]),low=digit(value[i+1]);if(high<0||low<0)throw Diagnostic("parse_error",object,"Invalid encoded expression text");result.push_back(char((high<<4)|low));}
+    return result;
+}
+} // namespace
 static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     Project p;
     std::string line, tag;
@@ -24,7 +39,8 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     header >> std::ws;
     if(!header.eof() || tag!="PowerDriveSim" || (p.schema<1 || p.schema>project_schema))
         throw Diagnostic("schema_version","","Expected PowerDriveSim schema 1.."+std::to_string(project_schema));
-    bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false, initialization=false, stepping=false;
+    bool identity=false, profile=false, nonlinear=false, wiring=false, recording=false, initialization=false, stepping=false,
+         expression_initialization=false;
     std::map<std::string,Orientation> orientations;
     std::map<std::string,SourceWaveform> sources;
     std::map<std::string,Semiconductor> semiconductors;
@@ -185,6 +201,16 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         if(tag.rfind("x-",0)==0) { p.extensions.push_back(line); continue; }
         if(tag=="project" && !identity) {
             row >> std::quoted(p.id) >> std::quoted(p.name); identity=true;
+        } else if(tag=="expression_init" && p.schema>=22 && !expression_initialization) {
+            std::string encoded;row>>std::quoted(encoded);p.initialization_code=unhex_text(encoded,p.id);expression_initialization=true;
+        } else if(tag=="parameter_expression" && p.schema>=22) {
+            ParameterExpression expression;std::string encoded;
+            row>>std::quoted(expression.object)>>std::quoted(expression.field)>>std::quoted(encoded);
+            expression.source=unhex_text(encoded,expression.object);
+            if(expression.object.empty()||expression.field.empty()||expression.source.empty()||
+               std::any_of(p.parameter_expressions.begin(),p.parameter_expressions.end(),[&](const auto &prior){return prior.object==expression.object&&prior.field==expression.field;}))
+                row.setstate(std::ios::failbit);
+            p.parameter_expressions.push_back(std::move(expression));
         } else if(tag=="profile" && !profile) {
             row >> p.profile.stop >> p.profile.step;
             if(p.schema>=2) {
@@ -464,6 +490,14 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);for(const auto& multiplier:v.curve_multipliers)check_text(multiplier.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
+    if(p.initialization_code.size()>1024*1024)throw Diagnostic("invalid_initialization",p.id,"Initialization code exceeds 1 MiB");
+    std::set<std::pair<std::string,std::string>> expression_bindings;
+    for(const auto& expression:p.parameter_expressions) {
+        check_text(expression.object,expression.object);check_text(expression.field,expression.object);
+        if(expression.source.empty()||expression.source.size()>1024*1024||
+           !expression_bindings.emplace(expression.object,expression.field).second)
+            throw Diagnostic("invalid_parameter_expression",expression.object,"Parameter expression is empty, too large or duplicated");
+    }
     out << std::noboolalpha << std::defaultfloat << std::setprecision(17) << "PowerDriveSim " << project_schema << "\nproject " << std::quoted(p.id) << ' ' << std::quoted(p.name)
         << "\nprofile " << p.profile.stop << ' ' << p.profile.step << ' ' << method_name(p.profile.method) << '\n';
     out << "nonlinear " << p.profile.max_iterations << ' ' << p.profile.voltage_tolerance << ' '
@@ -472,6 +506,9 @@ void write_project(const Project& p, std::ostream& out) {
     const auto &control = p.profile.step_control;
     out << "stepping " << control.adaptive << ' ' << control.minimum_step << ' ' << control.relative_tolerance
         << ' ' << control.voltage_tolerance << ' ' << control.current_tolerance << ' ' << control.charge_tolerance << '\n';
+    if(!p.initialization_code.empty())out<<"expression_init "<<std::quoted(hex_text(p.initialization_code))<<'\n';
+    for(const auto& expression:p.parameter_expressions)
+        out<<"parameter_expression "<<std::quoted(expression.object)<<' '<<std::quoted(expression.field)<<' '<<std::quoted(hex_text(expression.source))<<'\n';
     auto write_orientation=[&](const auto& object){const auto& o=object.orientation;if(o.quarter_turns>3||!std::isfinite(o.scale)||o.scale<=0||!std::isfinite(o.scale_x)||o.scale_x<=0||!std::isfinite(o.scale_y)||o.scale_y<=0)throw Diagnostic("invalid_orientation",object.id,"Invalid orientation");if(o.quarter_turns||o.mirrored||std::abs(o.scale-1)>1e-12||std::abs(o.scale_x-1)>1e-12||std::abs(o.scale_y-1)>1e-12)out<<"orientation "<<std::quoted(object.id)<<' '<<o.quarter_turns<<' '<<o.mirrored<<' '<<o.scale<<' '<<o.scale_x<<' '<<o.scale_y<<'\n';};
     for(const auto& experiment:p.experiments) { out<<"experiment ";write_experiment(out,experiment);out<<'\n'; }
     for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& t:p.tags)write_orientation(t);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);

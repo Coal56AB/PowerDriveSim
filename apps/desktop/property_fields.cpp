@@ -3,6 +3,7 @@
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
+#include "core/model/expression.hpp"
 #include "formats/project/project.hpp"
 #include "formats/samples/table.hpp"
 #include <QCheckBox>
@@ -466,10 +467,16 @@ void EditorWindow::fill_inspector() {
             spin->setRange(field.value("min").toInt(0), field.value("max").toInt(2147483647));
         QString contents;
         bool mixed = false;
+        bool expression_bound = false;
         try {
             contents = display_value(read_property(project(), targets.front(), key.toStdString()), field);
             for (size_t i = 1; i < targets.size(); ++i)
                 mixed |= display_value(read_property(project(), targets[i], key.toStdString()), field) != contents;
+            if(targets.size()==1&&field.value("editor")=="number") {
+                const auto binding=std::find_if(project().parameter_expressions.begin(),project().parameter_expressions.end(),
+                    [&](const ParameterExpression &candidate){return candidate.object==targets.front()&&candidate.field==key.toStdString();});
+                if(binding!=project().parameter_expressions.end()){contents=QString::fromStdString(binding->source);expression_bound=true;}
+            }
         } catch (const std::exception &e) {
             property_error_->setText(QString::fromUtf8(e.what()));
             continue;
@@ -485,6 +492,7 @@ void EditorWindow::fill_inspector() {
         auto label = field.contains("displayLabel")
                          ? field.value("displayLabel").toString()
                          : text(field.value("label").toString().toUtf8().constData());
+        if(expression_bound)label += "  ƒ";
         if (!hierarchy_path().empty()) {
             const auto &definition = pds::definition(root_project(), document_->current_definition());
             auto binding = std::find_if(definition.parameters.begin(), definition.parameters.end(),
@@ -578,11 +586,37 @@ void EditorWindow::apply_inspector() {
         document_->apply("Edit properties", [&](Project &p) {
             for (const auto &field : changed_fields) {
                 const auto key = field.value("key").toString();
-                const auto value = parse_field(field_text(property_editors_.at(key)), field);
-                if (key == "three_phase_connection")
-                    ensure_three_phase_source_variant(p, std::get<unsigned>(value));
-                for (const auto &target : targets) {
-                    write_property(p, target, key.toStdString(), value);
+                const auto input=field_text(property_editors_.at(key));
+                if(field.value("editor")=="number") {
+                    try {
+                        const auto value=parse_field(input,field);
+                        for(const auto &target:targets) {
+                            std::erase_if(p.parameter_expressions,[&](const ParameterExpression &binding){return binding.object==target&&binding.field==key.toStdString();});
+                            write_property(p,target,key.toStdString(),value);
+                        }
+                    } catch(const std::exception &) {
+                        const ExpressionOptions initialization_options{"invalid_initialization",p.id,false,false};
+                        const auto program=parse_expression_program(p.initialization_code,initialization_options);
+                        for(const auto &target:targets) {
+                            const ExpressionOptions options{"invalid_parameter_expression",target,false,false};
+                            const double value=evaluate_expression(input.toStdString(),program.variables,0,options);
+                            const double scale=field.value("scale").toDouble(1);
+                            if((field.contains("min")&&value<field.value("min").toDouble()/scale)||
+                               (field.contains("max")&&value>field.value("max").toDouble()/scale))
+                                throw std::runtime_error("Value outside configured range");
+                            write_property(p,target,key.toStdString(),value);
+                            auto binding=std::find_if(p.parameter_expressions.begin(),p.parameter_expressions.end(),
+                                [&](const ParameterExpression &candidate){return candidate.object==target&&candidate.field==key.toStdString();});
+                            if(binding==p.parameter_expressions.end())p.parameter_expressions.push_back({target,key.toStdString(),input.toStdString()});
+                            else binding->source=input.toStdString();
+                        }
+                    }
+                } else {
+                    const auto value = parse_field(input, field);
+                    if (key == "three_phase_connection")
+                        ensure_three_phase_source_variant(p, std::get<unsigned>(value));
+                    for (const auto &target : targets)
+                        write_property(p, target, key.toStdString(), value);
                 }
             }
         });
@@ -637,6 +671,11 @@ void EditorWindow::edit_inline(const std::string &id, const QJsonObject &field, 
     edit->setObjectName("inline_property");
     const auto key = field.value("key").toString().toStdString();
     edit->setText(display_value(read_property(project(), id, key), field));
+    if(field.value("editor")=="number") {
+        const auto binding=std::find_if(project().parameter_expressions.begin(),project().parameter_expressions.end(),
+            [&](const ParameterExpression &candidate){return candidate.object==id&&candidate.field==key;});
+        if(binding!=project().parameter_expressions.end())edit->setText(QString::fromStdString(binding->source));
+    }
     rect.setWidth(std::clamp(rect.width() + 24, 120, 320));
     rect.setHeight(32);
     rect.moveLeft(std::clamp(rect.left(), 0, std::max(0, canvas_->viewport()->width() - rect.width())));
@@ -648,8 +687,25 @@ void EditorWindow::edit_inline(const std::string &id, const QJsonObject &field, 
         if (inline_editor_ != edit)
             return;
         try {
-            auto value = parse_field(edit->text(), field);
-            document_->apply("Edit label", [&](Project &p) { write_property(p, id, key, value); });
+            document_->apply("Edit label", [&](Project &p) {
+                if(field.value("editor")=="number") {
+                    try {
+                        const auto value=parse_field(edit->text(),field);
+                        std::erase_if(p.parameter_expressions,[&](const ParameterExpression &binding){return binding.object==id&&binding.field==key;});
+                        write_property(p,id,key,value);
+                    } catch(const std::exception &) {
+                        const ExpressionOptions initialization_options{"invalid_initialization",p.id,false,false};
+                        const auto program=parse_expression_program(p.initialization_code,initialization_options);
+                        const ExpressionOptions options{"invalid_parameter_expression",id,false,false};
+                        const double value=evaluate_expression(edit->text().toStdString(),program.variables,0,options);
+                        write_property(p,id,key,value);
+                        auto binding=std::find_if(p.parameter_expressions.begin(),p.parameter_expressions.end(),
+                            [&](const ParameterExpression &candidate){return candidate.object==id&&candidate.field==key;});
+                        if(binding==p.parameter_expressions.end())p.parameter_expressions.push_back({id,key,edit->text().toStdString()});
+                        else binding->source=edit->text().toStdString();
+                    }
+                } else write_property(p,id,key,parse_field(edit->text(),field));
+            });
             drafts_.erase(id);
             cancel_inline_edit();
             refresh();

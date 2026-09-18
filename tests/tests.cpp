@@ -92,6 +92,7 @@ static void unit() {
         (void)evaluate_expression("a",cyclic.variables);
     });
     error("invalid_expression",[]{(void)evaluate_expression("t + 1");});
+    error("invalid_expression",[]{(void)parse_expression_program("double a=1; double a=2;");});
 }
 static double rc_error(Project p) {
     auto r=execute(compile(p)); double max_error=0;
@@ -256,6 +257,17 @@ static void serialization() {
     require(saved(read_project(windows_in))==text,"UTF-8 BOM and CRLF round trip");
     auto a=execute(compile(p)),b=execute(compile(q));
     require(a.samples.back().values==b.samples.back().values,"Semantics round trip");
+    auto expression_project=p;
+    expression_project.initialization_code="const double base = 4;\n// UTF-8: параметры\ndouble multiplier = 3;";
+    expression_project.parameter_expressions={{id(14),"value","base * multiplier"}};
+    std::istringstream expression_input(saved(expression_project));const auto expression_loaded=read_project(expression_input);
+    require(expression_loaded.initialization_code==expression_project.initialization_code&&
+            expression_loaded.parameter_expressions==expression_project.parameter_expressions,
+            "Initialization source and parameter expressions round trip");
+    const auto resolved=resolve_parameter_expressions(expression_loaded);
+    require(resolved.components.back().value==12,"Parameter expression changes the compiled numeric property");
+    auto invalid=expression_loaded;invalid.parameter_expressions={{id(999),"value","base"}};
+    error("invalid_parameter_expression",[&]{compile(invalid);});
     error("schema_version",[]{std::istringstream s("PowerDriveSim 99\n"); read_project(s);});
     error("parse_error",[]{std::istringstream s(""); read_project(s);});
     error("parse_error",[]{std::istringstream s("PowerDriveSim\n"); read_project(s);});
@@ -270,7 +282,7 @@ static void serialization() {
     auto downgrade_nodes=[](std::string original) {
         std::istringstream input(original); std::string line,output;
         while(std::getline(input,line)) {
-            if(line.rfind("scope_enabled ",0)==0 || line.rfind("wiring ",0)==0 || line.rfind("scopeview ",0)==0 || line.rfind("initialization ",0)==0 || line.rfind("stepping ",0)==0) continue;
+            if(line.rfind("scope_enabled ",0)==0 || line.rfind("wiring ",0)==0 || line.rfind("scopeview ",0)==0 || line.rfind("initialization ",0)==0 || line.rfind("stepping ",0)==0 || line.rfind("expression_init ",0)==0 || line.rfind("parameter_expression ",0)==0) continue;
             if(line.rfind("node ",0)==0) {
                 line.erase(line.find_last_of(' ')); line.erase(line.find_last_of(' '));
             }

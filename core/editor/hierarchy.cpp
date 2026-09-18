@@ -262,6 +262,10 @@ std::string Document::create_definition(const std::vector<std::string> &selected
                 if (ids.count(v.plot))
                     d.view_options.push_back(v);
             std::erase_if(p.view_options, [&](const auto &v) { return ids.count(v.plot); });
+            for(const auto &expression:p.parameter_expressions)
+                if(ids.count(expression.object))d.parameter_expressions.push_back(expression);
+            std::erase_if(p.parameter_expressions,[&](const ParameterExpression &expression){return ids.count(expression.object);});
+            if(!d.parameter_expressions.empty())d.initialization_code=p.initialization_code;
             p.instances.push_back({instance, name, d.id, x, y});
             p.definitions.push_back(std::move(d));
             for (auto &parent : p.definitions)
