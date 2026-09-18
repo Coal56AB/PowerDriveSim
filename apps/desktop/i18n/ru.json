@@ -141,6 +141,12 @@
   "tag_domain": "Тип метки",
   "tag_electrical": "Электрическая сеть",
   "tag_gate": "Gate-сигнал",
+  "tag_signal": "Измерительный сигнал",
+  "tag_scope": "Область видимости",
+  "tag_scope_local": "Текущая схема",
+  "tag_scope_ancestors": "Текущая и старшие схемы",
+  "tag_scope_global": "Вся модель",
+  "tag_listed": "Показывать имя в списке",
   "place_hint": "Щелчок — вставить; Space — повернуть; Ctrl+M — отразить; Esc — отменить.",
   "objects": "Элементы схемы",
   "name": "Имя",
@@ -532,5 +538,12 @@
   "open_end_winding_module": "Двухстороннее питание обмоток",
   "three_phase_switch": "Трёхфазный ключ",
   "differential_plot": "Дифференциальный график",
-  "differential_plot_inputs": "Дифференциальных каналов"
+  "differential_plot_inputs": "Дифференциальных каналов",
+  "appearance": "Оформление",
+  "appearance_symbol": "Схемный символ",
+  "appearance_automatic": "Автоматически",
+  "appearance_choose_image": "Выбрать изображение…",
+  "appearance_clear_image": "Убрать изображение",
+  "appearance_no_image": "Пользовательское изображение не задано",
+  "appearance_image_error": "Не удалось прочитать или сохранить изображение."
 }

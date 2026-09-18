@@ -92,11 +92,18 @@ struct Wire {
     WireLine line = WireLine::automatic;
     bool operator==(const Wire &) const = default;
 };
+enum class TagScope { local, ancestors, global };
 struct ConnectionTag {
     std::string id,name;
     double x=0,y=0;
     Domain domain=Domain::electrical;
     Orientation orientation;
+    TagScope scope=TagScope::local;
+    bool listed=true;
+    // Filled only by hierarchy expansion. These fields keep the visible name
+    // separate from the stable scope-resolution identity.
+    std::string connection_name;
+    std::vector<std::string> scope_path;
     bool operator==(const ConnectionTag&) const = default;
 };
 struct GatePattern {
@@ -106,11 +113,17 @@ struct GatePattern {
     bool operator==(const GatePattern&) const = default;
 };
 struct PortType { Domain domain; Direction direction; };
+struct PinPosition {
+    std::string port;
+    double x=0,y=0;
+    bool operator==(const PinPosition&) const = default;
+};
 struct PlotBlock {
     std::string id,name; double x=0,y=0; unsigned inputs=2;
     double begin=0,end=-1,cursor_a=-1,cursor_b=-1;
     Orientation orientation;
     bool differential=false;
+    std::vector<PinPosition> pin_positions;
     bool operator==(const PlotBlock&) const = default;
 };
 struct LabelLayout {
@@ -172,6 +185,13 @@ struct PublicParameter {
     double value=0;
     bool operator==(const PublicParameter&) const = default;
 };
+struct DefinitionAppearance {
+    // -1 keeps automatic library/name detection. A non-negative value selects
+    // one of the centralized schematic symbols. image_png is portable base64.
+    int symbol=-1;
+    std::string image_png;
+    bool operator==(const DefinitionAppearance&) const = default;
+};
 struct Schematic {
     std::vector<Node> nodes;
     std::vector<Component> components;
@@ -191,6 +211,7 @@ struct Definition : Schematic {
     std::string id,name;
     std::vector<PublicPort> ports;
     std::vector<PublicParameter> parameters;
+    DefinitionAppearance appearance;
     bool operator==(const Definition&) const = default;
 };
 struct ObjectPath {

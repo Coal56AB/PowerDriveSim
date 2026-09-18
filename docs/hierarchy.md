@@ -15,6 +15,17 @@ unnamed during flattening and do not suppress another node's label.
 
 A public port aliases an existing internal terminal, including another instance's public port. Its declared domain and direction must match. Electrical ports remain conserving; directed gate and measurement ports preserve their direction. Flattening rewrites endpoints and recorded gate targets before the existing connectivity and generic compilation stages. It adds no electrical elements or stabilization.
 
+Connection tags retain their original connection name and the exact UUID path of
+their containing schematic during flattening. Names are compared exactly and only
+within the same domain. A local tag joins matching tags on the same schematic path.
+An `ancestors` tag additionally joins matching tags on any strict ancestor path; it
+does not directly reach descendants or sibling paths. Sibling instances can still
+share a group through an explicit matching tag at their common ancestor. A global
+tag joins every matching tag in the model regardless of path. There is no implicit
+lexical shadowing: every scope-compatible match is unioned, and conflicting directed
+drivers are diagnosed after that union. The `listed` flag controls name completion
+only and never changes connectivity; manual entry always remains available.
+
 Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Symbolic parameter expressions are not implemented by this step.
 
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
@@ -30,6 +41,14 @@ Grouping inside a definition preserves its enclosing public ports and parameter 
 Graph windows use expanded plot UUIDs and remain open across level changes. Root-level `ViewOptions` can override a particular expanded plot, including its time viewport and cursors, without changing a shared definition. Definition settings remain defaults. Grouping, copying and expansion remap plot/channel identities together; unnamed electrical nets are resolved through terminals rather than by prefixing the old net UUID. Deleting an instance removes its overrides; undo restores them. Public graph inputs retain their electrical/gate tap behavior through nested aliases.
 
 The public parameter dialog derives numeric bindings and display scales from component property configurations, including constant PWM. Nested instance parameters inherit primitive editor constraints. The hierarchy tree rebuilds only after structural/name changes and preserves collapsed branches; text editing suppresses hierarchy keyboard shortcuts.
+
+The same public-interface dialog stores a `DefinitionAppearance`. A definition may
+select any symbol from the centralized schematic icon set or keep automatic
+library/name detection. It may also embed a raster image; the desktop converts
+the selected file to a PNG of at most 512×512 and stores its base64 bytes in the
+definition metadata. The embedded image takes precedence over the symbol and is
+drawn with fixed aspect ratio, while the block frame and real ports remain normal
+schematic geometry. No absolute source path is serialized.
 
 ## Schema 7
 

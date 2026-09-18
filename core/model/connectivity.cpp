@@ -17,6 +17,19 @@ bool plot_input(const Project& catalog,const Schematic& level,const Endpoint& en
     }
     return false;
 }
+const std::string& tag_connection_name(const ConnectionTag& tag) {
+    return tag.connection_name.empty()?tag.name:tag.connection_name;
+}
+bool ancestor_path(const std::vector<std::string>& older,const std::vector<std::string>& younger) {
+    return older.size()<=younger.size()&&std::equal(older.begin(),older.end(),younger.begin());
+}
+bool compatible_tags(const ConnectionTag& a,const ConnectionTag& b) {
+    if(a.domain!=b.domain||tag_connection_name(a)!=tag_connection_name(b))return false;
+    if(a.scope==TagScope::global||b.scope==TagScope::global)return true;
+    if(a.scope_path==b.scope_path)return true;
+    return (a.scope==TagScope::ancestors&&ancestor_path(b.scope_path,a.scope_path))||
+           (b.scope==TagScope::ancestors&&ancestor_path(a.scope_path,b.scope_path));
+}
 }
 std::string endpoint_key(const Endpoint& e) { return e.object+"/"+e.port; }
 PortType port_type(const Project& p,const Endpoint& e) {
@@ -64,12 +77,16 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     Project p=source;
     std::map<std::string,std::string> parents;
     std::map<std::string,std::string> labels;
+    std::set<std::string> electrical_endpoints;
     std::set<std::string> ids;
     auto uuid=[&](const std::string& id) {
         if(!valid_uuid(id)||!ids.insert(id).second) throw Diagnostic("invalid_uuid",id,"Invalid or duplicate object UUID");
     };
     uuid(p.id);
-    auto add=[&](const Endpoint& e,const std::string& name) { auto k=endpoint_key(e); parents[k]=k; labels[k]=name; };
+    auto add=[&](const Endpoint& e,const std::string& name,bool electrical=true) {
+        auto k=endpoint_key(e); parents[k]=k; labels[k]=name;
+        if(electrical)electrical_endpoints.insert(k);
+    };
     for(const auto& n:p.nodes) {
         uuid(n.id); add({n.id,"node"},n.name);
         if(!std::isfinite(n.x)||!std::isfinite(n.y)) throw Diagnostic("invalid_geometry",n.id,"Node position must be finite");
@@ -78,9 +95,9 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     for(const auto& t:p.tags) {
         uuid(t.id);
         if(t.name.empty())throw Diagnostic("invalid_tag",t.id,"Connection tag name must not be empty");
+        if(unsigned(t.scope)>unsigned(TagScope::global))throw Diagnostic("invalid_tag",t.id,"Unknown tag scope");
         if(!std::isfinite(t.x)||!std::isfinite(t.y)) throw Diagnostic("invalid_geometry",t.id,"Tag position must be finite");
-        if(t.domain==Domain::electrical)
-            add({t.id,"io"},t.name);
+        add({t.id,"io"},t.name,t.domain==Domain::electrical);
     }
     for(const auto& g:p.patterns) {
         uuid(g.id);
@@ -110,8 +127,8 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         auto [found,inserted]=grounds.emplace(n.name,k);
         if(!inserted)join(found->second,k);
     }
-    for(const auto& tag:p.tags) if(tag.domain==Domain::electrical)
-        for(const auto& other:p.tags) if(other.id>tag.id&&other.domain==tag.domain&&other.name==tag.name)
+    for(const auto& tag:p.tags)
+        for(const auto& other:p.tags) if(other.id>tag.id&&compatible_tags(tag,other))
             join(endpoint_key({tag.id,"io"}),endpoint_key({other.id,"io"}));
     std::map<std::string,std::string> drivers, tag_drivers;
     std::map<std::string,std::vector<std::string>> tag_inputs;
@@ -136,7 +153,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
             if(auto* tag=find_tag(w.from)?find_tag(w.from):find_tag(w.to)) {
                 const auto& other=find_tag(w.from)?w.to:w.from;
                 const auto type=port_type(p,other);
-                const auto key=std::to_string(unsigned(tag->domain))+":"+tag->name;
+                const auto key=root(endpoint_key({tag->id,"io"}));
                 if(type.direction==Direction::output) {
                     if(!tag_drivers.emplace(key,other.object).second)
                         throw Diagnostic("multiple_gate_drivers",tag->id,"A tag group accepts exactly one driver");
@@ -179,7 +196,9 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         }
     }
     for(const auto& [key,parent]:parents) {
-        (void)parent; auto r=root(key);
+        (void)parent;
+        if(!electrical_endpoints.count(key))continue;
+        auto r=root(key);
         if(!nets.count(r)) nets[r]={derived_uuid("net:"+r),labels.at(r),false};
         result.nets[key]=nets.at(r).id;
     }
@@ -213,6 +232,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     result.project=std::move(p);
     return result;
 }
+namespace { std::string plot_source(const Project& p,const Endpoint& input); }
 std::vector<std::string> plot_channels(const Project& p,const std::string& id){
     if(!p.instances.empty())return plot_channels(flatten(p).project,id);
     std::vector<std::string> result;
@@ -228,22 +248,39 @@ std::vector<std::string> plot_channels(const Project& p,const std::string& id){
     }
     for(unsigned i=1;i<=plot->inputs;++i){
         Endpoint input{id,"in"+std::to_string(i)};
-        for(const auto& w:p.wires){
-            const Endpoint* source=w.to==input?&w.from:(w.from==input?&w.to:nullptr);
-            if(!source)continue;
-            auto domain=port_type(p,*source).domain;
-            auto key=domain==Domain::gate?"gate/"+source->object:source->object;
-            if(domain==Domain::electrical)key=resolve_connections(p).nets.at(endpoint_key(*source));
-            if(std::find(result.begin(),result.end(),key)==result.end())result.push_back(key);
-        }
+        const auto key=plot_source(p,input);
+        if(!key.empty()&&std::find(result.begin(),result.end(),key)==result.end())result.push_back(key);
     }return result;
 }
 namespace {
+std::string tagged_source(const Project& p,const ConnectionTag& source) {
+    for(const auto& tag:p.tags) {
+        if(!compatible_tags(source,tag))continue;
+        const Endpoint terminal{tag.id,"io"};
+        for(const auto& wire:p.wires) {
+            const Endpoint* other=wire.from==terminal?&wire.to:(wire.to==terminal?&wire.from:nullptr);
+            if(!other)continue;
+            if(std::any_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& candidate){
+                   return candidate.id==other->object&&other->port=="io";
+               }))continue;
+            const auto type=port_type(p,*other);
+            if(type.direction==Direction::output)
+                return type.domain==Domain::gate?"gate/"+other->object:other->object;
+        }
+    }
+    return {};
+}
 std::string plot_source(const Project& p,const Endpoint& input) {
     for(const auto& w:p.wires) {
         const Endpoint* source=w.to==input?&w.from:(w.from==input?&w.to:nullptr);
         if(!source)continue;
         const auto domain=port_type(p,*source).domain;
+        if(auto tag=std::find_if(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& candidate){
+               return candidate.id==source->object&&source->port=="io";
+           });tag!=p.tags.end()) {
+            if(domain==Domain::electrical)return resolve_connections(p).nets.at(endpoint_key(*source));
+            return tagged_source(p,*tag);
+        }
         if(domain==Domain::gate)return "gate/"+source->object;
         if(domain==Domain::electrical)return resolve_connections(p).nets.at(endpoint_key(*source));
         return source->object;

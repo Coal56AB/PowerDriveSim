@@ -5,17 +5,21 @@
 #include "core/editor/properties.hpp"
 #include <QAction>
 #include <QApplication>
+#include <QBuffer>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFileDialog>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QPushButton>
 #include <QScopedValueRollback>
 #include <QSpinBox>
@@ -627,12 +631,85 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                            b.value});
         }
     });
+    auto *error = new QLabel;
+    error->setWordWrap(true);
+    auto *appearance_page = new QWidget;
+    auto *appearance_layout = new QVBoxLayout(appearance_page);
+    auto *symbol = new QComboBox;
+    symbol->setObjectName("public_symbol");
+    symbol->addItem(text("appearance_automatic"), -1);
+    for (const auto &[id, action] : component_actions_)
+        if (id >= 200) {
+            symbol->addItem(component_icon(id), action->toolTip(), id);
+            if (edited.appearance.symbol == id)
+                symbol->setCurrentIndex(symbol->count() - 1);
+        }
+    auto *symbol_row = new QHBoxLayout;
+    symbol_row->addWidget(new QLabel(text("appearance_symbol")));
+    symbol_row->addWidget(symbol, 1);
+    appearance_layout->addLayout(symbol_row);
+    auto *image_preview = new QLabel;
+    image_preview->setObjectName("public_image_preview");
+    image_preview->setAlignment(Qt::AlignCenter);
+    image_preview->setMinimumHeight(150);
+    image_preview->setFrameShape(QFrame::StyledPanel);
+    appearance_layout->addWidget(image_preview, 1);
+    auto *image_buttons = new QHBoxLayout;
+    auto *choose_image = new QPushButton(text("appearance_choose_image"));
+    choose_image->setObjectName("public_image_choose");
+    auto *clear_image = new QPushButton(text("appearance_clear_image"));
+    clear_image->setObjectName("public_image_clear");
+    image_buttons->addWidget(choose_image);
+    image_buttons->addWidget(clear_image);
+    image_buttons->addStretch();
+    appearance_layout->addLayout(image_buttons);
+    tabs->addTab(appearance_page, text("appearance"));
+    QByteArray embedded_image = QByteArray::fromBase64(QByteArray::fromStdString(edited.appearance.image_png));
+    auto update_image_preview = [&] {
+        QImage image;
+        image.loadFromData(embedded_image, "PNG");
+        if (image.isNull()) {
+            image_preview->setPixmap({});
+            image_preview->setText(text("appearance_no_image"));
+            clear_image->setEnabled(false);
+        } else {
+            image_preview->setText({});
+            image_preview->setPixmap(QPixmap::fromImage(image).scaled(240, 130, Qt::KeepAspectRatio,
+                                                                  Qt::SmoothTransformation));
+            clear_image->setEnabled(true);
+        }
+    };
+    connect(choose_image, &QPushButton::clicked, &dialog, [&] {
+        const auto path = QFileDialog::getOpenFileName(&dialog, text("appearance_choose_image"), {},
+                                                       "Images (*.png *.jpg *.jpeg *.bmp)");
+        if (path.isEmpty())
+            return;
+        QImage image(path);
+        if (image.isNull()) {
+            error->setText(text("appearance_image_error"));
+            return;
+        }
+        if (image.width() > 512 || image.height() > 512)
+            image = image.scaled(512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QByteArray png;
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        if (!image.save(&buffer, "PNG")) {
+            error->setText(text("appearance_image_error"));
+            return;
+        }
+        embedded_image = png;
+        update_image_preview();
+    });
+    connect(clear_image, &QPushButton::clicked, &dialog, [&] {
+        embedded_image.clear();
+        update_image_preview();
+    });
+    update_image_preview();
     for (const auto &port : edited.ports)
         add_port(port);
     for (const auto &param : edited.parameters)
         add_parameter(param);
-    auto *error = new QLabel;
-    error->setWordWrap(true);
     layout->addWidget(error);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     layout->addWidget(buttons);
@@ -670,6 +747,8 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             document_->edit_definition(definition_id, [&](Definition &d) {
                 d.ports = updated.ports;
                 d.parameters = updated.parameters;
+                d.appearance.symbol = symbol->currentData().toInt();
+                d.appearance.image_png = embedded_image.toBase64().toStdString();
             });
             dialog.accept();
         } catch (const std::exception &e) {

@@ -229,6 +229,10 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return *v;
             if (key == "tag_domain")
                 return unsigned(t.domain);
+            if (key == "tag_scope")
+                return unsigned(t.scope);
+            if (key == "tag_listed")
+                return t.listed;
         }
     for (const auto &g : p.patterns)
         if (g.id == id) {
@@ -389,6 +393,10 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 return;
             if (key == "tag_domain")
                 t.domain = Domain(std::get<unsigned>(value));
+            if (key == "tag_scope")
+                t.scope = TagScope(std::get<unsigned>(value));
+            if (key == "tag_listed")
+                t.listed = std::get<bool>(value);
             return;
         }
     for (auto &g : p.patterns)
@@ -429,6 +437,14 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 return;
             if (key == "inputs") {
                 g.inputs = std::get<unsigned>(value);
+                std::erase_if(g.pin_positions, [&](const PinPosition &pin) {
+                    for (unsigned i = 1; i <= g.inputs; ++i)
+                        if ((!g.differential && pin.port == "in" + std::to_string(i)) ||
+                            (g.differential && (pin.port == "p" + std::to_string(i) ||
+                                                pin.port == "n" + std::to_string(i))))
+                            return false;
+                    return true;
+                });
                 std::erase_if(p.wires, [&](const Wire &w) {
                     for (const auto &e : {w.from, w.to})
                         if (e.object == id) {

@@ -141,6 +141,12 @@
   "tag_domain": "Tag type",
   "tag_electrical": "Electrical net",
   "tag_gate": "Gate signal",
+  "tag_signal": "Measurement signal",
+  "tag_scope": "Visibility scope",
+  "tag_scope_local": "Current schematic",
+  "tag_scope_ancestors": "Current and parent schematics",
+  "tag_scope_global": "Entire model",
+  "tag_listed": "Show name in list",
   "place_hint": "Click to place; Space rotates; Ctrl+M mirrors; Esc cancels.",
   "objects": "Circuit elements",
   "name": "Name",
@@ -532,5 +538,12 @@
   "open_end_winding_module": "Open-end winding inverter",
   "three_phase_switch": "Three-phase switch",
   "differential_plot": "Differential plot",
-  "differential_plot_inputs": "Differential channels"
+  "differential_plot_inputs": "Differential channels",
+  "appearance": "Appearance",
+  "appearance_symbol": "Schematic symbol",
+  "appearance_automatic": "Automatic",
+  "appearance_choose_image": "Choose image…",
+  "appearance_clear_image": "Remove image",
+  "appearance_no_image": "No custom image selected",
+  "appearance_image_error": "The image could not be read or stored."
 }

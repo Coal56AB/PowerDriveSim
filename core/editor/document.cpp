@@ -263,15 +263,15 @@ bool same_simulation(const Project& a,const Project& b) {
         p.name.clear();
         p.experiments.clear();
         auto strip=[](auto& objects){for(auto& o:objects){o.name.clear();o.x=0;o.y=0;o.orientation={};}};
-        auto strip_tags=[](auto& objects){for(auto& o:objects){o.x=0;o.y=0;o.orientation={};}};
+        auto strip_tags=[](auto& objects){for(auto& o:objects){o.x=0;o.y=0;o.orientation={};o.listed=true;o.connection_name.clear();o.scope_path.clear();}};
         auto schematic=[&](Schematic& s){
             strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.instances);
             for(auto& w:s.wires){w.bends.clear();w.color.clear();w.width=2;w.line=WireLine::automatic;}
-            for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;}
+            for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;g.pin_positions.clear();}
             s.labels.clear();s.view_options.clear();
         };
         schematic(p);
-        for(auto& d:p.definitions){d.name.clear();schematic(d);for(auto& port:d.ports)port.name.clear();for(auto& param:d.parameters){param.name.clear();param.unit.clear();}}
+        for(auto& d:p.definitions){d.name.clear();d.appearance={};schematic(d);for(auto& port:d.ports)port.name.clear();for(auto& param:d.parameters){param.name.clear();param.unit.clear();}}
         p.scope_begin=0;p.scope_end=-1;p.cursor_a=-1;p.cursor_b=-1;
         p.scope_enabled=false;p.scope_points.clear();p.scope_channels.clear();
         return p;

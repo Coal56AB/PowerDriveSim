@@ -1,5 +1,6 @@
 #include "core/editor/document.hpp"
 #include "core/editor/properties.hpp"
+#include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
 #include "core/solver/reference/reference.hpp"
 #include <algorithm>
@@ -245,6 +246,75 @@ int main(int argc,char** argv) {
         auto tag_renamed=tagged.project();
         tag_renamed.tags[0].name="DC_ALT";
         check(!same_simulation(tag_renamed,tagged.project()),"Tag names affect connectivity");
+        // Scope rules use hierarchy paths, not display names. Local tags stay
+        // inside an instance, ancestor tags reach an explicit parent tag, and
+        // global tags span independent instances.
+        Project scoped;scoped.id=new_uuid();scoped.wired=true;
+        Definition scoped_child;scoped_child.id=derived_uuid("scoped-definition");scoped_child.name="Scoped";scoped_child.wired=true;
+        const auto local_tag=derived_uuid("scoped-local"),up_tag=derived_uuid("scoped-up"),global_tag=derived_uuid("scoped-global");
+        scoped_child.tags.push_back({local_tag,"LOCAL",0,0,Domain::electrical});
+        scoped_child.tags.push_back({up_tag,"UP",0,20,Domain::electrical,{},TagScope::ancestors});
+        scoped_child.tags.push_back({global_tag,"GLOBAL",0,40,Domain::electrical,{},TagScope::global,false});
+        scoped.definitions.push_back(scoped_child);
+        const auto instance_a=derived_uuid("scoped-a"),instance_b=derived_uuid("scoped-b");
+        scoped.instances.push_back({instance_a,"A",scoped_child.id,0,0});
+        scoped.instances.push_back({instance_b,"B",scoped_child.id,200,0});
+        const auto root_local=derived_uuid("root-local"),root_up=derived_uuid("root-up"),root_global=derived_uuid("root-global");
+        scoped.tags.push_back({root_local,"LOCAL",0,100,Domain::electrical});
+        scoped.tags.push_back({root_up,"UP",20,100,Domain::electrical});
+        scoped.tags.push_back({root_global,"GLOBAL",40,100,Domain::electrical});
+        auto scoped_flat=flatten(scoped).project;
+        auto scoped_graph=resolve_connections(scoped_flat);
+        auto net=[&](const std::string& object){return scoped_graph.nets.at(endpoint_key({object,"io"}));};
+        const auto a_local=expanded_uuid({instance_a},local_tag),b_local=expanded_uuid({instance_b},local_tag);
+        const auto a_up=expanded_uuid({instance_a},up_tag),b_up=expanded_uuid({instance_b},up_tag);
+        const auto a_global=expanded_uuid({instance_a},global_tag),b_global=expanded_uuid({instance_b},global_tag);
+        check(net(a_local)!=net(root_local)&&net(a_local)!=net(b_local),"Local tag scope isolates instances");
+        check(net(a_up)==net(root_up)&&net(b_up)==net(root_up),"Ancestor tag scope reaches the parent bus");
+        check(net(a_global)==net(root_global)&&net(b_global)==net(root_global),"Global tag scope spans instances");
+        std::istringstream scoped_input(save(scoped));auto scoped_roundtrip=read_project(scoped_input);
+        check(scoped_roundtrip.definitions.front().tags.back().scope==TagScope::global&&
+              !scoped_roundtrip.definitions.front().tags.back().listed,"Tag scope and list visibility roundtrip");
+        auto listed_only=scoped;listed_only.definitions.front().tags.back().listed=true;
+        check(same_simulation(scoped,listed_only),"Tag list visibility is visual-only");
+        Document scoped_document(scoped);
+        const auto scoped_before=save(scoped_document.root_project());
+        scoped_document.apply("Edit tag scope",[&](Project& project){
+            project.tags[1].scope=TagScope::global;
+            project.tags[1].name="UP_GLOBAL";
+            project.tags[1].listed=false;
+        });
+        const auto scoped_after=save(scoped_document.root_project());
+        check(scoped_after!=scoped_before,"Tag edits create a document transaction");
+        scoped_document.undo();check(save(scoped_document.root_project())==scoped_before,"Tag edit undo restores scope, name and listing");
+        scoped_document.redo();check(save(scoped_document.root_project())==scoped_after,"Tag edit redo restores scope, name and listing");
+        scoped_document.erase({root_local});
+        check(scoped_document.root_project().tags.size()==2,"Tag deletion removes the selected tag");
+        scoped_document.undo();check(scoped_document.root_project().tags.size()==3,"Tag deletion undo restores the tag");
+        Project observed;observed.id=new_uuid();observed.wired=true;Document observed_document(observed);
+        const auto observed_probe=observed_document.add_component(Kind::voltage_probe,0,0);
+        const auto observed_plot=observed_document.add_plot(240,0);
+        const auto signal_tx=derived_uuid("signal-tag-tx"),signal_rx=derived_uuid("signal-tag-rx");
+        observed_document.apply("Add signal tags",[&](Project& project){
+            project.tags.push_back({signal_tx,"MEASURE",80,0,Domain::signal});
+            project.tags.push_back({signal_rx,"MEASURE",160,0,Domain::signal});
+        });
+        observed_document.connect({observed_probe,"out"},{signal_tx,"io"});
+        observed_document.connect({signal_rx,"io"},{observed_plot,"in1"});
+        check(plot_channels(observed_document.project(),observed_plot)==std::vector<std::string>{observed_probe},
+              "Signal tags expose their real source channel to a graph");
+        Project observed_gate;observed_gate.id=new_uuid();observed_gate.wired=true;Document gate_plot_document(observed_gate);
+        const auto observed_pattern=gate_plot_document.add_pattern(0,0);
+        const auto gate_plot=gate_plot_document.add_plot(240,0);
+        const auto gate_plot_tx=derived_uuid("gate-plot-tag-tx"),gate_plot_rx=derived_uuid("gate-plot-tag-rx");
+        gate_plot_document.apply("Add observed gate tags",[&](Project& project){
+            project.tags.push_back({gate_plot_tx,"OBS_GATE",80,0,Domain::gate});
+            project.tags.push_back({gate_plot_rx,"OBS_GATE",160,0,Domain::gate});
+        });
+        gate_plot_document.connect({observed_pattern,"out"},{gate_plot_tx,"io"});
+        gate_plot_document.connect({gate_plot_rx,"io"},{gate_plot,"in1"});
+        check(plot_channels(gate_plot_document.project(),gate_plot)==std::vector<std::string>{"gate/"+observed_pattern},
+              "Gate tags expose their real source channel to a graph");
         // Gate tags route a programmable gate source to inputs without adding direct pattern-to-switch wires.
         p=Project{}; p.id=new_uuid(); p.wired=true; p.profile={.003,1e-4}; Document gate_tagged(p);
         auto gate_source=gate_tagged.add_pattern(0,0);

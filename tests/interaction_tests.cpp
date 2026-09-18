@@ -8,7 +8,9 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
+#include <QBuffer>
 #include <QComboBox>
+#include <QCompleter>
 #include <QContextMenuEvent>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -1193,6 +1195,23 @@ class InteractionTests : public QObject {
         w.select_object(resistor);
         auto group = w.group_selection("R cell");
         QVERIFY(!group.empty());
+        const auto grouped_definition = w.project().instances.front().definition;
+        QImage custom_image(12, 8, QImage::Format_ARGB32_Premultiplied);
+        custom_image.fill(QColor("#d34f62"));
+        QByteArray custom_png;
+        QBuffer custom_buffer(&custom_png);
+        QVERIFY(custom_buffer.open(QIODevice::WriteOnly));
+        QVERIFY(custom_image.save(&custom_buffer, "PNG"));
+        auto customized = w.root_project();
+        auto customized_definition = std::find_if(customized.definitions.begin(), customized.definitions.end(),
+                                                   [&](const Definition &candidate) {
+                                                       return candidate.id == grouped_definition;
+                                                   });
+        QVERIFY(customized_definition != customized.definitions.end());
+        customized_definition->appearance.image_png = custom_png.toBase64().toStdString();
+        QVERIFY(same_simulation(w.root_project(), customized));
+        w.set_project(customized);
+        w.select_object(group);
         bool handled = false;
         QTimer::singleShot(20, &w, [&] {
             auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
@@ -1205,6 +1224,11 @@ class InteractionTests : public QObject {
             dialog->findChild<QPushButton *>("public_parameters_add")->click();
             parameters->item(0, 0)->setText("Resistance");
             qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->setText("2 kOhm");
+            auto *symbol = dialog->findChild<QComboBox *>("public_symbol");
+            QVERIFY(symbol);
+            symbol->setCurrentIndex(symbol->findData(220));
+            auto *image_preview = dialog->findChild<QLabel *>("public_image_preview");
+            QVERIFY(image_preview && !image_preview->pixmap().isNull());
             handled = true;
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
@@ -1220,6 +1244,12 @@ class InteractionTests : public QObject {
         QCOMPARE(d.ports[0].name, std::string("positive"));
         QCOMPARE(d.parameters.size(), size_t(1));
         QCOMPARE(d.parameters[0].value, 2000.);
+        QCOMPARE(d.appearance.symbol, 220);
+        QVERIFY(!d.appearance.image_png.empty());
+        std::ostringstream appearance_stream;
+        write_project(w.root_project(), appearance_stream);
+        std::istringstream appearance_input(appearance_stream.str());
+        QCOMPARE(definition(read_project(appearance_input), definition_id).appearance.symbol, 220);
         auto *parameter =
             w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(d.parameters[0].id));
         QVERIFY(parameter && parameter->isVisible());
@@ -1242,6 +1272,55 @@ class InteractionTests : public QObject {
         });
         QVERIFY(component != flat.components.end());
         QCOMPARE(component->value, 3000.);
+    }
+    void connection_tag_scope_and_suggestion_visibility() {
+        try {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        const auto configurable = derived_uuid("configurable-tag");
+        const auto visible = derived_uuid("visible-tag");
+        project.tags.push_back({configurable, "CONFIGURABLE", 0, 0, Domain::signal});
+        project.tags.push_back({visible, "VISIBLE", 180, 0, Domain::signal});
+        w.set_project(project);
+        ready(w);
+
+        w.select_object(configurable);
+        auto *scope = w.findChild<QComboBox *>("property_tag_scope");
+        auto *listed = w.findChild<QCheckBox *>("property_tag_listed");
+        QVERIFY(scope && listed);
+        scope->setCurrentIndex(scope->findData(unsigned(TagScope::global)));
+        listed->setChecked(false);
+        QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
+        QCOMPARE(w.project().tags.front().scope, TagScope::global);
+        QVERIFY(!w.project().tags.front().listed);
+
+        w.select_object(visible);
+        QCOMPARE(w.project().tags.size(), size_t(2));
+        QVERIFY(w.project().tags[1].listed);
+        const auto flattened = flatten(w.root_project()).project;
+        QCOMPARE(flattened.tags.size(), size_t(2));
+        QVERIFY(flattened.tags[1].listed);
+        auto *name = w.findChild<QLineEdit *>("property_name");
+        QVERIFY(name && name->completer());
+        QStringList suggestions;
+        const auto *model = name->completer()->model();
+        for (int row = 0; row < model->rowCount(); ++row)
+            suggestions.push_back(model->index(row, 0).data().toString());
+        QVERIFY2(suggestions.contains("VISIBLE"), qPrintable(suggestions.join("|")));
+        QVERIFY(!suggestions.contains("CONFIGURABLE"));
+
+        std::ostringstream output;
+        write_project(w.root_project(), output);
+        std::istringstream input(output.str());
+        const auto restored = read_project(input);
+        QCOMPARE(restored.tags.front().scope, TagScope::global);
+        QVERIFY(!restored.tags.front().listed);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
     }
     void public_ports_move_to_all_four_edges() {
         QTemporaryDir dir;
@@ -1287,6 +1366,99 @@ class InteractionTests : public QObject {
         QVERIFY(port && port->y > 0 && std::abs(port->x) < 90);
         port = move_port({-200, 0});
         QVERIFY(port && port->x < 0 && std::abs(port->y) < 100);
+    }
+    void plot_pins_move_to_all_edges_without_overlap() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        w.set_project(project);
+        const auto plot_id = w.add_plot({0, 0});
+        ready(w);
+        const auto simulation_before = w.project();
+
+        auto pin_item = [&](const std::string &port_id) -> QGraphicsItem * {
+            auto *plot = item(w, plot_id);
+            if (!plot)
+                return nullptr;
+            for (auto *child : plot->childItems())
+                if (child->data(1).toString() == "port" &&
+                    child->data(2).toString().toStdString() == port_id)
+                    return child;
+            return nullptr;
+        };
+        auto move_pin = [&](const std::string &port_id, QPointF target) {
+            w.select_object(plot_id);
+            auto *plot = item(w, plot_id);
+            auto *pin = pin_item(port_id);
+            QVERIFY(plot);
+            QVERIFY(pin);
+            const QRectF body = plot->shape().boundingRect();
+            const QPointF local = pin->pos();
+            const std::array<QPointF, 4> edges = {
+                QPointF(body.left(), std::clamp(local.y(), body.top(), body.bottom())),
+                QPointF(body.right(), std::clamp(local.y(), body.top(), body.bottom())),
+                QPointF(std::clamp(local.x(), body.left(), body.right()), body.top()),
+                QPointF(std::clamp(local.x(), body.left(), body.right()), body.bottom())};
+            const auto edge = *std::min_element(edges.begin(), edges.end(), [&](QPointF a, QPointF b) {
+                return QLineF(local, a).length() < QLineF(local, b).length();
+            });
+            drag(w, plot->mapToScene((local + edge) / 2.0), plot->mapToScene(target));
+        };
+        auto position = [&](const std::string &port_id) {
+            const auto &plot = w.project().plots.front();
+            auto found = std::find_if(plot.pin_positions.begin(), plot.pin_positions.end(),
+                                      [&](const PinPosition &pin) { return pin.port == port_id; });
+            if (found == plot.pin_positions.end())
+                return QPointF(qQNaN(), qQNaN());
+            return QPointF(found->x, found->y);
+        };
+
+        const auto untouched_in2 = pin_item("in2")->pos();
+        move_pin("in1", {0, -120});
+        QCOMPARE(position("in1"), QPointF(0, -60));
+        QCOMPARE(pin_item("in2")->pos(), untouched_in2);
+        move_pin("in1", {160, 0});
+        QCOMPARE(position("in1"), QPointF(60, 0));
+        QCOMPARE(pin_item("in2")->pos(), untouched_in2);
+        move_pin("in1", {0, 120});
+        QCOMPARE(position("in1"), QPointF(0, 60));
+        QCOMPARE(pin_item("in2")->pos(), untouched_in2);
+        move_pin("in1", {-160, 0});
+        QCOMPARE(position("in1"), QPointF(-60, 0));
+        QCOMPARE(pin_item("in2")->pos(), untouched_in2);
+        QVERIFY(same_simulation(simulation_before, w.project()));
+
+        move_pin("in1", {0, -120});
+        move_pin("in2", {20, -120});
+        QCOMPARE(position("in1"), QPointF(0, -60));
+        QCOMPARE(position("in2"), QPointF(20, -60));
+        move_pin("in2", {-160, 20});
+        const auto before_collision = encoded(w.project());
+        move_pin("in2", {0, -120});
+        const auto first = position("in1");
+        const auto second = position("in2");
+        QVERIFY(first != second);
+        QVERIFY(QLineF(first, second).length() >= 14.0);
+        const auto after_collision = encoded(w.project());
+        w.undo();
+        QCOMPARE(encoded(w.project()), before_collision);
+        w.redo();
+        QCOMPARE(encoded(w.project()), after_collision);
+
+        const auto file = dir.filePath("plot-pins.pds");
+        QVERIFY(w.save_project(file));
+        QVERIFY(w.open_project(file));
+        QCOMPARE(encoded(w.project()), after_collision);
+        QCOMPARE(pin_item("in1")->pos(), first);
+        QCOMPARE(pin_item("in2")->pos(), second);
+
+        auto imported_overlap = w.project();
+        imported_overlap.plots.front().pin_positions = {{"in1", 0, -60}, {"in2", 0, -60}};
+        w.set_project(imported_overlap);
+        ready(w);
+        QVERIFY(pin_item("in1")->pos() != pin_item("in2")->pos());
     }
     void gate_wire_preview_uses_gate_color() {
         QTemporaryDir dir;
@@ -3065,7 +3237,10 @@ class InteractionTests : public QObject {
         QTest::mouseMove(vp, c->mapFromScene(QPointF(80, 40)), 5);
         QTest::mouseRelease(vp, Qt::LeftButton, Qt::NoModifier, c->mapFromScene(QPointF(80, 40)));
         QCOMPARE(w.project().wires[0].bends[0].x, 40.0);
-        QCOMPARE(w.project().wires[0].bends[0].y, 160.0);
+        // Route cleanup may remove a now-collinear original vertex, but the
+        // transformed route must keep the x=40 corridor and leave the rotated
+        // terminal orthogonally.
+        QCOMPARE(w.project().wires[0].bends[0].y, w.port_position({a, "n"}).y());
         auto final = encoded(w.project());
         QTest::mousePress(vp, Qt::LeftButton, Qt::NoModifier, c->mapFromScene(QPointF(80, 40)));
         QTest::mouseMove(vp, c->mapFromScene(QPointF(120, 80)), 5);
@@ -3215,46 +3390,96 @@ class InteractionTests : public QObject {
             QVERIFY(w.grab().save(screenshot));
         }
 
-        // Moving a graph tap along a straight trunk moves the generated
-        // junction under its input. Rebuilding, undo and redo must not bring
-        // back the obsolete detour.
+        // Permanent regression: dragging the straight branch segment must move
+        // the actual T-junction even when the trunk is horizontal only because
+        // of its own bends (the remote endpoints are on another row).
         Project branch;
         branch.id = new_uuid();
         branch.wired = true;
         EditorWindow routed("en", dir.path());
         routed.set_project(branch);
-        const auto left = routed.add_node(false, {0, 0});
+        const auto left = routed.add_node(false, {0, 80});
         const auto joint = routed.add_node(false, {200, 0});
-        const auto right = routed.add_node(false, {400, 0});
+        const auto right = routed.add_node(false, {400, 80});
         const auto graph = routed.add_plot({260, -180});
         QVERIFY(routed.connect_ports({left, "node"}, {joint, "node"}));
         QVERIFY(routed.connect_ports({joint, "node"}, {right, "node"}));
         QVERIFY(routed.connect_ports({graph, "in1"}, {joint, "node"}));
-        ready(routed);
-        auto *view = routed.canvas();
-        QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier,
-                          view->mapFromScene({260, -180}));
-        QTest::mouseMove(view->viewport(), view->mapFromScene({360, -180}), 5);
-        QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier,
-                            view->mapFromScene({360, -180}));
-        const auto moved_joint = std::find_if(routed.project().nodes.begin(), routed.project().nodes.end(),
-                                               [&](const Node &node) { return node.id == joint; });
-        QVERIFY(moved_joint != routed.project().nodes.end());
-        QCOMPARE(moved_joint->x, routed.port_position({graph, "in1"}).x());
+        auto routed_project = routed.project();
+        routed_project.wires[0].bends = {{0, 0}};
+        routed_project.wires[1].bends = {{400, 0}};
+        const auto branch_wire = routed_project.wires[2].id;
+        routed.set_project(routed_project);
 
-        const auto branch_wire = routed.project().wires.back().id;
+        EditorWindow moved_block("en", dir.path());
+        moved_block.set_project(routed_project);
+        ready(moved_block);
+        const auto before_block_drag = encoded(moved_block.project());
+        drag(moved_block, {260, -180}, {200, -180});
+        const auto block_joint = std::find_if(moved_block.project().nodes.begin(), moved_block.project().nodes.end(),
+                                               [&](const Node &node) { return node.id == joint; });
+        QVERIFY(block_joint != moved_block.project().nodes.end());
+        QCOMPARE(QPointF(block_joint->x, block_joint->y), QPointF(140, 0));
+        for (const auto &wire_model : moved_block.project().wires) {
+            if (wire_model.from.object != joint && wire_model.to.object != joint)
+                continue;
+            const auto path = static_cast<QGraphicsPathItem *>(item(moved_block, wire_model.id))->path();
+            const auto endpoint = wire_model.from.object == joint ? path.elementAt(0)
+                                                                  : path.elementAt(path.elementCount() - 1);
+            QCOMPARE(QPointF(endpoint.x, endpoint.y), QPointF(140, 0));
+        }
+        const auto after_block_drag = encoded(moved_block.project());
+        moved_block.undo();
+        QCOMPARE(encoded(moved_block.project()), before_block_drag);
+        moved_block.redo();
+        QCOMPARE(encoded(moved_block.project()), after_block_drag);
+
+        ready(routed);
+        const auto before_segment_drag = encoded(routed.project());
         routed.select_object(branch_wire);
         auto *branch_item = static_cast<QGraphicsPathItem *>(item(routed, branch_wire));
         const auto middle = branch_item->path().pointAtPercent(.5);
         drag(routed, middle, middle + QPointF(-60, 0));
         const auto shifted_joint = std::find_if(routed.project().nodes.begin(), routed.project().nodes.end(),
                                                  [&](const Node &node) { return node.id == joint; });
-        QCOMPARE(shifted_joint->x, 240.0);
+        QVERIFY(shifted_joint != routed.project().nodes.end());
+        QCOMPARE(shifted_joint->x, 140.0);
+        QCOMPARE(shifted_joint->y, 0.0);
         const auto optimized = branch_item->path();
-        QVERIFY(optimized.elementCount() >= 2);
+        QCOMPARE(optimized.elementCount(), 3);
         const auto before_end = optimized.elementAt(optimized.elementCount() - 2);
         const auto end = optimized.elementAt(optimized.elementCount() - 1);
         QCOMPARE(before_end.x, end.x); // No hidden horizontal tail over the trunk.
+        QCOMPARE(end.x, 140.0);
+        QCOMPARE(end.y, 0.0);
+        for (const auto &wire_model : routed.project().wires) {
+            if (wire_model.from.object != joint && wire_model.to.object != joint)
+                continue;
+            const auto path = static_cast<QGraphicsPathItem *>(item(routed, wire_model.id))->path();
+            const auto endpoint = wire_model.from.object == joint ? path.elementAt(0)
+                                                                  : path.elementAt(path.elementCount() - 1);
+            QCOMPARE(QPointF(endpoint.x, endpoint.y), QPointF(140, 0));
+        }
+        QVERIFY(std::none_of(routed.project().nodes.begin(), routed.project().nodes.end(), [&](const Node &node) {
+            if (node.ground)
+                return false;
+            return std::none_of(routed.project().wires.begin(), routed.project().wires.end(),
+                                [&](const Wire &wire_model) {
+                                    return wire_model.from.object == node.id || wire_model.to.object == node.id;
+                                });
+        }));
+        resolve_connections(routed.project());
+        const auto after_segment_drag = encoded(routed.project());
+        routed.undo();
+        QCOMPARE(encoded(routed.project()), before_segment_drag);
+        routed.redo();
+        QCOMPARE(encoded(routed.project()), after_segment_drag);
+        const auto routed_file = dir.filePath("moved-branch.pds");
+        QVERIFY(routed.save_project(routed_file));
+        QVERIFY(routed.open_project(routed_file));
+        QCOMPARE(encoded(routed.project()), after_segment_drag);
+        const auto reopened = static_cast<QGraphicsPathItem *>(item(routed, branch_wire))->path();
+        QCOMPARE(reopened, optimized);
     }
     void wires_branch_route_reconnect_and_save() {
         QTemporaryDir dir;

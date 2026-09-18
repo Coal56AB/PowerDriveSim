@@ -19,8 +19,27 @@
         {
           "value": 1,
           "label": "tag_gate"
+        },
+        {
+          "value": 2,
+          "label": "tag_signal"
         }
       ]
+    },
+    {
+      "key": "tag_scope",
+      "editor": "enum",
+      "label": "tag_scope",
+      "options": [
+        { "value": 0, "label": "tag_scope_local" },
+        { "value": 1, "label": "tag_scope_ancestors" },
+        { "value": 2, "label": "tag_scope_global" }
+      ]
+    },
+    {
+      "key": "tag_listed",
+      "editor": "bool",
+      "label": "tag_listed"
     }
   ],
   "palette": {

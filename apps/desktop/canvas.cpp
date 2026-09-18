@@ -162,15 +162,21 @@ QGraphicsItem *Canvas::object_at(QPoint p) const {
 QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
     const auto scene_point = mapToScene(point);
     for (auto *root : scene()->selectedItems()) {
-        if (!root || root->data(1).toString() != "atom" || !root->data(10).toBool())
+        if (!root || root->data(1).toString() != "atom" ||
+            (!root->data(10).toBool() && !root->data(12).toBool()))
             continue;
         const QRectF body = root->shape().boundingRect();
+        const bool plot = root->data(12).toBool();
         for (auto *child : root->childItems()) {
             if (child->data(1).toString() != "port")
                 continue;
             const QPointF local = child->pos();
-            const double vertical_edge_distance = std::abs(std::abs(local.x()) - (body.width() / 2.0 + 10.0));
-            const double horizontal_edge_distance = std::abs(std::abs(local.y()) - (body.height() / 2.0 + 10.0));
+            const double left_x = plot ? -60.0 : body.left() - 10.0;
+            const double right_x = plot ? 60.0 : body.right() + 10.0;
+            const double top_y = plot ? body.top() - 20.0 : body.top() - 10.0;
+            const double bottom_y = plot ? body.bottom() + 20.0 : body.bottom() + 10.0;
+            const double vertical_edge_distance = std::min(std::abs(local.x() - left_x), std::abs(local.x() - right_x));
+            const double horizontal_edge_distance = std::min(std::abs(local.y() - top_y), std::abs(local.y() - bottom_y));
             QPointF local_edge;
             if (vertical_edge_distance <= horizontal_edge_distance)
                 local_edge = {local.x() < body.center().x() ? body.left() : body.right(),
@@ -653,15 +659,69 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
         if (!free)
             local = parent->mapFromScene(snap_point(parent->mapToScene(local)));
         const QRectF body = parent->shape().boundingRect();
+        const bool plot = parent->data(12).toBool();
         const std::array<QPointF, 4> candidates = {
-            QPointF(body.left() - 10.0, std::clamp(local.y(), body.top(), body.bottom())),
-            QPointF(body.right() + 10.0, std::clamp(local.y(), body.top(), body.bottom())),
-            QPointF(std::clamp(local.x(), body.left(), body.right()), body.top() - 10.0),
-            QPointF(std::clamp(local.x(), body.left(), body.right()), body.bottom() + 10.0)};
+            QPointF(plot ? -60.0 : body.left() - 10.0, std::clamp(local.y(), body.top(), body.bottom())),
+            QPointF(plot ? 60.0 : body.right() + 10.0, std::clamp(local.y(), body.top(), body.bottom())),
+            QPointF(std::clamp(local.x(), body.left(), body.right()), plot ? body.top() - 20.0 : body.top() - 10.0),
+            QPointF(std::clamp(local.x(), body.left(), body.right()), plot ? body.bottom() + 20.0 : body.bottom() + 10.0)};
         const auto closest = std::min_element(candidates.begin(), candidates.end(), [&](QPointF a, QPointF b) {
             return QLineF(local, a).length() < QLineF(local, b).length();
         });
-        port_anchor_->setPos(*closest);
+        QPointF target = *closest;
+        const bool vertical_side = target.x() < body.left() || target.x() > body.right();
+        const double step = std::max(1.0, grid_size_);
+        const auto siblings = parent->childItems();
+        auto occupied = [&](QPointF point) {
+            return std::any_of(siblings.begin(), siblings.end(), [&](QGraphicsItem *sibling) {
+                return sibling != port_anchor_ && sibling->data(1).toString() == "port" &&
+                       QLineF(point, sibling->pos()).length() < .5;
+            });
+        };
+        if (occupied(target)) {
+            const double low = vertical_side ? body.top() : body.left();
+            const double high = vertical_side ? body.bottom() : body.right();
+            const double origin = vertical_side ? target.y() : target.x();
+            std::optional<QPointF> free_slot;
+            for (int distance = 1; distance <= 64 && !free_slot; ++distance)
+                for (int direction : {1, -1}) {
+                    const double coordinate = origin + direction * distance * step;
+                    if (coordinate < low - 1e-6 || coordinate > high + 1e-6)
+                        continue;
+                    QPointF candidate = target;
+                    if (vertical_side)
+                        candidate.setY(coordinate);
+                    else
+                        candidate.setX(coordinate);
+                    if (!occupied(candidate)) {
+                        free_slot = candidate;
+                        break;
+                    }
+                }
+            if (!free_slot) {
+                std::vector<QPointF> alternatives;
+                const double first_y = std::ceil(body.top() / step) * step;
+                for (double y = first_y; y <= body.bottom() + 1e-6; y += step) {
+                    alternatives.push_back({candidates[0].x(), y});
+                    alternatives.push_back({candidates[1].x(), y});
+                }
+                const double first_x = std::ceil(body.left() / step) * step;
+                for (double x = first_x; x <= body.right() + 1e-6; x += step) {
+                    alternatives.push_back({x, candidates[2].y()});
+                    alternatives.push_back({x, candidates[3].y()});
+                }
+                std::erase_if(alternatives, occupied);
+                if (!alternatives.empty())
+                    free_slot = *std::min_element(alternatives.begin(), alternatives.end(),
+                                                  [&](QPointF a, QPointF b) {
+                                                      return QLineF(target, a).length() < QLineF(target, b).length();
+                                                  });
+            }
+            if (!free_slot)
+                return; // The original non-overlapping position is retained.
+            target = *free_slot;
+        }
+        port_anchor_->setPos(target);
         port_anchor_->setData(9, true);
         if (movement)
             movement();

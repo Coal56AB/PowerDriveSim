@@ -79,6 +79,12 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                     if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
                     meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata: "+line);
                     continue;
+                } else if(kind=="x-appearance") {
+                    meta>>d.appearance.symbol>>std::quoted(d.appearance.image_png);
+                    meta>>std::ws;
+                    if(meta.fail()||!meta.eof())
+                        throw Diagnostic("parse_error",d.id,"Malformed definition appearance");
+                    continue;
                 } else throw Diagnostic("parse_error",d.id,"Unknown definition metadata: "+kind);
                 if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata");
                 meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata");
@@ -160,6 +166,16 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if(!parsed||!row.eof()||!std::isfinite(label.x)||!std::isfinite(label.y)||label.orientation.quarter_turns>3||(mirror!=0&&mirror!=1)||(label.role!="name"&&label.role!="value")||std::any_of(p.labels.begin(),p.labels.end(),[&](const LabelLayout& l){return l.object==label.object&&l.role==label.role;}))throw Diagnostic("parse_error",std::to_string(number),"Invalid label layout");
             label.orientation.mirrored=mirror==1;p.labels.push_back(label);continue;
         }
+        if(tag=="x-plot-pin") {
+            std::string plot_id;PinPosition pin;
+            row>>std::quoted(plot_id)>>std::quoted(pin.port)>>pin.x>>pin.y;
+            const bool parsed=!row.fail();row>>std::ws;
+            auto plot=std::find_if(p.plots.begin(),p.plots.end(),[&](const PlotBlock& candidate){return candidate.id==plot_id;});
+            if(!parsed||!row.eof()||plot==p.plots.end()||pin.port.empty()||!std::isfinite(pin.x)||!std::isfinite(pin.y)||
+               std::any_of(plot->pin_positions.begin(),plot->pin_positions.end(),[&](const PinPosition& prior){return prior.port==pin.port;}))
+                throw Diagnostic("parse_error",std::to_string(number),"Invalid plot pin layout");
+            plot->pin_positions.push_back(std::move(pin));continue;
+        }
         if(tag.rfind("x-",0)==0) { p.extensions.push_back(line); continue; }
         if(tag=="project" && !identity) {
             row >> std::quoted(p.id) >> std::quoted(p.name); identity=true;
@@ -232,10 +248,18 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             }
             p.wires.push_back(wire);
         } else if(tag=="tag" && p.schema>=16) {
-            ConnectionTag t;unsigned domain=0;
+            ConnectionTag t;unsigned domain=0,scope=0;int listed=1;
             row>>std::quoted(t.id)>>std::quoted(t.name)>>t.x>>t.y>>domain;
-            if(domain>unsigned(Domain::signal))row.setstate(std::ios::failbit);
-            t.domain=Domain(domain);p.tags.push_back(t);
+            if(row>>scope) {
+                if(!(row>>listed))row.setstate(std::ios::failbit);
+            } else if(row.eof()) {
+                // Schema 16..20 records end after the domain. An attempted
+                // optional read reaches EOF; clear it so the shared trailing
+                // field check can process the legacy record normally.
+                row.clear();
+            }
+            if(domain>unsigned(Domain::signal)||scope>unsigned(TagScope::global)||(listed!=0&&listed!=1))row.setstate(std::ios::failbit);
+            t.domain=Domain(domain);t.scope=TagScope(scope);t.listed=listed==1;p.tags.push_back(t);
         } else if(tag=="pattern" && p.schema>=4) {
             GatePattern pattern; int initial=-1;
             row >> std::quoted(pattern.id) >> std::quoted(pattern.name) >> pattern.x >> pattern.y >> initial;
@@ -419,7 +443,18 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
     for(const auto& channel:p.scope_points) check_text(channel,p.id);
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
-    for(const auto& plot:p.plots){check_text(plot.id,plot.id);check_text(plot.name,plot.id);}
+    for(const auto& plot:p.plots){
+        check_text(plot.id,plot.id);check_text(plot.name,plot.id);std::set<std::string> pins;
+        for(const auto& pin:plot.pin_positions) {
+            check_text(pin.port,plot.id);
+            bool valid=false;
+            for(unsigned i=1;i<=plot.inputs;++i)
+                valid|=pin.port==(plot.differential?"p"+std::to_string(i):"in"+std::to_string(i))||
+                       (plot.differential&&pin.port=="n"+std::to_string(i));
+            if(!valid||!std::isfinite(pin.x)||!std::isfinite(pin.y)||!pins.insert(pin.port).second)
+                throw Diagnostic("invalid_plot_pin",plot.id,"Plot pin layout is invalid");
+        }
+    }
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);for(const auto& multiplier:v.curve_multipliers)check_text(multiplier.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
@@ -451,9 +486,10 @@ void write_project(const Project& p, std::ostream& out) {
             throw Diagnostic("invalid_wire_style", wire.id, "Invalid wire style");
         out << ' ' << std::quoted(wire.color) << ' ' << wire.width << ' ' << unsigned(wire.line) << '\n';
     }
-    for(const auto& tag:p.tags)out<<"tag "<<std::quoted(tag.id)<<' '<<std::quoted(tag.name)<<' '<<tag.x<<' '<<tag.y<<' '<<unsigned(tag.domain)<<'\n';
+    for(const auto& tag:p.tags)out<<"tag "<<std::quoted(tag.id)<<' '<<std::quoted(tag.name)<<' '<<tag.x<<' '<<tag.y<<' '<<unsigned(tag.domain)<<' '<<unsigned(tag.scope)<<' '<<tag.listed<<'\n';
     for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(g.code)<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
     for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<' '<<g.differential<<'\n';
+    for(const auto& g:p.plots)for(const auto& pin:g.pin_positions)out<<"x-plot-pin "<<std::quoted(g.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
     out<<"scope_enabled "<<p.scope_enabled<<'\n';
     out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';
     for(const auto& channel:p.scope_points) out << "scope_point " << std::quoted(channel) << '\n';
@@ -499,6 +535,10 @@ void write_project(const Project& p, std::ostream& out) {
         for(const auto& v:d.parameters) {
             for(const auto* value:{&v.id,&v.name,&v.unit,&v.object,&v.field})check_text(*value,d.id);
             out<<"public_parameter "<<std::quoted(v.id)<<' '<<std::quoted(v.name)<<' '<<std::quoted(v.unit)<<' '<<std::quoted(v.object)<<' '<<std::quoted(v.field)<<' '<<v.value<<'\n';
+        }
+        if(d.appearance!=DefinitionAppearance{}) {
+            check_text(d.appearance.image_png,d.id);
+            out<<"x-appearance "<<d.appearance.symbol<<' '<<std::quoted(d.appearance.image_png)<<'\n';
         }
         Project body;static_cast<Schematic&>(body)=d;body.id=d.id;body.name=d.name;
         out<<"body\n";write_project(body,out);out<<"end_definition\n";

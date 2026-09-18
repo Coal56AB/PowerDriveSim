@@ -7,6 +7,7 @@
 #include "formats/samples/table.hpp"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCompleter>
 #include <QFile>
 #include <QFileDialog>
 #include <QFormLayout>
@@ -419,6 +420,29 @@ void EditorWindow::fill_inspector() {
         auto field = found->second;
         auto key = field.value("key").toString();
         auto *widget = property_editors_.at(key);
+        if (key == "name" && targets.size() == 1 && object_type(project(), targets.front()) == "tag")
+            if (auto *line = qobject_cast<QLineEdit *>(widget)) {
+                const auto current = std::find_if(project().tags.begin(), project().tags.end(),
+                                                  [&](const ConnectionTag &tag) { return tag.id == targets.front(); });
+                QStringList names;
+                if (current != project().tags.end()) {
+                    const auto flattened = flatten(root_project());
+                    for (const auto &tag : flattened.project.tags) {
+                        if (tag.listed && tag.domain == current->domain) {
+                            const auto name = QString::fromStdString(tag.connection_name.empty()
+                                                                        ? tag.name
+                                                                        : tag.connection_name);
+                            if (!names.contains(name))
+                                names.push_back(name);
+                        }
+                    }
+                }
+                names.sort(Qt::CaseInsensitive);
+                auto *completer = new QCompleter(names, line);
+                completer->setCaseSensitivity(Qt::CaseInsensitive);
+                completer->setFilterMode(Qt::MatchContains);
+                line->setCompleter(completer);
+            }
         if (auto *combo = qobject_cast<QComboBox *>(widget)) {
             combo->clear();
             for (const auto &entry : field.value("options").toArray()) {

@@ -31,6 +31,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -200,6 +201,7 @@ class Atom final : public QGraphicsItem {
     std::vector<std::pair<QString, QPointF>> public_ports;
     std::vector<PublicPort> definition_ports;
     int library_icon_id = -1;
+    QImage custom_image;
     bool ground = false, separate_labels = false, differential_plot = false;
     Atom(std::string uuid, QString label, QString mark, int category)
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
@@ -215,7 +217,13 @@ class Atom final : public QGraphicsItem {
         input_count = count;
     }
     void set_definition(const Definition &definition) {
-        library_icon_id = definition_icon_id(definition.id);
+        custom_image = {};
+        if (!definition.appearance.image_png.empty())
+            custom_image.loadFromData(QByteArray::fromBase64(
+                QByteArray::fromStdString(definition.appearance.image_png)), "PNG");
+        library_icon_id = definition.appearance.symbol >= 0
+            ? definition.appearance.symbol
+            : definition_icon_id(definition.id);
         if (library_icon_id < 0) {
             const auto lower = QString::fromStdString(definition.name).toLower();
             if (lower.contains("three-phase voltage source"))
@@ -393,6 +401,79 @@ class Atom final : public QGraphicsItem {
             ++index;
         }
     }
+    void separate_overlapping_ports(double grid) {
+        if (type != 3 && type != 4)
+            return;
+        const double h = type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
+        const QRectF body = type == 3 ? QRectF(-46, -h, 104, 2 * h) : QRectF(-90, -h, 180, 2 * h);
+        const double step = std::max(1.0, grid);
+        std::vector<QPointF> occupied;
+        for (auto *child : childItems()) {
+            if (child->data(1).toString() != "port")
+                continue;
+            const QPointF current = child->pos();
+            const std::array<QPointF, 4> projected = {
+                QPointF(type == 3 ? -60.0 : body.left() - 10.0, std::clamp(current.y(), body.top(), body.bottom())),
+                QPointF(type == 3 ? 60.0 : body.right() + 10.0, std::clamp(current.y(), body.top(), body.bottom())),
+                QPointF(std::clamp(current.x(), body.left(), body.right()), type == 3 ? body.top() - 20.0 : body.top() - 10.0),
+                QPointF(std::clamp(current.x(), body.left(), body.right()), type == 3 ? body.bottom() + 20.0 : body.bottom() + 10.0)};
+            const QPointF edge = *std::min_element(projected.begin(), projected.end(), [&](QPointF a, QPointF b) {
+                return QLineF(current, a).length() < QLineF(current, b).length();
+            });
+            const bool vertical_side = edge.x() < body.left() || edge.x() > body.right();
+            auto free = [&](QPointF point) {
+                return std::none_of(occupied.begin(), occupied.end(), [&](QPointF prior) {
+                    return QLineF(point, prior).length() < .5;
+                });
+            };
+            QPointF target = current;
+            if (!free(current)) {
+                const double low = vertical_side ? body.top() : body.left();
+                const double high = vertical_side ? body.bottom() : body.right();
+                const double origin = vertical_side ? edge.y() : edge.x();
+                std::optional<QPointF> replacement;
+                for (int distance = 1; distance <= 64 && !replacement; ++distance)
+                    for (int direction : {1, -1}) {
+                        const double coordinate = origin + direction * distance * step;
+                        if (coordinate < low - 1e-6 || coordinate > high + 1e-6)
+                            continue;
+                        QPointF candidate = edge;
+                        if (vertical_side)
+                            candidate.setY(coordinate);
+                        else
+                            candidate.setX(coordinate);
+                        if (free(candidate)) {
+                            replacement = candidate;
+                            break;
+                        }
+                    }
+                if (!replacement) {
+                    std::vector<QPointF> alternatives;
+                    const double first_y = std::ceil(body.top() / step) * step;
+                    for (double y = first_y; y <= body.bottom() + 1e-6; y += step) {
+                        alternatives.push_back({projected[0].x(), y});
+                        alternatives.push_back({projected[1].x(), y});
+                    }
+                    const double first_x = std::ceil(body.left() / step) * step;
+                    for (double x = first_x; x <= body.right() + 1e-6; x += step) {
+                        alternatives.push_back({x, projected[2].y()});
+                        alternatives.push_back({x, projected[3].y()});
+                    }
+                    std::erase_if(alternatives, [&](QPointF point) { return !free(point); });
+                    if (!alternatives.empty())
+                        replacement = *std::min_element(alternatives.begin(), alternatives.end(),
+                                                        [&](QPointF a, QPointF b) {
+                                                            return QLineF(edge, a).length() < QLineF(edge, b).length();
+                                                        });
+                }
+                if (replacement)
+                    target = *replacement;
+            }
+            if (target != current)
+                child->setPos(target);
+            occupied.push_back(target);
+        }
+    }
     QVariant itemChange(GraphicsItemChange change, const QVariant &proposed) override {
 
         return QGraphicsItem::itemChange(change, proposed);
@@ -425,6 +506,25 @@ class Atom final : public QGraphicsItem {
         p->scale(world.determinant() < 0 ? -scale : scale, scale);
         p->translate(-16, -16);
         paint_component_symbol(*p, icon_id, false);
+        p->restore();
+    }
+    static void fixed_aspect_image(QPainter *p, const QImage &image, QRectF rect) {
+        if (image.isNull())
+            return;
+        const auto world = p->worldTransform();
+        const auto center = world.map(rect.center());
+        const double sx = std::hypot(world.m11(), world.m12());
+        const double sy = std::hypot(world.m21(), world.m22());
+        const double scale = std::min(sx, sy);
+        QSizeF size = image.size();
+        size.scale(rect.size() * scale, Qt::KeepAspectRatio);
+        p->save();
+        p->resetTransform();
+        p->translate(center);
+        p->rotate(std::atan2(world.m12(), world.m11()) * 180.0 / std::acos(-1.0));
+        if (world.determinant() < 0)
+            p->scale(-1, 1);
+        p->drawImage(QRectF(-size.width() / 2, -size.height() / 2, size.width(), size.height()), image);
         p->restore();
     }
     void paint(QPainter *p, const QStyleOptionGraphicsItem *, QWidget *) override {
@@ -465,7 +565,10 @@ class Atom final : public QGraphicsItem {
                           QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 46));
                 }
             }
-            if (library_icon_id >= 0) {
+            if (!custom_image.isNull()) {
+                const int image_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
+                fixed_aspect_image(p, custom_image, QRectF(-44, -image_h / 2, 88, image_h));
+            } else if (library_icon_id >= 0) {
                 if (library_icon_id >= 210 && library_icon_id <= 213) {
                     // The diagonal is a structural separator of the converter,
                     // not part of its fixed-size symbol. It follows the block
@@ -543,11 +646,28 @@ class Atom final : public QGraphicsItem {
                 auto *pin = *found;
                 const auto point = pin->pos();
                 p->setPen(QPen(theme_colors().signal, 1.4));
-                p->drawLine(point, QPointF(-46, point.y()));
+                const QRectF body(-46, -h, 104, 2 * h);
+                const double left_distance = std::abs(point.x() + 60.0);
+                const double right_distance = std::abs(point.x() - 60.0);
+                const double top_distance = std::abs(point.y() - (body.top() - 20.0));
+                const double bottom_distance = std::abs(point.y() - (body.bottom() + 20.0));
+                const double nearest = std::min({left_distance, right_distance, top_distance, bottom_distance});
                 const QString port_label = differential_plot
                     ? ((i % 2 ? QString("+") : QString("−")) + QString::number((i + 1) / 2))
                     : QString::number(i);
-                label(p, QRectF(-45, point.y() - 9, 20, 18), Qt::AlignCenter, port_label);
+                if (nearest == left_distance) {
+                    p->drawLine(point, QPointF(body.left(), point.y()));
+                    label(p, QRectF(body.left() + 1, point.y() - 9, 20, 18), Qt::AlignCenter, port_label);
+                } else if (nearest == right_distance) {
+                    p->drawLine(point, QPointF(body.right(), point.y()));
+                    label(p, QRectF(body.right() - 21, point.y() - 9, 20, 18), Qt::AlignCenter, port_label);
+                } else if (nearest == top_distance) {
+                    p->drawLine(point, QPointF(point.x(), body.top()));
+                    label(p, QRectF(point.x() - 10, body.top() + 1, 20, 18), Qt::AlignCenter, port_label);
+                } else {
+                    p->drawLine(point, QPointF(point.x(), body.bottom()));
+                    label(p, QRectF(point.x() - 10, body.bottom() - 19, 20, 18), Qt::AlignCenter, port_label);
+                }
             }
             p->setPen(theme_colors().text);
             if (!separate_labels)
@@ -1512,6 +1632,7 @@ void EditorWindow::build_ui() {
             struct JunctionMove {
                 std::string id;
                 QPointF point;
+                std::map<std::string, std::vector<Point>> routes;
             };
             std::optional<JunctionMove> junction_move;
             auto generated_node = [](const Node &node) {
@@ -1530,30 +1651,64 @@ void EditorWindow::build_ui() {
                                                [&](const Node &candidate) { return candidate.id == endpoint.object; });
                 if (node == project().nodes.end() || !generated_node(*node))
                     return;
-                std::vector<QPointF> trunk;
+                struct TrunkEnd {
+                    std::string wire;
+                    QPointF adjacent;
+                    bool node_is_from = false;
+                };
+                std::vector<TrunkEnd> trunk;
                 for (const auto &wire : project().wires) {
                     if (wire.id == id || (wire.from.object != node->id && wire.to.object != node->id))
                         continue;
-                    const auto other = wire.from.object == node->id ? wire.to : wire.from;
-                    trunk.push_back(canvas_->snap_point(port_position(other)));
+                    const auto graphics = wires_.find(wire.id);
+                    if (graphics == wires_.end() || !graphics->second->isVisible())
+                        continue;
+                    const auto path = static_cast<QGraphicsPathItem *>(graphics->second)->path();
+                    if (path.elementCount() < 2)
+                        continue;
+                    const bool node_is_from = wire.from.object == node->id;
+                    const auto adjacent_element = path.elementAt(node_is_from ? 1 : path.elementCount() - 2);
+                    trunk.push_back({wire.id, {adjacent_element.x, adjacent_element.y}, node_is_from});
                 }
                 if (trunk.size() < 2)
                     return;
                 const auto &bend = at_start ? bends.front() : bends.back();
                 const QPointF candidate = canvas_->snap_point({bend.x, bend.y});
+                const QPointF old_node = canvas_->snap_point(port_position(endpoint));
                 auto between = [](double value, double a, double b) {
                     return value >= std::min(a, b) - 1e-6 && value <= std::max(a, b) + 1e-6;
                 };
                 for (size_t i = 0; i < trunk.size(); ++i)
                     for (size_t j = i + 1; j < trunk.size(); ++j) {
-                        const bool horizontal = std::abs(trunk[i].y() - trunk[j].y()) < 1e-6 &&
-                                                std::abs(candidate.y() - trunk[i].y()) < 1e-6 &&
-                                                between(candidate.x(), trunk[i].x(), trunk[j].x());
-                        const bool vertical = std::abs(trunk[i].x() - trunk[j].x()) < 1e-6 &&
-                                              std::abs(candidate.x() - trunk[i].x()) < 1e-6 &&
-                                              between(candidate.y(), trunk[i].y(), trunk[j].y());
+                        const bool horizontal = std::abs(trunk[i].adjacent.y() - old_node.y()) < 1e-6 &&
+                                                std::abs(trunk[j].adjacent.y() - old_node.y()) < 1e-6 &&
+                                                std::abs(candidate.y() - old_node.y()) < 1e-6 &&
+                                                between(candidate.x(), trunk[i].adjacent.x(),
+                                                        trunk[j].adjacent.x());
+                        const bool vertical = std::abs(trunk[i].adjacent.x() - old_node.x()) < 1e-6 &&
+                                              std::abs(trunk[j].adjacent.x() - old_node.x()) < 1e-6 &&
+                                              std::abs(candidate.x() - old_node.x()) < 1e-6 &&
+                                              between(candidate.y(), trunk[i].adjacent.y(),
+                                                      trunk[j].adjacent.y());
                         if (horizontal || vertical) {
-                            junction_move = JunctionMove{node->id, candidate};
+                            JunctionMove move{node->id, candidate, {}};
+                            for (const auto &end : trunk) {
+                                const auto path = static_cast<QGraphicsPathItem *>(wires_.at(end.wire))->path();
+                                QPainterPath adjusted;
+                                for (int index = 0; index < path.elementCount(); ++index) {
+                                    const auto element = path.elementAt(index);
+                                    QPointF point(element.x, element.y);
+                                    if ((end.node_is_from && index == 0) ||
+                                        (!end.node_is_from && index == path.elementCount() - 1))
+                                        point = candidate;
+                                    if (index == 0)
+                                        adjusted.moveTo(point);
+                                    else
+                                        adjusted.lineTo(point);
+                                }
+                                move.routes[end.wire] = route_bends(adjusted);
+                            }
+                            junction_move = std::move(move);
                             return;
                         }
                     }
@@ -1568,12 +1723,17 @@ void EditorWindow::build_ui() {
                     route_to = junction_move->point;
             }
             bends = clean_route_bends(route_from, route_to, bends);
+            if (junction_move)
+                junction_move->routes[id] = bends;
             document_->apply("Edit route", [&](Project &p) {
                 for (auto &w : p.wires) {
-                    if (junction_move && (w.from.object == junction_move->id || w.to.object == junction_move->id))
-                        w.bends.clear();
-                    if (w.id == id)
+                    if (junction_move) {
+                        const auto route = junction_move->routes.find(w.id);
+                        if (route != junction_move->routes.end())
+                            w.bends = route->second;
+                    } else if (w.id == id) {
                         w.bends = bends;
+                    }
                 }
                 if (junction_move)
                     for (auto &node : p.nodes)
@@ -1979,6 +2139,7 @@ void EditorWindow::rebuild_scene() {
         a->symbol = symbol;
         a->type = type;
         a->setData(10, type == 4);
+        a->setData(12, type == 3);
         return a;
     };
     auto ports = [&](Atom *a, const std::vector<std::pair<QString, QPointF>> &list, const QColor &color) {
@@ -2057,6 +2218,11 @@ void EditorWindow::rebuild_scene() {
                                 {-60, y}});
             }
         }
+        for (auto &[name, point] : list)
+            if (auto stored = std::find_if(g.pin_positions.begin(), g.pin_positions.end(), [&](const PinPosition &pin) {
+                    return pin.port == name.toStdString();
+                }); stored != g.pin_positions.end())
+                point = {stored->x, stored->y};
         ports(a, list, QColor("#8c67c8"));
     }
     for (const auto &i : project().instances) {
@@ -2084,7 +2250,12 @@ void EditorWindow::rebuild_scene() {
     geometry(project().instances);
     for (auto &[id, item] : atoms_) {
         (void)id;
-        static_cast<Atom *>(item)->snap_ports_to_grid(canvas_->grid_size());
+        auto *atom_item = static_cast<Atom *>(item);
+        // Movable plot/public ports already snap during their own drag. Snapping
+        // every sibling again on each scene refresh makes untouched pins jump.
+        if (atom_item->type != 3 && atom_item->type != 4)
+            atom_item->snap_ports_to_grid(canvas_->grid_size());
+        atom_item->separate_overlapping_ports(canvas_->grid_size());
     }
     update_labels();
     present.clear();
@@ -2133,11 +2304,15 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
     if (atom->type == 1)
         return point;
     QPointF delta(0, -20);
-    if (atom->type == 4) {
+    if (atom->type == 4 || atom->type == 3) {
         const QPointF local = atom->mapFromScene(point);
-        const double h = atom->body_half_height();
-        const double vertical_edge_distance = std::abs(std::abs(local.x()) - 100.0);
-        const double horizontal_edge_distance = std::abs(std::abs(local.y()) - (h + 10.0));
+        const double h = atom->type == 4 ? atom->body_half_height() : std::max(40.0, atom->input_count * 20.0);
+        const double vertical_edge_distance = atom->type == 4
+            ? std::abs(std::abs(local.x()) - 100.0)
+            : std::min(std::abs(local.x() + 60.0), std::abs(local.x() - 60.0));
+        const double horizontal_edge_distance = atom->type == 4
+            ? std::abs(std::abs(local.y()) - (h + 10.0))
+            : std::abs(std::abs(local.y()) - (h + 20.0));
         if (vertical_edge_distance <= horizontal_edge_distance)
             delta = {local.x() < 0 ? -20. : 20., 0};
         else
@@ -2483,6 +2658,7 @@ void EditorWindow::commit_positions() {
     if (commit_label_positions())
         return;
     struct PortMove {
+        std::string object;
         std::string definition;
         std::string port;
         double x = 0, y = 0;
@@ -2496,12 +2672,38 @@ void EditorWindow::commit_positions() {
             if (child->data(1).toString() != "port" || !child->data(9).toBool())
                 continue;
             const auto point = child->pos();
-            port_moves.push_back({instance.definition, child->data(2).toString().toStdString(), point.x(), point.y()});
+            port_moves.push_back({instance.id, instance.definition, child->data(2).toString().toStdString(), point.x(), point.y()});
+        }
+    }
+    for (const auto &plot : project().plots) {
+        auto atom = atoms_.find(plot.id);
+        if (atom == atoms_.end())
+            continue;
+        for (auto *child : atom->second->childItems()) {
+            if (child->data(1).toString() != "port" || !child->data(9).toBool())
+                continue;
+            const auto point = child->pos();
+            port_moves.push_back({plot.id, {}, child->data(2).toString().toStdString(), point.x(), point.y()});
         }
     }
     if (!port_moves.empty()) {
         document_->apply("Move public ports", [&](Project &p) {
             for (const auto &move : port_moves) {
+                if (move.definition.empty()) {
+                    auto plot = std::find_if(p.plots.begin(), p.plots.end(),
+                                             [&](const PlotBlock &candidate) { return candidate.id == move.object; });
+                    if (plot == p.plots.end())
+                        continue;
+                    auto pin = std::find_if(plot->pin_positions.begin(), plot->pin_positions.end(),
+                                            [&](const PinPosition &candidate) { return candidate.port == move.port; });
+                    if (pin == plot->pin_positions.end())
+                        plot->pin_positions.push_back({move.port, move.x, move.y});
+                    else {
+                        pin->x = move.x;
+                        pin->y = move.y;
+                    }
+                    continue;
+                }
                 auto def = std::find_if(p.definitions.begin(), p.definitions.end(),
                                         [&](const auto &d) { return d.id == move.definition; });
                 if (def == p.definitions.end())
@@ -2571,9 +2773,6 @@ void EditorWindow::commit_positions() {
             return std::all_of(node.name.begin() + 1, node.name.end(),
                                [](unsigned char c) { return std::isdigit(c); });
         };
-        auto other_endpoint = [](const Wire &wire, const std::string &node) {
-            return wire.from.object == node ? wire.to : wire.from;
-        };
         auto move_branch_nodes = [&] {
             for (auto &node : p.nodes) {
                 if (!generated_node(node))
@@ -2597,27 +2796,43 @@ void EditorWindow::commit_positions() {
                 }
                 if (!branch)
                     continue;
-                std::vector<QPointF> trunk;
+                struct TrunkEnd {
+                    Wire *wire;
+                    QPointF adjacent;
+                    bool node_is_from;
+                };
+                std::vector<TrunkEnd> trunk;
                 for (auto *wire : incident) {
                     if (wire == branch)
                         continue;
-                    trunk.push_back(live_position(other_endpoint(*wire, node.id)));
+                    const auto graphics = wires_.find(wire->id);
+                    if (graphics == wires_.end() || !graphics->second->isVisible())
+                        continue;
+                    const auto path = static_cast<QGraphicsPathItem *>(graphics->second)->path();
+                    if (path.elementCount() < 2)
+                        continue;
+                    const bool node_is_from = wire->from.object == node.id;
+                    const auto adjacent_element = path.elementAt(node_is_from ? 1 : path.elementCount() - 2);
+                    trunk.push_back({wire, {adjacent_element.x, adjacent_element.y}, node_is_from});
                 }
                 if (trunk.size() < 2)
                     continue;
                 const QPointF moved = live_position(moved_endpoint);
+                const QPointF old_node(node.x, node.y);
                 auto range_contains = [](double value, double a, double b) {
                     return value >= std::min(a, b) - 1e-6 && value <= std::max(a, b) + 1e-6;
                 };
                 std::optional<QPointF> target;
                 for (size_t i = 0; i < trunk.size() && !target; ++i)
                     for (size_t j = i + 1; j < trunk.size() && !target; ++j) {
-                        if (std::abs(trunk[i].y() - trunk[j].y()) < 1e-6 &&
-                            range_contains(moved.x(), trunk[i].x(), trunk[j].x()))
-                            target = QPointF(moved.x(), trunk[i].y());
-                        else if (std::abs(trunk[i].x() - trunk[j].x()) < 1e-6 &&
-                                 range_contains(moved.y(), trunk[i].y(), trunk[j].y()))
-                            target = QPointF(trunk[i].x(), moved.y());
+                        if (std::abs(trunk[i].adjacent.y() - old_node.y()) < 1e-6 &&
+                            std::abs(trunk[j].adjacent.y() - old_node.y()) < 1e-6 &&
+                            range_contains(moved.x(), trunk[i].adjacent.x(), trunk[j].adjacent.x()))
+                            target = QPointF(moved.x(), old_node.y());
+                        else if (std::abs(trunk[i].adjacent.x() - old_node.x()) < 1e-6 &&
+                                 std::abs(trunk[j].adjacent.x() - old_node.x()) < 1e-6 &&
+                                 range_contains(moved.y(), trunk[i].adjacent.y(), trunk[j].adjacent.y()))
+                            target = QPointF(old_node.x(), moved.y());
                     }
                 if (!target)
                     continue;
@@ -2626,8 +2841,23 @@ void EditorWindow::commit_positions() {
                     continue;
                 node.x = target->x();
                 node.y = target->y();
-                for (auto *wire : incident)
-                    wire->bends.clear();
+                branch->bends.clear();
+                for (const auto &end : trunk) {
+                    const auto path = static_cast<QGraphicsPathItem *>(wires_.at(end.wire->id))->path();
+                    QPainterPath adjusted;
+                    for (int index = 0; index < path.elementCount(); ++index) {
+                        const auto element = path.elementAt(index);
+                        QPointF point(element.x, element.y);
+                        if ((end.node_is_from && index == 0) ||
+                            (!end.node_is_from && index == path.elementCount() - 1))
+                            point = *target;
+                        if (index == 0)
+                            adjusted.moveTo(point);
+                        else
+                            adjusted.lineTo(point);
+                    }
+                    end.wire->bends = route_bends(adjusted);
+                }
             }
         };
         for (auto &w : p.wires) {

@@ -3,6 +3,7 @@
 #include "core/model/semiconductor.hpp"
 #include "core/model/connectivity.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <functional>
 #include <set>
@@ -229,6 +230,11 @@ void validate_hierarchy(const Project &p) {
     for (const auto &d : p.definitions) {
         auto body = definition_project(p, d.id);
         validate_schematic(body);
+        if(d.appearance.symbol < -1 || d.appearance.symbol > 9999 || d.appearance.image_png.size() > 8 * 1024 * 1024 ||
+           std::any_of(d.appearance.image_png.begin(),d.appearance.image_png.end(),[](unsigned char c){
+               return !(std::isalnum(c)||c=='+'||c=='/'||c=='=');
+           }))
+            throw Diagnostic("invalid_definition_appearance",d.id,"Definition appearance is invalid");
         std::set<std::string> ids, names, bindings;
         for (const auto &port : d.ports) {
             if (!valid_uuid(port.id) || !ids.insert(port.id).second || port.name.empty() ||
@@ -306,7 +312,19 @@ FlattenedProject flatten(const Project &source) {
         auto &flat = result.project;
         objects(s.nodes, flat.nodes);
         objects(s.components, flat.components);
-        objects(s.tags, flat.tags);
+        for (auto tag : s.tags) {
+            remember(tag.id);
+            tag.connection_name = tag.name;
+            tag.scope_path = path;
+            tag.id = id(tag.id);
+            if (!tag.name.empty())
+                tag.name = name + tag.name;
+            auto pt = transform({tag.x, tag.y}, offset, rotation);
+            tag.x = pt.x;
+            tag.y = pt.y;
+            tag.orientation = compose(rotation, tag.orientation);
+            flat.tags.push_back(std::move(tag));
+        }
         objects(s.patterns, flat.patterns);
         objects(s.plots, flat.plots);
         auto add = [&](const std::string &object, const std::string &port) {
