@@ -207,7 +207,7 @@ struct ResizeHit {
 };
 static std::optional<ResizeHit> resize_corner(QGraphicsItem *item, QPoint view_pos, const QGraphicsView *view) {
     if (!item || item->data(1).toString() == "wire" || item->data(1).toString() == "label" ||
-        !item->isSelected())
+        item->data(4).isValid() || !item->isSelected())
         return {};
     const auto r = item->boundingRect();
     const std::array<std::pair<QPointF, QPointF>, 4> corners{
@@ -1036,11 +1036,24 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
     p->restore();
     p->save();
     p->resetTransform();
-    // Resize and route hit areas remain available, but their old hollow
-    // squares obscured pins and looked like stray schematic objects. Selection
-    // itself is already communicated by the block outline or wire colour.
-    p->setPen(QPen(theme_colors().accent, 1));
-    p->setBrush(theme_colors().surface);
+    // Filled resize handles are shown only for the selected resizable object.
+    // Junctions and wire route points deliberately have no free-floating boxes.
+    for (auto *item : scene()->selectedItems()) {
+        if (!item->isVisible() || item->data(1).toString() != "atom" ||
+            item->data(4).isValid() || item->parentItem())
+            continue;
+        const auto frame = item->boundingRect();
+        const std::array<QPointF, 4> handles{
+            frame.topLeft(), frame.topRight(), frame.bottomLeft(), frame.bottomRight()};
+        for (size_t index = 0; index < handles.size(); ++index) {
+            const QPointF position = mapFromScene(item->mapToScene(handles[index]));
+            const bool hovered = QLineF(QPointF(last_mouse_), position).length() <= 14.0;
+            auto color = hovered ? QColor("#67a3ff") : theme_colors().accent;
+            p->setPen(QPen(theme_colors().canvas, 1));
+            p->setBrush(color);
+            p->drawRoundedRect(QRectF(position.x() - 5.0, position.y() - 5.0, 10.0, 10.0), 2.5, 2.5);
+        }
+    }
     if (auto endpoint = hovered_port())
         for (auto *item : items(QRect(last_mouse_ - QPoint(11, 11), QSize(22, 22))))
             if (item->data(1).toString() == "port" &&
