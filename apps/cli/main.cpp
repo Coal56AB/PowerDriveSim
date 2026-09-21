@@ -12,35 +12,35 @@ int main(int argc, char **argv) {
                      "[--snapshot-out state.pdss] [--steps count] [--experiment name-or-UUID]\n";
         return 2;
     };
-    if (argc < 2)
-        return usage();
-    std::string csv, state_in, state_out, experiment;
-    size_t steps = 0;
-    for (int i = 2; i < argc; ++i) {
-        const std::string option = argv[i];
-        if (option == "--experiment") {
-            if (++i >= argc || !experiment.empty()) return usage();
-            experiment = argv[i];
-        } else if (option == "--snapshot-in" || option == "--snapshot-out") {
-            if (++i >= argc)
-                return usage();
-            auto &path = option == "--snapshot-in" ? state_in : state_out;
-            if (!path.empty())
-                return usage();
-            path = argv[i];
-        } else if (option == "--steps") {
-            if (++i >= argc || steps)
-                return usage();
-            const std::string value = argv[i];
-            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), steps);
-            if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || !steps)
-                return usage();
-        } else if (!option.empty() && option.front() != '-' && csv.empty())
-            csv = option;
-        else
-            return usage();
-    }
     try {
+        if (argc < 2)
+            return usage();
+        std::string csv, state_in, state_out, experiment;
+        size_t steps = 0;
+        for (int i = 2; i < argc; ++i) {
+            const std::string option = argv[i];
+            if (option == "--experiment") {
+                if (++i >= argc || !experiment.empty()) return usage();
+                experiment = argv[i];
+            } else if (option == "--snapshot-in" || option == "--snapshot-out") {
+                if (++i >= argc)
+                    return usage();
+                auto &path = option == "--snapshot-in" ? state_in : state_out;
+                if (!path.empty())
+                    return usage();
+                path = argv[i];
+            } else if (option == "--steps") {
+                if (++i >= argc || steps)
+                    return usage();
+                const std::string value = argv[i];
+                const auto parsed = std::from_chars(value.data(), value.data() + value.size(), steps);
+                if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || !steps)
+                    return usage();
+            } else if (!option.empty() && option.front() != '-' && csv.empty())
+                csv = option;
+            else
+                return usage();
+        }
         std::ifstream input(argv[1]);
         if (!input)
             throw pds::Diagnostic("read_error", argv[1], "Cannot open project");
@@ -87,6 +87,9 @@ int main(int argc, char **argv) {
         return 1;
     } catch (const std::exception &e) {
         std::cerr << "error: " << e.what() << '\n';
+        return 1;
+    } catch (...) {
+        std::cerr << "error: unknown internal failure\n";
         return 1;
     }
 }
