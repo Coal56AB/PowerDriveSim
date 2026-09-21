@@ -215,10 +215,13 @@ class InteractionTests : public QObject {
     void incremental_extrema_and_scope_history() {
         std::vector<double> values;
         ExtremaIndex index;
-        auto value = [&](size_t i) { return values[i]; };
+        size_t reads = 0;
+        auto value = [&](size_t i) { ++reads; return values[i]; };
         for (size_t chunk = 0; chunk < 8; ++chunk) {
             for (size_t i = 0; i < 137; ++i) values.push_back(std::sin(double(values.size()) * .17));
+            const auto before = reads;
             index.append(values.size(), value);
+            QCOMPARE(reads - before, size_t(137));
             for (size_t a = 0; a < values.size(); a += 17)
                 for (size_t b = a + 1; b <= values.size(); b += 71) {
                     auto expected = std::minmax_element(values.begin() + a, values.begin() + b);
@@ -239,7 +242,10 @@ class InteractionTests : public QObject {
         QVERIFY(scope.y_high > 100);
         scope.begin = .1; scope.end = .2; scope.fit(Scope::Axes::y); QVERIFY(scope.y_high < 2);
         scope.set_live(false); result.samples.back().values[0] = 200;
+        timer.restart();
         scope.set_result(&result, {0}, project); scope.fit(); QVERIFY(scope.y_high > 200);
+        qInfo() << "Exact million-sample extrema build (ms):" << timer.elapsed();
+        QVERIFY2(timer.elapsed() < 750, "Exact extrema construction blocked the UI excessively");
         timer.restart();
         scope.set_result(&result, {0, 1}, project);
         QVERIFY(!scope.grab().isNull());
