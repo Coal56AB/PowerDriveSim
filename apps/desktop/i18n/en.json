@@ -8,6 +8,7 @@
   "examples_sources": "Sources and waveforms",
   "examples_experiments": "Parameter experiments",
   "examples_devices": "Semiconductors and switching",
+  "example_gate-script-pwm": "Programmable Gate PWM",
   "examples_other": "Other examples",
   "rectifiers": "Rectifiers AC → DC",
   "dc_dc": "DC → DC converters",

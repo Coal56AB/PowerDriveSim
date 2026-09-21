@@ -1,5 +1,5 @@
 PowerDriveSim 16
-project "3a64b1d5-8f77-58da-98e5-781df605f72a" "Programmable gate PWM with tags"
+project "3a64b1d5-8f77-58da-98e5-781df605f72a" "Программируемый ШИМ-нагрузки"
 profile 0.02 0.00005 Trapezoidal
 nonlinear 64 1e-9 1e-12 1e-9
 initialization Zero 0
@@ -14,7 +14,7 @@ component "3b5529fb-c47d-5086-b55d-37e664b1687e" "Load" R "" "" 20 0 220 40 0
 orientation "3b5529fb-c47d-5086-b55d-37e664b1687e" 1 0
 node "540cdb0b-b975-574b-b60b-e8ca05d84056" "COM" 1 -40 220
 node "f35d1262-2b98-5d4d-b091-428955a5dd22" "Uout" 0 90 40
-gate_script "851a60fa-1cf3-5f50-b971-61ab9de5b7fd" "Script PWM" -320 -140 0 1e-05 "pwm(1000, 0.35, 0)"
+gate_script "851a60fa-1cf3-5f50-b971-61ab9de5b7fd" "ШИМ 1 кГц" -320 -140 0 1e-05 "return pwm(1000, 0.35, 0);"
 tag "f0b590e6-a617-56df-8c0f-2ca4580d89f2" "G_LOAD" -200 -140 1
 tag "832c0de1-1d3d-5411-9084-04e43dcbf5f4" "G_LOAD" -40 -40 1
 wire "fb388ef9-0ad3-52aa-8eb4-6911096b9f27" "6ca72a7f-b3c2-559f-97d8-f7101e9316d0" "p" "71b29e0f-1221-50f8-ac58-10a10c18c998" "p" 0

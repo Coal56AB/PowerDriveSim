@@ -8,6 +8,7 @@
   "examples_sources": "Источники и формы сигналов",
   "examples_experiments": "Параметрические эксперименты",
   "examples_devices": "Полупроводники и коммутация",
+  "example_gate-script-pwm": "Программируемый ШИМ Gate",
   "examples_other": "Другие примеры",
   "rectifiers": "Выпрямители AC → DC",
   "dc_dc": "Преобразователи DC → DC",
