@@ -41,5 +41,12 @@ int main(int argc, char **argv) {
         if (!parser.isSet(smoke))
             QMessageBox::critical(nullptr, "PowerDriveSim", QString::fromUtf8(e.what()));
         return 1;
+    } catch (...) {
+        const QString message = QStringLiteral("Unexpected internal error");
+        std::cerr << message.toStdString() << std::endl;
+        qWarning().noquote() << message;
+        if (!parser.isSet(smoke))
+            QMessageBox::warning(nullptr, "PowerDriveSim", message);
+        return 1;
     }
 }

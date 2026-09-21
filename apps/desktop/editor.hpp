@@ -278,6 +278,7 @@ class Scope : public QWidget {
 struct Outcome {
     std::optional<Result> result;
     QString error;
+    bool warning = false;
     std::string object;
     std::vector<std::string> path;
     double preparation_seconds = 0, execution_seconds = 0;

@@ -555,5 +555,6 @@
   "appearance_clear_image": "Remove image",
   "appearance_no_image": "No custom image selected",
   "appearance_image_error": "The image could not be read or stored.",
-  "scope_probe_already_disconnected": "The observed conductor was already disconnected. The remaining orphaned measurement branch was removed safely."
+  "scope_probe_already_disconnected": "The observed conductor was already disconnected. The remaining orphaned measurement branch was removed safely.",
+  "unexpected_internal_error": "An unexpected internal error was stopped safely. The current operation was cancelled."
 }

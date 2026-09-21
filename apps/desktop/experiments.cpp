@@ -118,6 +118,7 @@ std::vector<Scenario> parse_scenarios(const QString &text) {
 struct ExperimentRun {
     ExperimentProgress progress;
     std::vector<ExperimentCase> cases;
+    QString unexpected_error;
 };
 } // namespace
 
@@ -340,7 +341,9 @@ void EditorWindow::show_experiments() {
         connect(stop, &QPushButton::clicked, &dialog, [cancel] { *cancel = true; });
         connect(watcher, &QFutureWatcher<ExperimentRun>::finished, &dialog, [&, watcher, stop, path] {
             const auto result = watcher->result();
-            if (!path.isEmpty()) {
+            if (!result.unexpected_error.isEmpty())
+                show_warning(result.unexpected_error);
+            if (result.unexpected_error.isEmpty() && !path.isEmpty()) {
                 std::ofstream out(path.toStdString());
                 write_experiment_csv_header(out);
                 for (const auto &entry : result.cases)
@@ -362,10 +365,13 @@ void EditorWindow::show_experiments() {
                 cases->item(row_index, 5)->setText(error);
             }
             progress->setValue(int(result.progress.completed + result.progress.failed));
-            banner_->setText(text(result.progress.cancelled ? "experiment_cancelled" : "experiment_complete")
-                                 .arg(result.progress.completed)
-                                 .arg(result.progress.total)
-                                 .arg(result.progress.failed));
+            if (!result.unexpected_error.isEmpty())
+                banner_->setText(text("warning_hint"));
+            else
+                banner_->setText(text(result.progress.cancelled ? "experiment_cancelled" : "experiment_complete")
+                                     .arg(result.progress.completed)
+                                     .arg(result.progress.total)
+                                     .arg(result.progress.failed));
             buttons->removeButton(stop);
             delete stop;
             buttons->button(QDialogButtonBox::Save)->setEnabled(true);
@@ -375,10 +381,19 @@ void EditorWindow::show_experiments() {
             active_cancel.reset();
             watcher->deleteLater();
         });
-        watcher->setFuture(QtConcurrent::run([source = root_project(), experiment, cancel] {
+        const auto unexpected_error = text("unexpected_internal_error");
+        watcher->setFuture(QtConcurrent::run([source = root_project(), experiment, cancel, unexpected_error] {
             ExperimentRun result;
-            result.progress = run_experiment(source, experiment, cancel.get(),
-                                             [&](ExperimentCase &&c) { result.cases.push_back(std::move(c)); });
+            try {
+                result.progress = run_experiment(source, experiment, cancel.get(),
+                                                 [&](ExperimentCase &&c) {
+                                                     result.cases.push_back(std::move(c));
+                                                 });
+            } catch (const std::exception &error) {
+                result.unexpected_error = QString::fromUtf8(error.what());
+            } catch (...) {
+                result.unexpected_error = unexpected_error;
+            }
             return result;
         }));
         banner_->setText(text("experiment_running").arg(0).arg(experiment_size(experiment)));

@@ -3272,7 +3272,9 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
         update_run_button();
         update_command_state();
         const auto snapshot = root_project();
-        watcher_.setFuture(QtConcurrent::run([this, snapshot, keys, state = std::move(state), max_steps] {
+        const auto unexpected_error = text("unexpected_internal_error");
+        watcher_.setFuture(QtConcurrent::run([this, snapshot, keys, state = std::move(state), max_steps,
+                                              unexpected_error] {
             Outcome outcome;
             QElapsedTimer timer;
             timer.start();
@@ -3305,6 +3307,9 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
                 outcome.path = e.path;
             } catch (const std::exception &e) {
                 outcome.error = QString::fromUtf8(e.what());
+            } catch (...) {
+                outcome.error = unexpected_error;
+                outcome.warning = true;
             }
             return outcome;
         }));
@@ -3361,14 +3366,18 @@ void EditorWindow::finish_simulation() {
         for (auto &[id, view] : plot_views_)
             if (view)
                 view->set_live(false);
-        auto *item = new QListWidgetItem(outcome.error, errors_);
-        item->setData(Qt::UserRole, q(outcome.object));
-        QStringList path;
-        for (const auto &step : outcome.path)
-            path.push_back(q(step));
-        item->setData(Qt::UserRole + 1, path);
-        bottom_->setCurrentIndex(0);
-        banner_->setText(text("error_hint"));
+        if (outcome.warning)
+            show_warning(outcome.error);
+        else {
+            auto *item = new QListWidgetItem(outcome.error, errors_);
+            item->setData(Qt::UserRole, q(outcome.object));
+            QStringList path;
+            for (const auto &step : outcome.path)
+                path.push_back(q(step));
+            item->setData(Qt::UserRole + 1, path);
+            bottom_->setCurrentIndex(0);
+            banner_->setText(text("error_hint"));
+        }
         return;
     }
     // Live batches are a bounded preview. Replace them with the complete worker
