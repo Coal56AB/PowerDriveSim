@@ -391,6 +391,8 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         const auto label = entry.value("label").toString().toUtf8();
         const auto group = entry.value("category").toString().toUtf8();
         const auto short_name = entry.value("short").toString();
+        const auto description_key = label + "_description";
+        const auto description = text(description_key.constData());
         auto *action = new QAction(text(label.constData()), this);
         action->setObjectName("insert_component_" + QString::number(id));
         action->setData(id);
@@ -398,7 +400,8 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         action->setProperty("template", spec.value("template").toString());
         action->setIconText(short_name);
         action->setIcon(component_icon(id));
-        action->setToolTip(text(label.constData()));
+        action->setProperty("description", description);
+        action->setToolTip(text(label.constData()) + "\n\n" + description);
         connect(action, &QAction::triggered, this, [this, id = id] { begin_placement(id); });
         component_actions_[id] = action;
         if (spec.contains("template")) {
@@ -440,6 +443,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         auto *item = new QTreeWidgetItem(category, {text(label.constData())});
         item->setIcon(0, component_icon(id));
         item->setData(0, Qt::UserRole, id);
+        item->setToolTip(0, description);
     }
     search->setObjectName("library_search");
     connect(
@@ -452,7 +456,9 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
                     if ((*it)->isExpanded()) expanded.insert(*it);
             }
             std::function<bool(QTreeWidgetItem *, bool)> filter = [&](QTreeWidgetItem *item, bool ancestor) {
-                const bool own = !active || ancestor || item->text(0).contains(query.trimmed(), Qt::CaseInsensitive);
+                const bool own = !active || ancestor ||
+                                 item->text(0).contains(query.trimmed(), Qt::CaseInsensitive) ||
+                                 item->toolTip(0).contains(query.trimmed(), Qt::CaseInsensitive);
                 bool any = own;
                 for (int j = 0; j < item->childCount(); ++j) any |= filter(item->child(j), own);
                 item->setHidden(!any);

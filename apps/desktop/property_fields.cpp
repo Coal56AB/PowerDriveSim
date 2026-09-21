@@ -114,6 +114,11 @@ QWidget *EditorWindow::create_inspector_page() {
     inspector_type_->setObjectName("property_native_type");
     inspector_type_->setStyleSheet("color:palette(placeholder-text);");
     properties_->addRow(text("native_type"), inspector_type_);
+    inspector_description_ = new QLabel;
+    inspector_description_->setObjectName("property_description");
+    inspector_description_->setWordWrap(true);
+    inspector_description_->setStyleSheet("color:palette(text);padding:4px 0 10px 0;");
+    properties_->addRow(inspector_description_);
 
     property_editors_.clear();
     property_imports_.clear();
@@ -488,6 +493,7 @@ void EditorWindow::fill_inspector() {
     inspector_hint_->setVisible(!valid);
     inspector_hint_->setText(text("inspector_empty"));
     inspector_type_->setVisible(valid && targets.size() == 1);
+    inspector_description_->setVisible(valid && targets.size() == 1);
     apply_button_->setVisible(valid);
     compile_code_button_->setVisible(false);
     format_code_button_->setVisible(false);
@@ -552,6 +558,7 @@ void EditorWindow::fill_inspector() {
     if (targets.size() == 1) {
         const auto type = object_type(project(), targets.front());
         QString label = QString::fromStdString(type);
+        QString description;
         if (type.rfind("instance:", 0) == 0) {
             const auto definition_id = type.substr(9);
             for (const auto &definition : project().definitions)
@@ -559,12 +566,20 @@ void EditorWindow::fill_inspector() {
                     label = QString::fromStdString(definition.name);
                     break;
                 }
+            const int icon = definition_icon_id(definition_id);
+            if (auto action = component_actions_.find(icon); action != component_actions_.end())
+                description = action->second->property("description").toString();
         } else if (auto spec = component_specs_.find(type); spec != component_specs_.end()) {
             const auto palette = spec->second.value("palette").toObject();
-            if (!palette.isEmpty())
-                label = text(palette.value("label").toString().toUtf8().constData());
+            if (!palette.isEmpty()) {
+                const auto key = palette.value("label").toString().toUtf8();
+                label = text(key.constData());
+                description = text((key + "_description").constData());
+            }
         }
         inspector_type_->setText(label);
+        inspector_description_->setText(description);
+        inspector_description_->setVisible(!description.isEmpty());
     }
     QStringList model_variables;
     try {

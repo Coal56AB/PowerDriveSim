@@ -169,9 +169,11 @@ class InteractionTests : public QObject {
         for (QTreeWidgetItemIterator it(tree); *it; ++it)
             if ((*it)->data(0, Qt::UserRole).isValid() && (*it)->data(0, Qt::UserRole).toInt() == 231) bridge = *it;
         QVERIFY(bridge && bridge->parent() && bridge->parent()->parent());
+        QVERIFY(bridge->toolTip(0).contains("мост",Qt::CaseInsensitive));
         auto *search = w.findChild<QLineEdit *>("library_search"); search->setText(bridge->text(0));
         QVERIFY(!bridge->isHidden()); QVERIFY(bridge->parent()->isExpanded()); search->clear();
         QVERIFY(!bridge->parent()->isExpanded());
+        search->setText("dead time");QVERIFY(!bridge->isHidden());search->clear();
         Project empty; empty.id = new_uuid(); empty.wired = true; w.set_project(empty);
         bool selected = false;
         QTimer::singleShot(0, &w, [&] {
@@ -190,6 +192,9 @@ class InteractionTests : public QObject {
         const auto id = w.project().instances.front().id;
         QVERIFY(w.project().instances.front().locked);
         QVERIFY(definition_icon_id(w.project().instances.front().definition) == 231);
+        w.select_object(id);
+        auto *description=w.findChild<QLabel *>("property_description");
+        QVERIFY(description&&description->isVisible()&&description->text().contains("H-мост"));
         if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT")));
         w.raise(); w.activateWindow(); QTest::qWait(50);
         auto *viewport = w.canvas()->viewport();
