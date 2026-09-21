@@ -131,6 +131,19 @@ int main(int argc,char** argv) {
             write_property(legacy,legacy.instances.front().id,"three_phase_voltage_kind",unsigned(1));
             check(legacy.instances.front().parameters.front().first==kind_parameter,
                   "Legacy three-phase source stores voltage kind when edited");
+            Definition delta=body;
+            delta.id="eb613164-faf4-5b03-9014-806885fef344";
+            delta.name="Three-phase voltage source Delta";
+            legacy.definitions.push_back(delta);
+            legacy.instances.front().parameters.push_back({"removed-legacy-parameter",123});
+            legacy.parameter_expressions.push_back({legacy.instances.front().id,
+                                                     "parameter/removed-legacy-parameter","1"});
+            write_property(legacy,legacy.instances.front().id,"three_phase_connection",unsigned(1));
+            check(legacy.instances.front().definition==delta.id&&
+                      std::none_of(legacy.instances.front().parameters.begin(),legacy.instances.front().parameters.end(),
+                                   [](const auto &entry){return entry.first=="removed-legacy-parameter";})&&
+                      legacy.parameter_expressions.empty(),
+                  "Switching three-phase source variants drops stale parameter overrides safely");
         }
         {
             Project masked; masked.id=new_uuid(); masked.wired=true;

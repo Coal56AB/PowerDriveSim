@@ -282,7 +282,49 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 const double display = three_phase_display_voltage(p, i);
                 const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
                 const bool delta = std::get<unsigned>(value) != 0;
+                const auto previous_definition = i.definition;
+                const auto previous_parameters = definition(p, previous_definition).parameters;
                 i.definition = delta ? kThreePhaseDeltaDefinition : kThreePhaseYDefinition;
+                const auto &next_parameters = definition(p, i.definition).parameters;
+                std::vector<std::pair<std::string, double>> migrated;
+                std::map<std::string, std::string> migrated_ids;
+                for (const auto &[old_id, number] : i.parameters) {
+                    auto next = std::find_if(next_parameters.begin(), next_parameters.end(),
+                                             [&](const auto &parameter) { return parameter.id == old_id; });
+                    if (next == next_parameters.end()) {
+                        const auto old = std::find_if(previous_parameters.begin(), previous_parameters.end(),
+                                                      [&](const auto &parameter) { return parameter.id == old_id; });
+                        if (old != previous_parameters.end())
+                            next = std::find_if(next_parameters.begin(), next_parameters.end(),
+                                                [&](const auto &parameter) {
+                                                    return parameter.field == old->field;
+                                                });
+                    }
+                    if (next == next_parameters.end())
+                        continue; // Drop stale overrides that cannot belong to the new variant.
+                    migrated_ids[old_id] = next->id;
+                    auto existing = std::find_if(migrated.begin(), migrated.end(),
+                                                 [&](const auto &entry) { return entry.first == next->id; });
+                    if (existing == migrated.end())
+                        migrated.emplace_back(next->id, number);
+                    else
+                        existing->second = number;
+                }
+                i.parameters = std::move(migrated);
+                for (auto &binding : p.parameter_expressions) {
+                    if (binding.object != i.id || !binding.field.starts_with("parameter/"))
+                        continue;
+                    const auto old_id = binding.field.substr(10);
+                    if (auto migrated_id = migrated_ids.find(old_id); migrated_id != migrated_ids.end())
+                        binding.field = "parameter/" + migrated_id->second;
+                }
+                std::erase_if(p.parameter_expressions, [&](const ParameterExpression &binding) {
+                    if (binding.object != i.id || !binding.field.starts_with("parameter/"))
+                        return false;
+                    const auto id = binding.field.substr(10);
+                    return std::none_of(next_parameters.begin(), next_parameters.end(),
+                                        [&](const auto &parameter) { return parameter.id == id; });
+                });
                 set_instance_parameter(i, kThreePhaseVoltageKindParameter, kind);
                 set_instance_parameter(i, kThreePhaseVoltageParameter,
                                        three_phase_internal_voltage(kind, delta, display));
