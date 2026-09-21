@@ -258,6 +258,21 @@ static void serialization() {
     require(saved(read_project(windows_in))==text,"UTF-8 BOM and CRLF round trip");
     auto a=execute(compile(p)),b=execute(compile(q));
     require(a.samples.back().values==b.samples.back().values,"Semantics round trip");
+    auto code_project=p;
+    CodeBlock block;
+    block.id=id(30);block.name="PI code";block.x=120;block.y=-40;block.period=1e-4;block.phase=2e-5;
+    block.code="static double integral = 0;\nintegral += error * dt;\ncommand = 2 * error + integral;";
+    block.inputs={{id(31),"error","V",SignalScalarType::real,0}};
+    block.outputs={{id(32),"command","V",SignalScalarType::real,0},
+                   {id(33),"gate","",SignalScalarType::boolean,0}};
+    block.pin_positions={{id(31),-60,0},{id(32),60,-10},{id(33),60,10}};
+    code_project.code_blocks.push_back(block);
+    std::istringstream code_input(saved(code_project));
+    const auto code_loaded=read_project(code_input);
+    require(code_loaded.code_blocks==code_project.code_blocks,
+            "Typed code-block ports, schedule, layout and multiline C source round trip");
+    auto invalid_code=code_project;invalid_code.code_blocks.front().outputs.back().initial=2;
+    error("invalid_signal_port",[&]{(void)saved(invalid_code);});
     auto expression_project=p;
     expression_project.initialization_code=
         "double accumulate(int count) { double value = 0; for (int i = 0; i < count; ++i) value += 1; return value; }\n"

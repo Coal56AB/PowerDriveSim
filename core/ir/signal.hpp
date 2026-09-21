@@ -8,8 +8,6 @@
 
 namespace pds {
 
-enum class SignalScalarType { real, boolean };
-
 struct SignalEndpointIR {
     std::string object, port;
     bool operator==(const SignalEndpointIR &) const = default;

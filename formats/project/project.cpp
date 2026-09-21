@@ -198,6 +198,16 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 throw Diagnostic("parse_error",std::to_string(number),"Invalid plot pin layout");
             plot->pin_positions.push_back(std::move(pin));continue;
         }
+        if(tag=="x-code-pin" && p.schema>=23) {
+            std::string block_id;PinPosition pin;
+            row>>std::quoted(block_id)>>std::quoted(pin.port)>>pin.x>>pin.y;
+            const bool parsed=!row.fail();row>>std::ws;
+            auto block=std::find_if(p.code_blocks.begin(),p.code_blocks.end(),[&](const CodeBlock &candidate){return candidate.id==block_id;});
+            if(!parsed||!row.eof()||block==p.code_blocks.end()||pin.port.empty()||!std::isfinite(pin.x)||!std::isfinite(pin.y)||
+               std::any_of(block->pin_positions.begin(),block->pin_positions.end(),[&](const PinPosition &prior){return prior.port==pin.port;}))
+                throw Diagnostic("parse_error",std::to_string(number),"Invalid code-block pin layout");
+            block->pin_positions.push_back(std::move(pin));continue;
+        }
         if(tag.rfind("x-",0)==0) { p.extensions.push_back(line); continue; }
         if(tag=="project" && !identity) {
             row >> std::quoted(p.id) >> std::quoted(p.name); identity=true;
@@ -332,6 +342,23 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             PlotBlock plot;row>>std::quoted(plot.id)>>std::quoted(plot.name)>>plot.x>>plot.y>>plot.inputs>>plot.begin>>plot.end>>plot.cursor_a>>plot.cursor_b;
             if(p.schema>=20){int differential=-1;row>>differential;if(differential!=0&&differential!=1)row.setstate(std::ios::failbit);plot.differential=differential==1;}
             p.plots.push_back(plot);
+        } else if(tag=="code_block" && p.schema>=23) {
+            CodeBlock block;
+            std::string encoded;
+            row>>std::quoted(block.id)>>std::quoted(block.name)>>block.x>>block.y>>block.period>>block.phase>>std::quoted(encoded);
+            block.code=unhex_text(encoded,block.id);
+            p.code_blocks.push_back(std::move(block));
+        } else if((tag=="code_input"||tag=="code_output") && p.schema>=23) {
+            std::string block_id;
+            CodePort port;
+            unsigned type=0;
+            row>>std::quoted(block_id)>>std::quoted(port.id)>>std::quoted(port.name)>>std::quoted(port.unit)>>type>>port.initial;
+            auto block=std::find_if(p.code_blocks.begin(),p.code_blocks.end(),[&](const CodeBlock &candidate){return candidate.id==block_id;});
+            if(block==p.code_blocks.end()||type>unsigned(SignalScalarType::boolean))row.setstate(std::ios::failbit);
+            else {
+                port.type=SignalScalarType(type);
+                (tag=="code_input"?block->inputs:block->outputs).push_back(std::move(port));
+            }
         } else if(tag=="scope_enabled" && p.schema>=5 && !recording){
             int enabled=-1;row>>enabled;if(enabled!=0&&enabled!=1)row.setstate(std::ios::failbit);p.scope_enabled=enabled==1;recording=true;
         } else if(tag=="scopeview" && p.schema>=4) {
@@ -400,7 +427,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     if(!identity || !profile || (p.schema>=3 && !nonlinear) || (p.schema>=4 && !wiring) || in.bad()) throw Diagnostic("parse_error","","Missing project/profile or read failure");
     // v1 -> v2: default Backward Euler; v2 -> v3: explicit default nonlinear profile.
     for(const auto& [id,orientation]:orientations){
-        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.tags);apply(p.patterns);apply(p.plots);apply(p.instances);
+        bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.tags);apply(p.patterns);apply(p.plots);apply(p.code_blocks);apply(p.instances);
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
     for(const auto& [id,source]:sources) {
@@ -434,7 +461,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     }
     if(p.schema<18)p.scope_points=p.scope_channels;
     p.schema=project_schema;
-    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.tags);scan(p.patterns);scan(p.plots);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
+    for(const auto& label:p.labels){bool found=false;auto scan=[&](const auto& objects){for(const auto& o:objects)found|=o.id==label.object;};scan(p.components);scan(p.nodes);scan(p.tags);scan(p.patterns);scan(p.plots);scan(p.code_blocks);scan(p.instances);if(!found)throw Diagnostic("missing_label_target",label.object,"Label target does not exist");}
     return p;
 }
 Project read_project(std::istream& in) {
@@ -487,6 +514,27 @@ void write_project(const Project& p, std::ostream& out) {
                 throw Diagnostic("invalid_plot_pin",plot.id,"Plot pin layout is invalid");
         }
     }
+    for(const auto& block:p.code_blocks) {
+        check_text(block.id,block.id);check_text(block.name,block.id);
+        if(!valid_uuid(block.id)||block.code.empty()||block.code.size()>1024*1024||!std::isfinite(block.x)||!std::isfinite(block.y)||
+           !std::isfinite(block.period)||block.period<=0||!std::isfinite(block.phase)||block.phase<0||
+           block.inputs.size()>32||block.outputs.empty()||block.outputs.size()>32)
+            throw Diagnostic("invalid_code_block",block.id,"Code block geometry, schedule, source or port count is invalid");
+        std::set<std::string> port_ids,names;
+        auto check_port=[&](const CodePort &port) {
+            check_text(port.id,block.id);check_text(port.name,block.id);check_text(port.unit,block.id);
+            if(!valid_uuid(port.id)||!port_ids.insert(port.id).second||port.name.empty()||!names.insert(port.name).second||
+               unsigned(port.type)>unsigned(SignalScalarType::boolean)||
+               !std::isfinite(port.initial)||(port.type==SignalScalarType::boolean&&port.initial!=0&&port.initial!=1))
+                throw Diagnostic("invalid_signal_port",port.id,"Code block port is invalid or duplicated");
+        };
+        for(const auto& port:block.inputs)check_port(port);
+        for(const auto& port:block.outputs)check_port(port);
+        std::set<std::string> positioned;
+        for(const auto& pin:block.pin_positions)
+            if(!port_ids.contains(pin.port)||!positioned.insert(pin.port).second||!std::isfinite(pin.x)||!std::isfinite(pin.y))
+                throw Diagnostic("invalid_signal_port",block.id,"Code block pin layout is invalid");
+    }
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);for(const auto& multiplier:v.curve_multipliers)check_text(multiplier.first,p.id);}
     for(const auto& l:p.labels){check_text(l.object,p.id);check_text(l.role,p.id);}
@@ -516,6 +564,7 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& t:p.tags)write_orientation(t);
     for(const auto& g:p.patterns)write_orientation(g);
     for(const auto& g:p.plots)write_orientation(g);
+    for(const auto& g:p.code_blocks)write_orientation(g);
     for(const auto& i:p.instances)write_orientation(i);
     for(const auto& i:p.instances){out<<"instance "<<std::quoted(i.id)<<' '<<std::quoted(i.name)<<' '<<std::quoted(i.definition)<<' '<<i.x<<' '<<i.y<<' '<<i.parameters.size();for(const auto& [key,value]:i.parameters)out<<' '<<std::quoted(key)<<' '<<value;out<<' '<<i.locked<<'\n';}
     out << "wiring " << (p.wired?"wires":"nets") << '\n';
@@ -537,6 +586,12 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(g.code)<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
     for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<' '<<g.differential<<'\n';
     for(const auto& g:p.plots)for(const auto& pin:g.pin_positions)out<<"x-plot-pin "<<std::quoted(g.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
+    for(const auto& block:p.code_blocks) {
+        out<<"code_block "<<std::quoted(block.id)<<' '<<std::quoted(block.name)<<' '<<block.x<<' '<<block.y<<' '<<block.period<<' '<<block.phase<<' '<<std::quoted(hex_text(block.code))<<'\n';
+        for(const auto& port:block.inputs)out<<"code_input "<<std::quoted(block.id)<<' '<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.unit)<<' '<<unsigned(port.type)<<' '<<port.initial<<'\n';
+        for(const auto& port:block.outputs)out<<"code_output "<<std::quoted(block.id)<<' '<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.unit)<<' '<<unsigned(port.type)<<' '<<port.initial<<'\n';
+        for(const auto& pin:block.pin_positions)out<<"x-code-pin "<<std::quoted(block.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
+    }
     out<<"scope_enabled "<<p.scope_enabled<<'\n';
     out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';
     for(const auto& channel:p.scope_points) out << "scope_point " << std::quoted(channel) << '\n';

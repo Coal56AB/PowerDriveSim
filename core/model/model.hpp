@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 22;
+inline constexpr unsigned project_schema = 23;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -81,6 +81,7 @@ struct Endpoint {
 };
 enum class Domain { electrical, gate, signal };
 enum class Direction { conserving, input, output };
+enum class SignalScalarType { real, boolean };
 enum class WireLine { automatic, solid, dash };
 struct Wire {
     std::string id;
@@ -125,6 +126,21 @@ struct PlotBlock {
     bool differential=false;
     std::vector<PinPosition> pin_positions;
     bool operator==(const PlotBlock&) const = default;
+};
+struct CodePort {
+    std::string id, name, unit;
+    SignalScalarType type = SignalScalarType::real;
+    double initial = 0;
+    bool operator==(const CodePort &) const = default;
+};
+struct CodeBlock {
+    std::string id, name;
+    double x = 0, y = 0, period = 1e-6, phase = 0;
+    std::string code;
+    Orientation orientation;
+    std::vector<CodePort> inputs, outputs;
+    std::vector<PinPosition> pin_positions;
+    bool operator==(const CodeBlock &) const = default;
 };
 struct LabelLayout {
     std::string object,role;
@@ -211,6 +227,7 @@ struct Schematic {
     std::vector<ConnectionTag> tags;
     std::vector<GatePattern> patterns;
     std::vector<PlotBlock> plots;
+    std::vector<CodeBlock> code_blocks;
     std::vector<LabelLayout> labels;
     std::vector<ViewOptions> view_options;
     std::vector<Instance> instances;
