@@ -37,7 +37,7 @@ int main(int argc,char** argv) {
             };
             auto r=pds::execute(ir,nullptr,nullptr,&recording,nullptr,stream); steps+=r.accepted_steps; solves+=r.linear_solves;
             samples+=r.samples.size();
-            stored=r.samples.capacity()*sizeof(pds::Sample);
+            stored=r.samples.size()*sizeof(pds::Sample);
             for(const auto& sample:r.samples)
                 stored+=sample.values.capacity()*sizeof(double)+(sample.gates.capacity()+7)/8;
             residual=std::max(residual,r.max_scaled_residual);

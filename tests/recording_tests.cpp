@@ -16,6 +16,18 @@ int main(int argc, char **argv) {
     try {
         if (argc < 2)
             return 2;
+        BlockVector<int, 4> blocks;
+        for (int i = 0; i < 10; ++i)
+            blocks.push_back(i);
+        check(blocks.size() == 10 && blocks.capacity() == 12 && blocks[4] == 4 && blocks.at(9) == 9,
+              "Block history crosses storage boundaries");
+        auto copied = blocks;
+        copied.erase(copied.begin() + 2, copied.begin() + 5);
+        check(copied.size() == 7 && copied[2] == 5 && copied.back() == 9,
+              "Block history erases a random-access range");
+        auto moved = std::move(blocks);
+        check(blocks.empty() && moved.size() == 10 && moved.front() == 0 && moved.back() == 9,
+              "Moving block history leaves a valid empty source");
         std::ifstream file(std::string(argv[1]) + "/examples/rc.pds");
         Document doc(read_project(file));
         auto base = doc.project();

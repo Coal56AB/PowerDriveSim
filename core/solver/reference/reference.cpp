@@ -108,8 +108,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     if((!stream||stream_preview_samples)&&(!analog_indices.empty()||!gate_indices.empty())&&
        !ir.profile.step_control.adaptive&&ir.profile.step>0) {
         const double estimate=std::ceil((ir.profile.stop-ir.profile.warmup)/ir.profile.step)+2;
-        constexpr size_t maximum_reservation=20'000'000;
-        if(std::isfinite(estimate)&&estimate>0&&estimate<=double(maximum_reservation))
+        if(std::isfinite(estimate)&&estimate>0&&estimate<=double(std::numeric_limits<size_t>::max()))
             result.samples.reserve(size_t(estimate));
     }
     std::vector<size_t> switch_indices;

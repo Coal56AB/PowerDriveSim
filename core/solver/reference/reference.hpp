@@ -1,6 +1,7 @@
 #pragma once
 #include "core/ir/ir.hpp"
 #include "core/ir/snapshot.hpp"
+#include "core/solver/reference/block_vector.hpp"
 #include <atomic>
 #include <map>
 #include <functional>
@@ -24,7 +25,7 @@ struct Result {
     std::vector<Channel> channels;
     std::vector<std::string> gate_objects;
     std::vector<std::string> gate_names;
-    std::vector<Sample> samples;
+    BlockVector<Sample> samples;
     size_t accepted_steps=0, linear_solves=0, max_step_iterations=0;
     size_t rejected_steps=0;
     double min_accepted_step=0, max_accepted_step=0, max_local_error=0;
