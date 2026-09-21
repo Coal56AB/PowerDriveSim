@@ -31,7 +31,7 @@ struct StreamFormat {
     throw Diagnostic("snapshot_format", "", "Invalid or unsupported state file");
 }
 void check_header(const SimulationSnapshot &s) {
-    if ((s.version != 1 && s.version != 2) || !valid_uuid(s.project_id) || !valid_uuid(s.contract) || !std::isfinite(s.time) ||
+    if ((s.version < 1 || s.version > 3) || !valid_uuid(s.project_id) || !valid_uuid(s.contract) || !std::isfinite(s.time) ||
         s.time < 0 || s.next_grid == 0 || !std::isfinite(s.next_step) || s.next_step < 0 || (s.version == 1 && s.next_step != 0))
         invalid();
 }
@@ -61,6 +61,21 @@ void write_snapshot(const SimulationSnapshot &s, std::ostream &stream) {
     values("diodes", s.diodes);
     values("latched", s.latched);
     values("signals", s.signal_values);
+    if(s.version>=3) {
+        if(s.gate_program_states.size()>maximum_values)invalid();
+        stream<<"gate_program_states "<<s.gate_program_states.size()<<'\n';
+        for(const auto &state:s.gate_program_states) {
+            if(state.static_values.size()>maximum_values||state.initialized.size()>maximum_values)invalid();
+            stream<<"gate_program_state "<<state.static_values.size();
+            for(const auto &[key,value]:state.static_values) {
+                if(!std::isfinite(value))invalid();
+                stream<<' '<<key<<' '<<value;
+            }
+            stream<<' '<<state.initialized.size();
+            for(const auto &[key,value]:state.initialized)stream<<' '<<key<<' '<<value;
+            stream<<'\n';
+        }
+    }
     stream << "end\n";
     if (!stream)
         throw Diagnostic("snapshot_write", "", "Could not write state file");
@@ -74,7 +89,7 @@ SimulationSnapshot read_snapshot(std::istream &stream) {
     };
     SimulationSnapshot s;
     token("PowerDriveSimSnapshot");
-    if (!(stream >> s.version) || (s.version != 1 && s.version != 2))
+    if (!(stream >> s.version) || s.version < 1 || s.version > 3)
         invalid();
     token("project");
     stream >> std::quoted(s.project_id);
@@ -120,6 +135,25 @@ SimulationSnapshot read_snapshot(std::istream &stream) {
     bits("diodes", s.diodes);
     bits("latched", s.latched);
     bits("signals", s.signal_values);
+    if(s.version>=3) {
+        const auto programs=count("gate_program_states");
+        s.gate_program_states.resize(programs);
+        for(auto &state:s.gate_program_states) {
+            token("gate_program_state");
+            size_t static_count=0;
+            if(!(stream>>static_count)||static_count>maximum_values)invalid();
+            for(size_t i=0;i<static_count;++i) {
+                size_t key=0;double value=0;
+                if(!(stream>>key>>value)||!std::isfinite(value)||!state.static_values.emplace(key,value).second)invalid();
+            }
+            size_t initialized_count=0;
+            if(!(stream>>initialized_count)||initialized_count>maximum_values)invalid();
+            for(size_t i=0;i<initialized_count;++i) {
+                size_t key=0;unsigned value=0;
+                if(!(stream>>key>>value)||value>1||!state.initialized.emplace(key,value!=0).second)invalid();
+            }
+        }
+    }
     token("end");
     stream >> std::ws;
     if (!stream.eof())

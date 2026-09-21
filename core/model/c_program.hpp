@@ -25,6 +25,7 @@ struct CProgramOptions {
 struct CProgramState {
     std::map<std::size_t, double> static_values;
     std::map<std::size_t, bool> initialized;
+    bool operator==(const CProgramState &) const = default;
 };
 
 struct CProgramResult {

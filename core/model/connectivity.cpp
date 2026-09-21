@@ -177,6 +177,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
             if(!drivers.emplace(input,driver).second)
                 throw Diagnostic("multiple_gate_drivers",input,"A gate input accepts exactly one driver");
     ResolvedGraph result;
+    result.gate_drivers=drivers;
     std::map<std::string,Node> nets;
     // Preserve named node UUIDs, choosing a stable representative if wires merge them.
     auto nodes=p.nodes; std::sort(nodes.begin(),nodes.end(),[](const Node& a,const Node& b){return a.id<b.id;});

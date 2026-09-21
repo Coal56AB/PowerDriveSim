@@ -2,7 +2,13 @@
 #include "core/model/model.hpp"
 #include <map>
 namespace pds {
-struct ResolvedGraph { Project project; std::map<std::string,std::string> nets; };
+struct ResolvedGraph {
+    Project project;
+    std::map<std::string,std::string> nets;
+    // Controlled component UUID -> connected gate-source UUID. Kept as
+    // metadata after patterns are removed from the electrical project.
+    std::map<std::string,std::string> gate_drivers;
+};
 std::vector<std::string> plot_channels(const Project& project,const std::string& plot_id);
 std::vector<std::string> plot_source_channels(const Project& project,const std::string& plot_id);
 std::vector<std::pair<std::string,std::string>> plot_differential_channels(const Project& project,

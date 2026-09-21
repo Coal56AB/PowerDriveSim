@@ -38,6 +38,11 @@ std::string snapshot_contract(const SimulationIR &ir, double time) {
     }
     for (const auto &signal : ir.gate_signals)
         text << signal.id << ' ' << signal.initial << '\n';
+    for (const auto &program : ir.gate_programs) {
+        text << "gate-program " << program.id << ' ' << program.source.size() << ' ' << program.source;
+        for (const auto target : program.targets) text << ' ' << target;
+        text << '\n';
+    }
     for (const auto &event : ir.events) {
         if (event.time > time)
             break;
@@ -49,7 +54,7 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
     const auto invalid = [&](const char *message) {
         throw Diagnostic("invalid_snapshot", ir.project_id, message);
     };
-    if ((s.version != 1 && s.version != 2) || !std::isfinite(s.time) || s.time < 0 || s.time > ir.profile.stop ||
+    if ((s.version < 1 || s.version > 3) || !std::isfinite(s.time) || s.time < 0 || s.time > ir.profile.stop ||
         s.next_grid == 0)
         invalid("Snapshot version or time is invalid for this run");
     if (s.project_id != ir.project_id || s.contract != snapshot_contract(ir, s.time))
@@ -61,11 +66,18 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
     const auto count = ir.stamps.size();
     if (s.states.size() != count || s.history.size() != count || s.gates.size() != count ||
         s.diodes.size() != count || s.latched.size() != count || s.values.size() != ir.unknowns.size() ||
-        s.signal_values.size() != ir.gate_signals.size())
+        s.signal_values.size() != ir.gate_signals.size() ||
+        (ir.gate_programs.empty() ? !s.gate_program_states.empty()
+                                  : s.version < 3 || s.gate_program_states.size() != ir.gate_programs.size()))
         invalid("Snapshot arrays do not match the model");
     for (const auto *values : {&s.states, &s.history, &s.values})
         if (std::any_of(values->begin(), values->end(), [](double v) { return !std::isfinite(v); }))
             invalid("Snapshot contains a nonfinite value");
+    for(const auto &program:s.gate_program_states)
+        for(const auto &[key,value]:program.static_values) {
+            (void)key;
+            if(!std::isfinite(value))invalid("Snapshot contains a nonfinite Gate C state");
+        }
     const double next = static_cast<double>(s.next_grid) * ir.profile.step;
     const double previous = static_cast<double>(s.next_grid - 1) * ir.profile.step;
     if (!std::isfinite(next) || next <= s.time || previous > s.time)

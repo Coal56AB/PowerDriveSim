@@ -41,7 +41,8 @@ static void invalid_file(const std::string &text) {
 int main(int argc, char **argv) try {
     check(argc == 2, "Pass repository root");
     for (const char *name : {"rc", "rlc", "rc-pulse", "diode-freewheel", "diode-recovery",
-                             "thyristor-halfwave", "ac-voltage-controller", "open-end-winding"}) {
+                             "thyristor-halfwave", "ac-voltage-controller", "open-end-winding",
+                             "gate-script-pwm"}) {
         std::ifstream file(std::string(argv[1]) + "/examples/" + name + ".pds");
         auto project = read_project(file);
         for (auto method : {Method::backward_euler, Method::trapezoidal}) {
@@ -76,14 +77,16 @@ int main(int argc, char **argv) try {
             auto version = state_file.str();
             version.replace(0, version.find('\n'), "PowerDriveSimSnapshot 99");
             invalid_file(version);
-            auto legacy = *checkpoint;
-            legacy.version = 1;
-            std::ostringstream old_file;
-            write_snapshot(legacy, old_file);
-            std::istringstream old_input(old_file.str());
-            const auto old_state = read_snapshot(old_input);
-            check(old_state == legacy, "Version 1 checkpoint migration");
-            validate_snapshot(old_state, ir);
+            if(ir.gate_programs.empty()) {
+                auto legacy = *checkpoint;
+                legacy.version = 1;
+                std::ostringstream old_file;
+                write_snapshot(legacy, old_file);
+                std::istringstream old_input(old_file.str());
+                const auto old_state = read_snapshot(old_input);
+                check(old_state == legacy, "Version 1 checkpoint migration");
+                validate_snapshot(old_state, ir);
+            }
             auto shortened = ir;
             shortened.profile.stop = expected.samples[97].time;
             const auto first = run(shortened, nullptr, 0);

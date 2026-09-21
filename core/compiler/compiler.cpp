@@ -297,6 +297,7 @@ static SimulationIR compile_flat(const Project& p) {
 }
 static SimulationIR compile_wired(const Project& source, const std::map<std::string,ObjectPath>& origins) {
     Project project=source;
+    std::set<std::string> runtime_gate_scripts;
     // Manual table edges remain in the document while another gate mode is
     // active. They are inactive input, not a second driver of the same signal.
     for(const auto& g:project.patterns)if(g.pwm||g.script)
@@ -345,19 +346,8 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
             }
         }
         CProgramState c_state;
-        bool previous=gate_c_value(c_program,c_state,0);
-        g.initial=previous;
-        const double script_step=project.profile.step;
-        const auto steps=project.profile.stop/script_step;
-        if(!std::isfinite(steps)||steps>1000000)throw Diagnostic("pwm_event_limit",g.id,"Gate script exceeds one million solver steps; increase the simulation step or reduce duration");
-        for(size_t k=1;k<=static_cast<size_t>(std::ceil(steps));++k) {
-            const double t=std::min(project.profile.stop,static_cast<double>(k)*script_step);
-            const bool value=gate_c_value(c_program,c_state,t);
-            if(value!=previous) {
-                generated_edge(g,t,value,generated);
-                previous=value;
-            }
-        }
+        g.initial=gate_c_value(c_program,c_state,0);
+        runtime_gate_scripts.insert(g.id);
       } catch(const Diagnostic& diagnostic) {
         if(diagnostic.code=="invalid_gate_script"&&diagnostic.object.empty())
             throw Diagnostic(diagnostic.code,g.id,diagnostic.what(),diagnostic.time);
@@ -365,9 +355,18 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
       }
     }
 
-    auto ir=compile_flat(resolve_connections(project,origins).project);
+    auto resolved=resolve_connections(project,origins);
+    auto ir=compile_flat(resolved.project);
     auto patterns=project.patterns;std::sort(patterns.begin(),patterns.end(),[](const GatePattern& a,const GatePattern& b){return a.id<b.id;});
     for(const auto& pattern:patterns)ir.gate_signals.push_back({pattern.id,pattern.name,pattern.initial});
+    for(const auto& pattern:patterns)if(runtime_gate_scripts.count(pattern.id)) {
+        GateProgram program{pattern.id,pattern.code,{}};
+        for(const auto& [target,driver]:resolved.gate_drivers)if(driver==pattern.id) {
+            const auto stamp=std::find_if(ir.stamps.begin(),ir.stamps.end(),[&](const Stamp& candidate){return candidate.component.id==target;});
+            if(stamp!=ir.stamps.end())program.targets.push_back(static_cast<size_t>(stamp-ir.stamps.begin()));
+        }
+        ir.gate_programs.push_back(std::move(program));
+    }
     for(const auto& event:project.events)
         if(std::any_of(project.patterns.begin(),project.patterns.end(),[&](const GatePattern& p){return p.id==event.target;}))ir.events.push_back(event);
     std::sort(ir.events.begin(),ir.events.end(),[](const GateEvent& a,const GateEvent& b){return a.time==b.time?a.target<b.target:a.time<b.time;});

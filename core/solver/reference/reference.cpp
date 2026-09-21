@@ -4,6 +4,7 @@
 #include "core/compiler/topology.hpp"
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
+#include "core/model/c_program.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -116,6 +117,20 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     for(size_t i=0;i<ir.stamps.size();++i)
         if(ir.stamps[i].component.source.kind!=Waveform::dc)source_indices.push_back(i);
     std::vector<bool> signal_values;for(const auto& signal:ir.gate_signals)signal_values.push_back(signal.initial);
+    std::vector<CProgram> gate_programs;
+    std::vector<CProgramState> gate_program_states(ir.gate_programs.size());
+    std::vector<size_t> gate_program_signals;
+    gate_programs.reserve(ir.gate_programs.size());
+    gate_program_signals.reserve(ir.gate_programs.size());
+    for(const auto& source:ir.gate_programs) {
+        CProgramOptions program_options;program_options.diagnostic_code="invalid_gate_script";
+        program_options.object=source.id;program_options.allow_time=true;
+        program_options.allow_gate_functions=true;program_options.require_return=true;
+        gate_programs.push_back(compile_c_program(source.source,program_options));
+        const auto signal=std::find_if(ir.gate_signals.begin(),ir.gate_signals.end(),[&](const GateSignal& candidate){return candidate.id==source.id;});
+        if(signal==ir.gate_signals.end())throw Diagnostic("invalid_gate_script",source.id,"Gate runtime signal is missing");
+        gate_program_signals.push_back(static_cast<size_t>(signal-ir.gate_signals.begin()));
+    }
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size()), latched(ir.stamps.size()), released(ir.stamps.size());
     std::vector<size_t> thyristor_indices;
@@ -143,6 +158,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         validate_snapshot(*resume,ir);
         states=resume->states;history=resume->history;gates=resume->gates;
         diode_states=resume->diodes;latched=resume->latched;signal_values=resume->signal_values;
+        gate_program_states=resume->gate_program_states;
         next_event=static_cast<size_t>(std::upper_bound(ir.events.begin(),ir.events.end(),resume->time,
             [](double time,const GateEvent& event){return time<event.time;})-ir.events.begin());
     }
@@ -152,6 +168,21 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             const auto& e=ir.events[next_event++];
             for(size_t i=0;i<ir.stamps.size();++i) if(ir.stamps[i].component.id==e.target){gates[i]=e.closed;changed=true;}
             for(size_t i=0;i<ir.gate_signals.size();++i)if(ir.gate_signals[i].id==e.target)signal_values[i]=e.closed;
+        }
+        return changed;
+    };
+    auto apply_gate_programs=[&](double t) {
+        bool changed=false;
+        for(size_t i=0;i<gate_programs.size();++i) {
+            const bool value=execute_c_program(gate_programs[i],t,&gate_program_states[i]).return_value.value_or(0)!=0;
+            const auto signal=gate_program_signals[i];
+            changed|=signal_values[signal]!=value;
+            signal_values[signal]=value;
+            for(const auto target:ir.gate_programs[i].targets) {
+                if(target>=gates.size())throw Diagnostic("invalid_gate_script",ir.gate_programs[i].id,"Gate runtime target is missing",t);
+                changed|=gates[target]!=value;
+                gates[target]=value;
+            }
         }
         return changed;
     };
@@ -310,6 +341,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     if(resume) final_values=&resume->values;
     else {
         apply_events(0);
+        apply_gate_programs(0);
         final_values=&solve(0,0,true,ir.profile.initial_state==InitialState::dc_operating_point);
     }
     record(time,*final_values);
@@ -428,7 +460,8 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         if(time==grid_time) ++grid;
         // Integrate to the edge with the old topology. Apply all simultaneous
         // gates before solving algebraic variables with continuous C/L states.
-        const bool gate_event=apply_events(time);
+        bool gate_event=apply_events(time);
+        gate_event=apply_gate_programs(time)||gate_event;
         if(gate_event||time==source_edge) values=&solve(time,0,true);
         if(adaptive){accepted_values=*values;values=&accepted_values;}
         record(time,*values);
@@ -443,6 +476,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         checkpoint.states=std::move(states);checkpoint.history=std::move(history);
         checkpoint.gates=std::move(gates);checkpoint.diodes=std::move(diode_states);
         checkpoint.latched=std::move(latched);checkpoint.signal_values=std::move(signal_values);
+        checkpoint.gate_program_states=std::move(gate_program_states);
         checkpoint.values=*final_values;
         result.snapshot=std::move(checkpoint);
     }
