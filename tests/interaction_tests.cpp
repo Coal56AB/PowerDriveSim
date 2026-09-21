@@ -5,6 +5,7 @@
 #include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
 #include "benchmarks/metrics.hpp"
+#include "tests/qt_test_main.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -4204,5 +4205,5 @@ class InteractionTests : public QObject {
         }
     }
 };
-QTEST_MAIN(InteractionTests)
+int main(int argc, char **argv) { return run_qt_test<InteractionTests>(argc, argv); }
 #include "interaction_tests.moc"

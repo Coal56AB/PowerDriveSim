@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "tests/qt_test_main.hpp"
 #include <QAction>
 #include <QCheckBox>
 #include <QClipboard>
@@ -615,5 +616,5 @@ class DesktopTests : public QObject {
         QCOMPARE(window.project().wires.size(), count - 1);
     }
 };
-QTEST_MAIN(DesktopTests)
+int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }
 #include "desktop_tests.moc"

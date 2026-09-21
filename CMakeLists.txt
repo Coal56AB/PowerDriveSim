@@ -130,6 +130,13 @@ if(PDS_BUILD_DESKTOP AND BUILD_TESTING)
   set_tests_properties(desktop desktop-launch PROPERTIES TIMEOUT 45)
   set_tests_properties(desktop-interaction PROPERTIES TIMEOUT 180)
   if(TARGET Qt6::QOffscreenIntegrationPlugin)
+    foreach(PDS_QT_TEST_TARGET powerdrive-desktop-tests powerdrive-interaction-tests)
+      add_custom_command(TARGET ${PDS_QT_TEST_TARGET} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${PDS_QT_TEST_TARGET}>/platforms"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+          "$<TARGET_FILE_DIR:${PDS_QT_TEST_TARGET}>/platforms/$<TARGET_FILE_NAME:Qt6::QOffscreenIntegrationPlugin>")
+    endforeach()
     set_tests_properties(desktop desktop-launch desktop-interaction PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>")
   endif()
   if(WIN32)
