@@ -213,6 +213,16 @@ static QString display_value(const PropertyValue &value, const QJsonObject &fiel
                       QString::number(e.y, 'g', 17) + "\n";
     return result;
 }
+static void validate_numeric_range(double number, const QJsonObject &field, bool internal_value) {
+    const double scale = internal_value ? field.value("scale").toDouble(1) : 1.;
+    const double minimum = field.value("min").toDouble() / scale;
+    const double maximum = field.value("max").toDouble() / scale;
+    if (!std::isfinite(number) ||
+        (field.contains("min") &&
+         (number < minimum || (field.value("exclusiveMin").toBool() && number == minimum))) ||
+        (field.contains("max") && number > maximum))
+        throw std::runtime_error("Value outside configured range");
+}
 static PropertyValue parse_field(const QString &input, const QJsonObject &field) {
     const auto editor = field.value("editor").toString();
     if (editor == "text" || editor == "code")
@@ -240,11 +250,7 @@ static PropertyValue parse_field(const QString &input, const QJsonObject &field)
     }
     if (editor == "number" || editor == "integer") {
         double number = parse_si(input.toStdString(), field.value("unit").toString().toStdString());
-        if ((field.contains("min") &&
-             (number < field.value("min").toDouble() ||
-              (field.value("exclusiveMin").toBool() && number == field.value("min").toDouble()))) ||
-            (field.contains("max") && number > field.value("max").toDouble()))
-            throw std::runtime_error("Value outside configured range");
+        validate_numeric_range(number, field, false);
         if (editor == "integer") {
             if (number < 0 || number != std::floor(number) || number > 4294967295.)
                 throw std::runtime_error("Expected a non-negative integer");
@@ -484,10 +490,12 @@ void EditorWindow::fill_inspector() {
         if (mixed)
             contents.clear();
         auto draft = targets.size() == 1 ? drafts_.find(targets.front()) : drafts_.end();
-        if (draft != drafts_.end() && draft->second.contains(key))
+        const bool restored_draft = draft != drafts_.end() && draft->second.contains(key);
+        if (restored_draft)
             contents = draft->second.value(key);
         set_field_text(widget, contents);
         widget->setProperty("loaded_text", contents);
+        widget->setProperty("draft", restored_draft);
         widget->show();
         auto label = field.contains("displayLabel")
                          ? field.value("displayLabel").toString()
@@ -600,10 +608,7 @@ void EditorWindow::apply_inspector() {
                         for(const auto &target:targets) {
                             const ExpressionOptions options{"invalid_parameter_expression",target,false,false};
                             const double value=evaluate_expression(input.toStdString(),program.variables,0,options);
-                            const double scale=field.value("scale").toDouble(1);
-                            if((field.contains("min")&&value<field.value("min").toDouble()/scale)||
-                               (field.contains("max")&&value>field.value("max").toDouble()/scale))
-                                throw std::runtime_error("Value outside configured range");
+                            validate_numeric_range(value, field, true);
                             write_property(p,target,key.toStdString(),value);
                             auto binding=std::find_if(p.parameter_expressions.begin(),p.parameter_expressions.end(),
                                 [&](const ParameterExpression &candidate){return candidate.object==target&&candidate.field==key.toStdString();});
@@ -698,6 +703,7 @@ void EditorWindow::edit_inline(const std::string &id, const QJsonObject &field, 
                         const auto program=parse_expression_program(p.initialization_code,initialization_options);
                         const ExpressionOptions options{"invalid_parameter_expression",id,false,false};
                         const double value=evaluate_expression(edit->text().toStdString(),program.variables,0,options);
+                        validate_numeric_range(value, field, true);
                         write_property(p,id,key,value);
                         auto binding=std::find_if(p.parameter_expressions.begin(),p.parameter_expressions.end(),
                             [&](const ParameterExpression &candidate){return candidate.object==id&&candidate.field==key;});

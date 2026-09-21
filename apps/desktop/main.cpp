@@ -1,5 +1,5 @@
 #include "apps/desktop/editor.hpp"
-#include <QApplication>
+#include "apps/desktop/safe_application.hpp"
 #include <QCommandLineParser>
 #include <QMessageBox>
 #include <QDebug>
@@ -7,7 +7,7 @@
 #include <QTimer>
 #include <iostream>
 int main(int argc, char **argv) {
-    QApplication app(argc, argv);
+    pds::desktop::SafeApplication app(argc, argv);
     QCoreApplication::setOrganizationName("PowerDriveSim");
     QCoreApplication::setApplicationName("PowerDriveSim");
     QCommandLineParser parser;
@@ -23,6 +23,7 @@ int main(int argc, char **argv) {
     try {
         pds::desktop::EditorWindow window(parser.value("lang"),
                                           parser.isSet(smoke) ? smoke_dir.path() : QString());
+        app.set_warning_handler([&window](const QString &message) { window.report_unhandled_error(message); });
         app.setWindowIcon(QIcon(":/icons/application.png"));
         window.setWindowIcon(app.windowIcon());
         if (!parser.positionalArguments().empty()) {

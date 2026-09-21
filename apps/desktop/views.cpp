@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/scope_style.hpp"
 #include "apps/desktop/theme.hpp"
+#include "results/display_sampling.hpp"
 #include "results/measurements.hpp"
 #include <QActionGroup>
 #include <QApplication>
@@ -260,7 +261,9 @@ void Scope::paintEvent(QPaintEvent *) {
                 const double scale = devicePixelRatioF();
                 const int columns = int(plot.width() * scale) + 1, rows = int(plot.height() * scale) + 1;
                 QBitArray occupied(columns * rows);
-                for (size_t k = from; k < to; ++k) {
+                const auto marker_samples = display_sample_indices(
+                    from, to, std::max<size_t>(2, static_cast<size_t>(std::ceil(plot.width() * scale * 2))));
+                for (const size_t k : marker_samples) {
                     QPointF point(x(samples[k].time), plot.bottom() - (sample_value(k, channels_[ch]) - low) /
                                                                           (high - low) * plot.height());
                     if (!plot.contains(point))

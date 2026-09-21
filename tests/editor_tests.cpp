@@ -82,6 +82,25 @@ int main(int argc,char** argv) {
                   "Orphan cleanup is part of the same undoable deletion");
         }
         {
+            Project cleanup; cleanup.id=new_uuid(); cleanup.wired=true;
+            Document drawing(cleanup);
+            const auto probe=drawing.add_component(Kind::current_probe,0,0);
+            const auto pattern=drawing.add_pattern(100,0);
+            const auto plot=drawing.add_plot(200,0,"Difference",true);
+            drawing.apply("Observe objects",[&](Project &project){
+                project.scope_enabled=true;
+                project.scope_points={probe,"gate/"+pattern,"diff/"+plot+"/1"};
+                project.scope_channels=project.scope_points;
+            });
+            const auto before=save(drawing.project());
+            drawing.erase({probe,pattern,plot});
+            check(drawing.project().scope_points.empty()&&drawing.project().scope_channels.empty(),
+                  "Deleting observed objects removes all dependent Scope references");
+            drawing.undo();
+            check(save(drawing.project())==before,
+                  "Scope dependency cleanup is part of the same undoable deletion");
+        }
+        {
             Project expressions;expressions.id=new_uuid();expressions.wired=true;
             expressions.initialization_code="double base = 1000;";
             Document drawing(expressions);const auto resistor=drawing.add_component(Kind::resistor,0,0);

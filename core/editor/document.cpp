@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <optional>
+#include <string_view>
 namespace pds {
 namespace {
 std::pair<std::string, unsigned> name_stem(std::string name) {
@@ -90,6 +91,34 @@ bool generated_node_name(const std::string &name) {
 }
 bool endpoint_is_node(const Endpoint &endpoint, const std::string &node) {
     return endpoint.object == node && endpoint.port == "node";
+}
+bool channel_belongs_to(const std::set<std::string> &ids, const std::string &key) {
+    if (ids.count(key))
+        return true;
+    constexpr std::string_view gate_prefix = "gate/";
+    if (key.starts_with(gate_prefix) && ids.count(key.substr(gate_prefix.size())))
+        return true;
+    constexpr std::string_view difference_prefix = "diff/";
+    if (key.starts_with(difference_prefix)) {
+        const auto begin = difference_prefix.size();
+        const auto end = key.find('/', begin);
+        return ids.count(key.substr(begin, end - begin)) != 0;
+    }
+    return false;
+}
+bool target_belongs_to(const Project &root, const std::string &edited_definition,
+                       const std::set<std::string> &ids, const ParameterTarget &target) {
+    const Schematic *level=&root;
+    std::string containing_definition;
+    for(const auto &step:target.instances) {
+        if(containing_definition==edited_definition&&ids.count(step))return true;
+        const auto instance=std::find_if(level->instances.begin(),level->instances.end(),
+            [&](const Instance &candidate){return candidate.id==step;});
+        if(instance==level->instances.end())return false;
+        containing_definition=instance->definition;
+        level=&definition(root,containing_definition);
+    }
+    return containing_definition==edited_definition&&ids.count(target.object);
 }
 Endpoint other_endpoint(const Wire &wire, const std::string &node) {
     return endpoint_is_node(wire.from, node) ? wire.to : wire.from;
@@ -497,7 +526,42 @@ void Document::arrange(const std::vector<std::string>& list,const std::string& m
 }
 void Document::erase(const std::vector<std::string>& list) {
     const std::set<std::string> ids(list.begin(),list.end());
-    apply("Delete objects",[&](Project& p) {
+    const auto edited_definition=location_.empty()?std::string{}:current_definition();
+    if(!location_.empty()) {
+        const auto &active=definition(current_,current_definition());
+        for(const auto &port:active.ports)if(ids.count(port.terminal.object))
+            throw Diagnostic("invalid_parameter_binding",port.terminal.object,
+                             "Remove or redirect the public port before deleting its internal object");
+        for(const auto &parameter:active.parameters)if(parameter.object!="*"&&ids.count(parameter.object))
+            throw Diagnostic("invalid_parameter_binding",parameter.object,
+                             "Remove or redirect the public parameter before deleting its internal object");
+    }
+    auto root_ids=ids;
+    const bool has_dependencies=!current_.scope_points.empty()||!current_.scope_channels.empty()||
+        std::any_of(current_.experiments.begin(),current_.experiments.end(),[](const Experiment &experiment){
+            if(!experiment.channels.empty()||!experiment.axes.empty())return true;
+            return std::any_of(experiment.scenarios.begin(),experiment.scenarios.end(),
+                [](const Scenario &scenario){return !scenario.overrides.empty();});
+        });
+    if(has_dependencies) {
+        const auto expanded=flatten(current_);
+        for(const auto &[identity,origin]:expanded.origins) {
+            const Schematic *level=&current_;
+            std::string containing_definition;
+            bool affected=false,valid=true;
+            for(const auto &step:origin.instances) {
+                if(containing_definition==edited_definition&&ids.count(step))affected=true;
+                const auto instance=std::find_if(level->instances.begin(),level->instances.end(),
+                    [&](const Instance &candidate){return candidate.id==step;});
+                if(instance==level->instances.end()){valid=false;break;}
+                containing_definition=instance->definition;
+                level=&definition(current_,containing_definition);
+            }
+            if(valid&&containing_definition==edited_definition&&ids.count(origin.object))affected=true;
+            if(valid&&affected)root_ids.insert(identity);
+        }
+    }
+    apply_with_root("Delete objects",[&](Project& p) {
         const bool removes_object=
             std::any_of(p.components.begin(),p.components.end(),[&](const Component& c){return ids.count(c.id);})||
             std::any_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& t){return ids.count(t.id);})||
@@ -515,6 +579,8 @@ void Document::erase(const std::vector<std::string>& list) {
         std::erase_if(p.events,[&](const GateEvent& e){return ids.count(e.target);});
         std::erase_if(p.parameter_expressions,[&](const ParameterExpression& expression){return ids.count(expression.object);});
         std::erase_if(p.wires,[&](const Wire& w){return ids.count(w.id)||ids.count(w.from.object)||ids.count(w.to.object);});
+        std::erase_if(p.scope_points,[&](const std::string &key){return channel_belongs_to(ids,key);});
+        std::erase_if(p.scope_channels,[&](const std::string &key){return channel_belongs_to(ids,key);});
         // A junction without a single incident conductor has no electrical or
         // visual meaning. Keeping it produced a small unexplained square after
         // deleting the object or wire that owned the last connection.
@@ -533,6 +599,20 @@ void Document::erase(const std::vector<std::string>& list) {
                        std::none_of(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& g){return g.id==l.object;})&&
                        std::none_of(p.instances.begin(),p.instances.end(),[&](const Instance& i){return i.id==l.object;});
             });
+        }
+    },[&](Project &root){
+        const auto remove=[&](const std::string &key){return channel_belongs_to(root_ids,key);};
+        std::erase_if(root.scope_points,remove);
+        std::erase_if(root.scope_channels,remove);
+        for(auto &experiment:root.experiments) {
+            std::erase_if(experiment.channels,remove);
+            std::erase_if(experiment.axes,[&](const SweepAxis &axis){
+                return target_belongs_to(current_,edited_definition,ids,axis.target);
+            });
+            for(auto &scenario:experiment.scenarios)
+                std::erase_if(scenario.overrides,[&](const ParameterOverride &override){
+                    return target_belongs_to(current_,edited_definition,ids,override.target);
+                });
         }
     });
 }

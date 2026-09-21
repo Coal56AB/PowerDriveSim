@@ -336,6 +336,7 @@ class EditorWindow : public QMainWindow {
     void observe_wire_current(const std::string &id);
     void observe_wires(const std::vector<std::string> &ids, bool current);
     void remove_scope_point();
+    void report_unhandled_error(const QString &message);
 
   protected:
     void closeEvent(QCloseEvent *) override;
@@ -479,6 +480,7 @@ class EditorWindow : public QMainWindow {
     void apply_inspector();
     void import_samples(const QString &key);
     void show_error(const std::exception &);
+    void show_warning(const QString &message);
     void commit_positions();
     void delete_selected();
     void choose_channels();

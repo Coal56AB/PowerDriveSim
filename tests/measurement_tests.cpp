@@ -1,8 +1,10 @@
 #include "core/editor/document.hpp"
 #include "formats/project/project.hpp"
+#include "results/display_sampling.hpp"
 #include "results/measurements.hpp"
 #include <cmath>
 #include <fstream>
+#include <functional>
 #include <future>
 #include <iostream>
 #include <sstream>
@@ -19,6 +21,16 @@ int main(int argc, char **argv) {
     try {
         if (argc < 2)
             return 2;
+        check(display_sample_indices(3, 3, 10).empty(), "Empty display range");
+        check(display_sample_indices(3, 10, 0).empty(), "Zero display budget");
+        check(display_sample_indices(3, 10, 1) == std::vector<size_t>{3}, "Single display sample");
+        check(display_sample_indices(10, 15, 100) == std::vector<size_t>({10, 11, 12, 13, 14}),
+              "Sparse display keeps every sample");
+        const auto display = display_sample_indices(100, 1'000'100, 2400);
+        check(display.size() == 2400 && display.front() == 100 && display.back() == 1'000'099,
+              "Dense display is bounded and keeps endpoints");
+        check(std::adjacent_find(display.begin(), display.end(), std::greater_equal<size_t>()) == display.end(),
+              "Dense display samples are strictly ordered");
         Result r;
         r.channels = {{"a", "A", "V"}, {"b", "B", "V"}, {"c", "C", "A"}};
         for (int i = 0; i < 5; ++i)

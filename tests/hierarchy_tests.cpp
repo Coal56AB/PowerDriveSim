@@ -160,6 +160,30 @@ int main() try {
     auto expanded = flatten(p);
     const auto internal = expanded_uuid({id(20), id(31)}, id(13));
     require(expanded.origins.at(internal).instances.size() == 2, "Nested origins");
+    {
+        auto observed=p;
+        const auto first=expanded_uuid({id(20),id(31)},id(13));
+        const auto second=expanded_uuid({id(21),id(31)},id(13));
+        observed.scope_points={first,second};observed.scope_channels=observed.scope_points;
+        Experiment experiment;experiment.id=id(92);experiment.name="Instance channels";
+        experiment.channels=observed.scope_channels;
+        experiment.axes={{{{id(20),id(31)},id(13),"value"},{1e-6}},
+                         {{{id(21),id(31)},id(13),"value"},{2e-6}}};
+        experiment.scenarios={{"Both",{{{{id(20),id(31)},id(13),"initial"},0},
+                                        {{{id(21),id(31)},id(13),"initial"},0}}}};
+        observed.experiments.push_back(experiment);
+        Document removal(observed);
+        removal.erase({id(20)});
+        require(removal.root_project().scope_points==std::vector<std::string>{second}&&
+                    removal.root_project().scope_channels==std::vector<std::string>{second}&&
+                    removal.root_project().experiments.front().channels==std::vector<std::string>{second}&&
+                    removal.root_project().experiments.front().axes.size()==1&&
+                    removal.root_project().experiments.front().scenarios.front().overrides.size()==1,
+                "Deleting an instance removes recording references to its complete expanded subtree");
+        removal.undo();
+        require(removal.root_project()==observed,
+                "Instance recording cleanup is part of the same undoable deletion");
+    }
     p.instances[0].name = "Renamed";
     p.instances[0].x += 123;
     p.definitions[0].name = "Other library name";
@@ -447,7 +471,36 @@ int main() try {
     navigating.apply("Record both instances", [](Project &p) {
         p.scope_enabled = true;
         p.scope_channels = {expanded_uuid({id(20), id(31)}, id(12)), expanded_uuid({id(21), id(31)}, id(12))};
+        p.scope_points = p.scope_channels;
     });
+    {
+        auto recorded=navigating.root_project();
+        auto body=std::find_if(recorded.definitions.begin(),recorded.definitions.end(),
+                               [](const Definition &candidate){return candidate.id==id(10);});
+        require(body!=recorded.definitions.end(),"Nested recording fixture definition");
+        body->components.push_back({id(91),"Internal probe",Kind::voltage_probe});
+        recorded.scope_points={expanded_uuid({id(20),id(31)},id(91)),
+                               expanded_uuid({id(21),id(31)},id(91))};
+        recorded.scope_channels=recorded.scope_points;
+        Experiment experiment;experiment.id=id(90);experiment.name="Nested channels";
+        experiment.channels=recorded.scope_channels;
+        experiment.axes={{{{id(20),id(31)},id(91),"value"},{1}}};
+        experiment.scenarios={{"Probe",{{{{id(21),id(31)},id(91),"initial"},0}}}};
+        recorded.experiments.push_back(experiment);
+        Document removal(recorded);
+        removal.navigate({id(20),id(31)});
+        error("invalid_parameter_binding",[&]{removal.erase({id(12)});});
+        removal.erase({id(91)});
+        require(removal.root_project().scope_points.empty()&&
+                    removal.root_project().scope_channels.empty()&&
+                    removal.root_project().experiments.front().channels.empty()&&
+                    removal.root_project().experiments.front().axes.empty()&&
+                    removal.root_project().experiments.front().scenarios.front().overrides.empty(),
+                "Deleting a shared nested atom removes expanded recording references from every instance");
+        removal.undo();
+        require(removal.root_project()==recorded,
+                "Nested recording dependency cleanup is part of the same undoable deletion");
+    }
     const auto grouped_inside = navigating.create_definition({id(12)}, "Inner resistor");
     require(navigating.root_project().scope_channels ==
                 std::vector<std::string>{expanded_uuid({id(20), id(31), grouped_inside}, id(12)),

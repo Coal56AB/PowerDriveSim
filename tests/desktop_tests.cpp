@@ -433,6 +433,78 @@ class DesktopTests : public QObject {
         QVERIFY(window.project().scope_points.empty());
         QVERIFY(window.project().scope_channels.empty());
     }
+    void deleting_disconnected_current_observation_is_safe() {
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        QVERIFY(window.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+
+        const auto observed_wire = window.project().wires.front().id;
+        window.observe_wire_current(observed_wire);
+        QCOMPARE(window.project().scope_points.size(), size_t(1));
+        const auto probe = window.project().scope_points.front();
+        QCOMPARE(std::count_if(window.project().wires.begin(), window.project().wires.end(),
+                               [&](const Wire &wire) {
+                                   return wire.from.object == probe || wire.to.object == probe;
+                               }),
+                 2);
+
+        // Reproduce the reported order: remove one half of the conductor while
+        // its oscilloscope observation still exists, then remove the channel.
+        window.select_object(observed_wire);
+        auto *delete_action = window.findChild<QAction *>("action_delete");
+        QVERIFY(delete_action);
+        delete_action->trigger();
+        QCOMPARE(window.project().scope_points.size(), size_t(1));
+        QCOMPARE(std::count_if(window.project().wires.begin(), window.project().wires.end(),
+                               [&](const Wire &wire) {
+                                   return wire.from.object == probe || wire.to.object == probe;
+                               }),
+                 1);
+
+        auto *channels = window.findChild<QListWidget *>("channels");
+        QVERIFY(channels);
+        QCOMPARE(channels->count(), 1);
+        channels->setCurrentRow(0);
+        QTest::keyClick(channels, Qt::Key_Delete);
+
+        QVERIFY(window.project().scope_points.empty());
+        QVERIFY(window.project().scope_channels.empty());
+        QVERIFY(std::none_of(window.project().components.begin(), window.project().components.end(),
+                             [&](const Component &component) { return component.id == probe; }));
+        QVERIFY(std::none_of(window.project().wires.begin(), window.project().wires.end(),
+                             [&](const Wire &wire) {
+                                 return wire.from.object == probe || wire.to.object == probe;
+                             }));
+        auto *diagnostics = window.findChild<QListWidget *>("diagnostics_list");
+        QVERIFY(diagnostics);
+        QVERIFY(diagnostics->count() >= 1);
+        QCOMPARE(diagnostics->item(diagnostics->count() - 1)->data(Qt::UserRole + 2).toString(),
+                 QString("warning"));
+        bool valid = true;
+        try {
+            (void)resolve_connections(window.root_project());
+        } catch (...) {
+            valid = false;
+        }
+        QVERIFY(valid);
+
+        window.undo();
+        QVERIFY(std::find(window.project().scope_points.begin(), window.project().scope_points.end(), probe) !=
+                window.project().scope_points.end());
+        QCOMPARE(std::count_if(window.project().wires.begin(), window.project().wires.end(),
+                               [&](const Wire &wire) {
+                                   return wire.from.object == probe || wire.to.object == probe;
+                               }),
+                 1);
+        window.redo();
+        QVERIFY(std::find(window.project().scope_points.begin(), window.project().scope_points.end(), probe) ==
+                window.project().scope_points.end());
+        QVERIFY(std::none_of(window.project().wires.begin(), window.project().wires.end(),
+                             [&](const Wire &wire) {
+                                 return wire.from.object == probe || wire.to.object == probe;
+                             }));
+    }
     void wire_tool_and_empty_state() {
         QTemporaryDir temp;
         EditorWindow window("ru", temp.path());

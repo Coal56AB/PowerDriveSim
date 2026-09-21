@@ -45,6 +45,14 @@ The desktop uses the same transactions for grouping, insertion, detach and expan
 
 Grouping inside a definition preserves its enclosing public ports and parameter bindings. Expanded UUIDs compose from the leaf outward, so replacing a nested instance with atoms preserves result identities. Recording subscriptions are remapped for all linked instances when grouping changes object paths.
 
+Deletion is dependency-aware across hierarchy levels. Removing an atom or an
+instance clears Scope points, active recording channels, experiment channels,
+sweep axes and scenario overrides for every affected expanded instance in the
+same undoable transaction. An internal object referenced by a public port or
+public parameter cannot be deleted until that interface binding is redirected
+or removed; the editor returns an addressed diagnostic instead of leaving an
+invalid definition.
+
 Graph windows use expanded plot UUIDs and remain open across level changes. Root-level `ViewOptions` can override a particular expanded plot, including its time viewport and cursors, without changing a shared definition. Definition settings remain defaults. Grouping, copying and expansion remap plot/channel identities together; unnamed electrical nets are resolved through terminals rather than by prefixing the old net UUID. Deleting an instance removes its overrides; undo restores them. Public graph inputs retain their electrical/gate tap behavior through nested aliases.
 
 The public parameter dialog derives numeric bindings and display scales from component property configurations, including constant PWM. Nested instance parameters inherit primitive editor constraints. The hierarchy tree rebuilds only after structural/name changes and preserves collapsed branches; text editing suppresses hierarchy keyboard shortcuts.
@@ -63,4 +71,4 @@ The loader migrates schema 1–6 to 7. Existing flat records retain their meanin
 
 ## Verification
 
-The hierarchy test compares two parameterized RC instances with the analytical transient, checks independent initial states, nested source mapping and order independence, then exercises serialization, cycles, missing references, port mismatches, addressed diagnostics, deep detach, shared edits, expansion, grouping, clipboard conflicts and undo/redo. Public gate fanout and external graph taps are checked separately. Desktop tests exercise grouping, internal navigation, shared editing, simulation/save from an internal level, detach/expand, the public interface dialog and instance overrides. The complete Windows Release suite passed 14/14 groups on 16 September 2026 (5.55 s). The two new desktop scenarios also passed using the native Windows platform at 100% and 200% DPI; captured root-level windows were visually checked.
+The hierarchy test compares two parameterized RC instances with the analytical transient, checks independent initial states, nested source mapping and order independence, then exercises serialization, cycles, missing references, port mismatches, addressed diagnostics, deep detach, shared edits, expansion, grouping, dependency cleanup, clipboard conflicts and undo/redo. Public gate fanout and external graph taps are checked separately. Desktop tests exercise grouping, internal navigation, shared editing, simulation/save from an internal level, detach/expand, the public interface dialog and instance overrides. The complete Windows Release suite passed 14/14 groups on 16 September 2026 (5.55 s). The two new desktop scenarios also passed using the native Windows platform at 100% and 200% DPI; captured root-level windows were visually checked.

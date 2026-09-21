@@ -87,6 +87,41 @@ static void verify(const Project &p, bool ideal, double delay, bool enabled = tr
 }
 int main(int argc, char **argv) try {
     check(argc == 2, "Pass repository root");
+    std::ifstream three_phase_input(std::string(argv[1]) +
+                                    "/library/converters/ac-voltage-controller-3p.pds");
+    auto three_phase = read_project(three_phase_input);
+    validate_hierarchy(three_phase);
+    check(three_phase.instances.size() == 1 && three_phase.definitions.size() == 2,
+          "Three-phase controller has two editable hierarchy levels");
+    check(three_phase.definitions[0].instances.size() == 3 &&
+              three_phase.definitions[0].ports.size() == 12,
+          "Three phases and independent power/gate terminals");
+    const auto three_phase_flat = flatten(three_phase).project;
+    check(three_phase_flat.instances.empty() &&
+              std::count_if(three_phase_flat.components.begin(), three_phase_flat.components.end(),
+                            [](const auto &component) {
+                                return component.kind == Kind::thyristor;
+                            }) == 6,
+          "Three-phase controller flattens to six atomic thyristors");
+    {
+        Document document(three_phase);
+        document.expand_instance(three_phase.instances.front().id);
+        check(document.root_project().instances.empty() &&
+                  std::count_if(document.root_project().components.begin(),
+                                document.root_project().components.end(), [](const auto &component) {
+                                    return component.kind == Kind::thyristor;
+                                }) == 6,
+              "Three-phase controller expands to editable atomic thyristors");
+        check(flatten(document.root_project()).project == three_phase_flat,
+              "Interactive expansion preserves the flattened circuit");
+        document.undo();
+        check(document.root_project() == three_phase, "Three-phase expansion undo");
+    }
+    std::ostringstream three_phase_output;
+    write_project(three_phase, three_phase_output);
+    std::istringstream three_phase_saved(three_phase_output.str());
+    check(read_project(three_phase_saved) == three_phase, "Three-phase controller roundtrip");
+
     std::ifstream input(std::string(argv[1]) + "/examples/ac-voltage-controller.pds");
     auto p = read_project(input);
     check(p.definitions.size() == 1 && p.definitions[0].components.size() == 2 &&
@@ -125,7 +160,7 @@ int main(int argc, char **argv) try {
             for (size_t k = 0; k < a.samples.size(); ++k)
                 check(a.samples[k].values == b.samples[k].values, "Deterministic AC commutation");
         }
-    std::cout << "PASS AC controller waveform, RMS, power, holding and blocking\n";
+    std::cout << "PASS single/three-phase AC controller hierarchy, waveform, RMS, power, holding and blocking\n";
     return 0;
 } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';

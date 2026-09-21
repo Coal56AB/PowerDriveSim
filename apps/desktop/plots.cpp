@@ -520,49 +520,69 @@ void EditorWindow::remove_scope_point() {
         keys.push_back(item->data(Qt::UserRole).toString().toStdString());
     if (keys.empty())
         keys.push_back(channels_->currentItem()->data(Qt::UserRole).toString().toStdString());
-    document_->apply("Remove scope point", [&](Project &p) {
-        for (const auto &key : keys) {
-            std::erase(p.scope_points, key);
-            std::erase(p.scope_channels, key);
-            auto sensor = std::find_if(p.components.begin(), p.components.end(), [&](const Component &component) {
-                return component.id == key && component.kind == Kind::current_probe &&
-                       is_hidden_current_probe(p, component.id);
-            });
-            if (sensor == p.components.end())
-                continue;
-            const auto view = [&]() -> std::optional<HiddenCurrentWireView> {
-                for (const auto &wire : p.wires)
-                    if (wire.from.object == key || wire.to.object == key)
-                        if (auto candidate = hidden_current_wire_view(p, wire.id))
-                            return candidate;
-                return {};
-            }();
-            if (view) {
-                const auto primary = std::find_if(p.wires.begin(), p.wires.end(),
-                                                  [&](const Wire &wire) { return wire.id == view->primary; });
-                Wire merged{view->primary, view->from, view->to, view->bends};
-                if (primary != p.wires.end()) {
-                    merged.color = primary->color;
-                    merged.width = primary->width;
-                    merged.line = primary->line;
+    std::vector<std::string> disconnected_probes;
+    try {
+        document_->apply("Remove scope point", [&](Project &p) {
+            for (const auto &key : keys) {
+                std::erase(p.scope_points, key);
+                std::erase(p.scope_channels, key);
+                auto sensor =
+                    std::find_if(p.components.begin(), p.components.end(), [&](const Component &component) {
+                        return component.id == key && component.kind == Kind::current_probe &&
+                               is_hidden_current_probe(p, component.id);
+                    });
+                if (sensor == p.components.end())
+                    continue;
+                const auto view = [&]() -> std::optional<HiddenCurrentWireView> {
+                    for (const auto &wire : p.wires)
+                        if (wire.from.object == key || wire.to.object == key)
+                            if (auto candidate = hidden_current_wire_view(p, wire.id))
+                                return candidate;
+                    return {};
+                }();
+                if (view) {
+                    const auto primary = std::find_if(
+                        p.wires.begin(), p.wires.end(), [&](const Wire &wire) { return wire.id == view->primary; });
+                    Wire merged{view->primary, view->from, view->to, view->bends};
+                    if (primary != p.wires.end()) {
+                        merged.color = primary->color;
+                        merged.width = primary->width;
+                        merged.line = primary->line;
+                    }
+                    std::erase_if(p.wires, [&](const Wire &wire) {
+                        return wire.from.object == key || wire.to.object == key;
+                    });
+                    if (merged.from != merged.to)
+                        p.wires.push_back(std::move(merged));
+                } else {
+                    // One half of a hidden current-probe conductor may already
+                    // have been deleted by the user. There is then no safe way
+                    // to reconstruct the original conductor. Remove every
+                    // remaining incident half before deleting the probe so no
+                    // wire can retain a dangling endpoint.
+                    std::erase_if(p.wires, [&](const Wire &wire) {
+                        return wire.from.object == key || wire.to.object == key;
+                    });
+                    disconnected_probes.push_back(key);
                 }
-                std::erase_if(p.wires, [&](const Wire &wire) {
-                    return wire.from.object == key || wire.to.object == key;
-                });
-                if (merged.from != merged.to)
-                    p.wires.push_back(std::move(merged));
+                std::erase_if(p.components, [&](const Component &component) { return component.id == key; });
+                std::erase_if(p.labels, [&](const LabelLayout &label) { return label.object == key; });
+                unmark_hidden_current_probe(p, key);
             }
-            std::erase_if(p.components, [&](const Component &component) { return component.id == key; });
-            std::erase_if(p.labels, [&](const LabelLayout &label) { return label.object == key; });
-            unmark_hidden_current_probe(p, key);
-        }
-    });
-    // Removing an observation must not leave selection/route handles that look
-    // like orphan schematic objects. The user can explicitly select the graph
-    // or conductor again if they want to resize or reroute it.
-    selected_.clear();
-    canvas_->scene()->clearSelection();
-    refresh();
+        });
+        // Removing an observation must not leave selection/route handles that
+        // look like orphan schematic objects.
+        selected_.clear();
+        canvas_->scene()->clearSelection();
+        refresh();
+        if (!disconnected_probes.empty())
+            show_warning(text("scope_probe_already_disconnected"));
+    } catch (const std::exception &error) {
+        // Qt requires exceptions not to escape an event handler. Document
+        // applies are transactional, so the prior project remains intact.
+        show_error(error);
+        refresh();
+    }
 }
 void EditorWindow::open_plot(const std::string &local_id) {
     const auto id = expanded_uuid(hierarchy_path(), local_id);

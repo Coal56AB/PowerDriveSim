@@ -3163,6 +3163,7 @@ void EditorWindow::show_error(const std::exception &e) {
     std::cerr << message.toStdString() << std::endl;
     qWarning().noquote() << message;
     auto *item = new QListWidgetItem(message, errors_);
+    item->setData(Qt::UserRole + 2, QStringLiteral("error"));
     if (d)
         item->setData(Qt::UserRole, q(d->object));
     if (d) {
@@ -3173,6 +3174,17 @@ void EditorWindow::show_error(const std::exception &e) {
     }
     bottom_->setCurrentIndex(0);
     banner_->setText(text("error_hint"));
+}
+void EditorWindow::show_warning(const QString &message) {
+    std::cerr << message.toStdString() << std::endl;
+    qWarning().noquote() << message;
+    auto *item = new QListWidgetItem(style()->standardIcon(QStyle::SP_MessageBoxWarning), message, errors_);
+    item->setData(Qt::UserRole + 2, QStringLiteral("warning"));
+    bottom_->setCurrentIndex(0);
+    banner_->setText(text("warning_hint"));
+}
+void EditorWindow::report_unhandled_error(const QString &message) {
+    show_warning(message);
 }
 void EditorWindow::update_run_button() {
     run_->setText(text(!running() ? "run" : paused_.load() ? "resume" : "pause"));

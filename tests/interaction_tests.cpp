@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/routing.hpp"
 #include "apps/desktop/theme.hpp"
+#include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
 #include "formats/project/project.hpp"
 #include "benchmarks/metrics.hpp"
@@ -243,6 +244,12 @@ class InteractionTests : public QObject {
         scope.set_result(&result, {0, 1}, project);
         QVERIFY(!scope.grab().isNull());
         QVERIFY2(timer.elapsed() < 750, "Toggling a channel rebuilt the million-sample history synchronously");
+        scope.set_result(&result, {0}, project);
+        scope.set_curve_style({"a", CurveLine::none, 2, CurveMarker::circle, 6});
+        timer.restart();
+        QVERIFY(!scope.grab().isNull());
+        qInfo() << "Million-sample marker-only frame (ms):" << timer.elapsed();
+        QVERIFY2(timer.elapsed() < 750, "Dense point markers traversed the complete recorded history");
     }
     void open_end_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
@@ -545,10 +552,28 @@ class InteractionTests : public QObject {
                                                 [](const auto &c) { return c.kind == Kind::diode; })->id;
                 w.select_object(diode);
                 auto *vf = w.findChild<QLineEdit *>("property_forward_voltage");
-                QVERIFY(vf && vf->isVisible() && !vf->isReadOnly());
-                vf->setText("800 mV"); QTest::keyClick(vf, Qt::Key_Return);
-                QCOMPARE(definition(w.root_project(), module.definition).components.back().semiconductor.forward_voltage, .8);
+                QVERIFY(vf);
+                QVERIFY(vf->isVisible());
+                // The diode voltage is a public module parameter. Its internal
+                // target is intentionally read-only; edit the instance-facing
+                // field so the binding remains authoritative.
+                QVERIFY(vf->isReadOnly());
                 w.navigate_hierarchy({});
+                w.select_object(module.id);
+                const auto &module_definition = definition(w.project(), module.definition);
+                const auto diode_vf = std::find_if(
+                    module_definition.parameters.begin(), module_definition.parameters.end(),
+                    [&](const PublicParameter &candidate) {
+                        return candidate.object == diode && candidate.field == "forward_voltage";
+                    });
+                QVERIFY(diode_vf != module_definition.parameters.end());
+                auto *public_vf = w.findChild<QLineEdit *>(
+                    "property_parameter/" + QString::fromStdString(diode_vf->id));
+                QVERIFY(public_vf && public_vf->isVisible() && !public_vf->isReadOnly());
+                const auto diode_vf_id = diode_vf->id;
+                public_vf->setText("800 mV");
+                QTest::keyClick(public_vf, Qt::Key_Return);
+                QCOMPARE(std::get<double>(read_property(w.project(), module.id, "parameter/" + diode_vf_id)), .8);
                 const auto source = w.add_component(Kind::voltage, {-300, 160});
                 const auto resistor = w.add_component(Kind::resistor, {300, 160});
                 const auto ground = w.add_node(true, {0, 300});
@@ -615,10 +640,13 @@ class InteractionTests : public QObject {
                                  [&](const auto &c) { return c.id == id; });
         };
         QCOMPARE(device().semiconductor.holding_current, .03);
+        latched = w.findChild<QCheckBox *>("property_initial_latched");
+        QVERIFY(latched && latched->isVisible());
         QTest::mouseClick(latched, Qt::LeftButton, Qt::NoModifier, QPoint(8, latched->height() / 2));
         QVERIFY(device().semiconductor.initial_latched);
         w.undo(); QVERIFY(!device().semiconductor.initial_latched);
         auto *mode = w.findChild<QComboBox *>("property_semiconductor_model");
+        QVERIFY(mode && mode->isVisible());
         mode->setCurrentIndex(1); QMetaObject::invokeMethod(mode, "activated", Q_ARG(int, 1));
         QVERIFY(w.findChild<QLineEdit *>("property_forward_voltage")->isVisible());
         auto *charge = w.findChild<QComboBox *>("property_charge_model");
@@ -650,40 +678,53 @@ class InteractionTests : public QObject {
             const auto id = std::find_if(w.project().components.begin(), w.project().components.end(),
                                          [&](const auto &c) { return c.kind == kind; })->id;
             w.select_object(id);
-            auto *mode = w.findChild<QComboBox *>("property_semiconductor_model");
-            auto *ron = w.findChild<QLineEdit *>("property_ron");
-            auto *roff = w.findChild<QLineEdit *>("property_roff");
-            auto *vf = w.findChild<QLineEdit *>("property_forward_voltage");
-            QVERIFY(mode && mode->isVisible());
+            auto mode = [&] { return w.findChild<QComboBox *>("property_semiconductor_model"); };
+            auto line = [&](const char *name) { return w.findChild<QLineEdit *>(name); };
+            auto *ron = line("property_ron");
+            QVERIFY(mode() && mode()->isVisible());
             QVERIFY(!ron->isVisible());
             auto select_mode = [&](int index) {
-                mode->setCurrentIndex(index);
-                QMetaObject::invokeMethod(mode, "activated", Q_ARG(int, index));
+                auto *editor = mode();
+                QVERIFY(editor);
+                editor->setCurrentIndex(index);
+                QMetaObject::invokeMethod(editor, "activated", Q_ARG(int, index));
             };
             select_mode(1);
+            ron = line("property_ron");
+            auto *roff = line("property_roff");
+            auto *vf = line("property_forward_voltage");
             QVERIFY(ron->isVisible() && roff->isVisible());
             QCOMPARE(vf->isVisible(), kind == Kind::diode);
             auto *charge = w.findChild<QComboBox *>("property_charge_model");
-            auto *transit = w.findChild<QLineEdit *>("property_transit_time");
-            auto *lifetime = w.findChild<QLineEdit *>("property_carrier_lifetime");
-            auto *initial_charge = w.findChild<QLineEdit *>("property_initial_charge");
+            auto *transit = line("property_transit_time");
             QCOMPARE(charge->isVisible(), kind == Kind::diode);
             QVERIFY(!transit->isVisible());
             if (kind == Kind::diode) {
                 charge->setCurrentIndex(1);
                 QMetaObject::invokeMethod(charge, "activated", Q_ARG(int, 1));
+                transit = line("property_transit_time");
+                auto *lifetime = line("property_carrier_lifetime");
+                auto *initial_charge = line("property_initial_charge");
                 QVERIFY(transit->isVisible() && lifetime->isVisible() && initial_charge->isVisible());
                 transit->setText("100 us"); QTest::keyClick(transit, Qt::Key_Return);
+                lifetime = line("property_carrier_lifetime");
                 lifetime->setText("500 us"); QTest::keyClick(lifetime, Qt::Key_Return);
+                initial_charge = line("property_initial_charge");
                 initial_charge->setText("1 uC"); QTest::keyClick(initial_charge, Qt::Key_Return);
             }
             const auto before = encoded(w.root_project());
+            ron = line("property_ron");
             ron->setText("0"); QTest::keyClick(ron, Qt::Key_Return);
             QCOMPARE(encoded(w.root_project()), before);
             QVERIFY(!w.findChild<QLabel *>("property_error")->text().isEmpty());
+            ron = line("property_ron");
             ron->setText("200 mOhm"); QTest::keyClick(ron, Qt::Key_Return);
+            roff = line("property_roff");
             roff->setText("100 kOhm"); QTest::keyClick(roff, Qt::Key_Return);
-            if (kind == Kind::diode) { vf->setText("800 mV"); QTest::keyClick(vf, Qt::Key_Return); }
+            if (kind == Kind::diode) {
+                vf = line("property_forward_voltage");
+                vf->setText("800 mV"); QTest::keyClick(vf, Qt::Key_Return);
+            }
             auto device = [&]() -> const Component & {
                 return *std::find_if(w.project().components.begin(), w.project().components.end(),
                                      [&](const auto &c) { return c.id == id; });
@@ -697,10 +738,16 @@ class InteractionTests : public QObject {
                 QCOMPARE(device().semiconductor.initial_charge, 1e-6);
                 QVERIFY(device().semiconductor.charge_dynamics);
             }
-            select_mode(0); QVERIFY(!ron->isVisible());
+            select_mode(0);
+            ron = line("property_ron");
+            QVERIFY(!ron->isVisible());
             w.undo(); QCOMPARE(device().semiconductor.model, SemiconductorModel::piecewise_linear);
+            ron = line("property_ron");
             QVERIFY(ron->isVisible());
-            if (kind == Kind::diode) QVERIFY(transit->isVisible() && device().semiconductor.charge_dynamics);
+            if (kind == Kind::diode) {
+                transit = line("property_transit_time");
+                QVERIFY(transit->isVisible() && device().semiconductor.charge_dynamics);
+            }
             if (auto path = qEnvironmentVariable("PDS_PWL_SCREENSHOT"); !path.isEmpty() && kind == Kind::diode) {
                 QTest::qWait(30); QVERIFY(w.grab().save(path));
             }
@@ -744,7 +791,8 @@ class InteractionTests : public QObject {
         w.select_object(source);
         auto *button = w.findChild<QPushButton *>("import_source_points");
         auto *table = w.findChild<QTableWidget *>("property_source_points");
-        QVERIFY(button && button->isVisible());
+        QVERIFY(button);
+        QVERIFY(button->isVisible());
         auto choose = [&](const QString &path, bool cancel = false) {
             bool visited = false;
             QTimer timer;
@@ -792,6 +840,9 @@ class InteractionTests : public QObject {
         w.select_object(resistor);
         QVERIFY(!button->isVisible());
         w.select_object(source);
+        button = w.findChild<QPushButton *>("import_source_points");
+        table = w.findChild<QTableWidget *>("property_source_points");
+        QVERIFY(button && table);
         QVERIFY(button->isVisible());
         QCOMPARE(table->item(1, 1)->text().toDouble(), 2.5); // Draft survives navigation.
         QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -981,6 +1032,7 @@ class InteractionTests : public QObject {
                     QCOMPARE(changed->name, c.name + " edited");
                     w.undo();
                     QCOMPARE(encoded(w.root_project()), before);
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
                 }
                 // Public gate and neutral connections are ordinary selectable wires.
                 for (const auto &wire : w.project().wires) {
@@ -1012,6 +1064,7 @@ class InteractionTests : public QObject {
             QVERIFY(!value->isReadOnly());
             value->setText("120 Ohm");
             QTest::keyClick(value, Qt::Key_Return);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
             w.start_simulation();
             QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
             QVERIFY(w.has_result() && !w.result().samples.empty());

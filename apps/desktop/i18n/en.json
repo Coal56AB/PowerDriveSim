@@ -184,6 +184,7 @@
   "saved": "Saved",
   "recovered": "Recovery copy restored. Save the circuit to a file of your choice.",
   "error_hint": "An error occurred. Select a diagnostic message to locate its element.",
+  "warning_hint": "The operation completed with a warning. Details are available in Diagnostics.",
   "running": "Simulation running",
   "stopping": "Stopping after the current time step…",
   "cancelled": "Simulation stopped",
@@ -553,5 +554,6 @@
   "appearance_choose_image": "Choose image…",
   "appearance_clear_image": "Remove image",
   "appearance_no_image": "No custom image selected",
-  "appearance_image_error": "The image could not be read or stored."
+  "appearance_image_error": "The image could not be read or stored.",
+  "scope_probe_already_disconnected": "The observed conductor was already disconnected. The remaining orphaned measurement branch was removed safely."
 }
