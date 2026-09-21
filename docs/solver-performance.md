@@ -15,3 +15,15 @@ The GUI detaches views and releases large previous results in a background task.
 The recording plan includes plots inside hierarchy instances. `peak_resident_bytes` is the OS process high-water mark on Windows/Linux; `result_payload_estimate_bytes` counts retained sample headers plus value/gate container capacities and excludes block-table and allocator overhead. With no recorded channels, `first_sample_seconds=0` means no sample was produced, not zero initialization cost.
 
 Desktop measurement: set `PDS_SIM_BENCHMARK_PROJECT` to a project and run `powerdrive-interaction-tests simulation_performance -platform windows`. This retains the complete history, shows Scope and a plot, and measures two runs including dispatch, worker preparation/execution and rendering. The optional performance test checks dispatch below 100 ms on the measurement machine.
+
+## Current long-run limit
+
+On the 21 September 2026 Windows Release audit, the canonical diode-freewheel
+case without recording sustained about 2.09 million fixed steps/s in repeated
+7.5-million-step runs. A temporary profiling build that completely skipped the
+mandatory per-solve residual verification reached only about 2.64 million
+steps/s; that unsafe change was discarded. Therefore the requested 100 million
+steps in under 5 seconds (20 million steps/s) cannot be claimed through a small
+Reference CPU cleanup or by weakening diagnostics. It remains an explicit
+future accelerated-backend target; the Reference CPU stays the checked generic
+oracle.
