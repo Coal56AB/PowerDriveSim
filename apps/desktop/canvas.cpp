@@ -206,7 +206,8 @@ struct ResizeHit {
     bool x = true, y = true;
 };
 static std::optional<ResizeHit> resize_corner(QGraphicsItem *item, QPoint view_pos, const QGraphicsView *view) {
-    if (!item || item->data(1).toString() == "wire" || !item->isSelected())
+    if (!item || item->data(1).toString() == "wire" || item->data(1).toString() == "label" ||
+        !item->isSelected())
         return {};
     const auto r = item->boundingRect();
     const std::array<std::pair<QPointF, QPointF>, 4> corners{

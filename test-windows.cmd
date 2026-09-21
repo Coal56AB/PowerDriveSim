@@ -44,11 +44,8 @@ set "PATH=%PDS_TEST_QT%\bin;%PATH%"
 set "QT_QPA_PLATFORM=offscreen"
 set "QT_QPA_PLATFORM_PLUGIN_PATH=%PDS_TEST_QT%\plugins\platforms"
 set "QT_QPA_FONTDIR=C:\Windows\Fonts"
-ctest --test-dir build -C Release --output-on-failure -E "^desktop-interaction$"
+ctest --test-dir build -C Release --output-on-failure
 if errorlevel 1 goto :failed
-
-echo NOTE: the legacy monolithic desktop-interaction process is excluded.
-echo       Run its required named scenarios separately during UI development.
 
 echo.
 echo ALL TESTS PASSED

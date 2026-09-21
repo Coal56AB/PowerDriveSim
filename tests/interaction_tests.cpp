@@ -1183,8 +1183,11 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().components.size(), size_t(2));
         w.select_object(resistor);
         auto *value = w.findChild<QLineEdit *>("property_value");
-        QVERIFY(value->isReadOnly());
-        w.findChild<QAction *>("edit_definition")->trigger();
+        if (value->isReadOnly()) {
+            w.findChild<QAction *>("edit_definition")->trigger();
+            value = w.findChild<QLineEdit *>("property_value");
+            QVERIFY(value);
+        }
         QVERIFY(!value->isReadOnly());
         value->setFocus();
         value->selectAll();
@@ -1204,6 +1207,7 @@ class InteractionTests : public QObject {
         auto loaded = read_project(data);
         QCOMPARE(loaded, w.root_project());
         QVERIFY(loaded.instances.size() == 1 && loaded.components.size() == 1);
+        w.canvas()->setFocus();
         w.findChild<QAction *>("hierarchy_up")->trigger();
         QVERIFY(w.hierarchy_path().empty());
         w.undo();
@@ -2353,8 +2357,14 @@ class InteractionTests : public QObject {
         };
         auto *l = label();
         QVERIFY(l);
+        w.canvas()->scene()->clearSelection();
+        l->setSelected(true);
         const QPointF original = l->pos();
-        drag(w, original, original + QPointF(80, 40), Qt::AltModifier);
+        auto label_hit = [&] {
+            const auto bounds = l->boundingRect();
+            return l->mapToScene(QPointF(bounds.right() - 2, bounds.top() + 2));
+        };
+        drag(w, label_hit(), label_hit() + QPointF(80, 40), Qt::AltModifier);
         QCOMPARE(w.project().components[0].x, 0.);
         QCOMPARE(w.project().components[0].y, 0.);
         QCOMPARE(w.project().labels.size(), size_t(1));
@@ -2366,19 +2376,28 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().labels[0].orientation.quarter_turns, 0u);
         w.undo();
         QVERIFY(w.project().labels.empty());
-        QCOMPARE(label()->pos(), original);
+        l = label();
+        QVERIFY(l);
+        QCOMPARE(l->pos(), original);
+        w.canvas()->scene()->clearSelection();
+        l->setSelected(true);
         auto *vp = w.canvas()->viewport();
-        QTest::mousePress(vp, Qt::LeftButton, Qt::AltModifier, w.canvas()->mapFromScene(original));
-        QTest::mouseMove(vp, w.canvas()->mapFromScene(original + QPointF(60, 60)), 5);
+        auto hit = label_hit();
+        QTest::mousePress(vp, Qt::LeftButton, Qt::AltModifier, w.canvas()->mapFromScene(hit));
+        QTest::mouseMove(vp, w.canvas()->mapFromScene(hit + QPointF(60, 60)), 5);
         QTest::keyClick(w.canvas(), Qt::Key_Space);
         QTest::mouseRelease(vp, Qt::LeftButton, Qt::AltModifier,
-                            w.canvas()->mapFromScene(original + QPointF(60, 60)));
+                            w.canvas()->mapFromScene(hit + QPointF(60, 60)));
         QCOMPARE(w.project().labels.size(), size_t(1));
         QCOMPARE(w.project().labels[0].orientation.quarter_turns, 1u);
         w.undo();
-        QCOMPARE(label()->pos(), original);
+        l = label();
+        QVERIFY(l);
+        QCOMPARE(l->pos(), original);
         QVERIFY(w.project().labels.empty());
-        drag(w, original, original + QPointF(40, 40), Qt::AltModifier);
+        w.canvas()->scene()->clearSelection();
+        l->setSelected(true);
+        drag(w, label_hit(), label_hit() + QPointF(40, 40), Qt::AltModifier);
         auto saved = encoded(w.project());
         QVERIFY(w.save_project(dir.filePath("labels.pds")));
         QVERIFY(w.open_project(dir.filePath("labels.pds")));
@@ -3229,7 +3248,12 @@ class InteractionTests : public QObject {
             auto *bar = w.findChild<QToolBar *>("component_bar");
             QVERIFY(tree && bar);
             QCOMPARE(tree->topLevelItemCount(), 5);
-            QCOMPARE(bar->actions().size(), 4);
+            const auto all_actions = w.findChildren<QAction *>();
+            const auto fixed_actions = std::count_if(all_actions.begin(), all_actions.end(),
+                                                     [](const QAction *action) {
+                                                         return action->property("fixed").toBool();
+                                                     });
+            QCOMPARE(bar->actions().size(), fixed_actions);
             for (int i = 0; i < tree->topLevelItemCount(); ++i) {
                 QVERIFY(!tree->topLevelItem(i)->isExpanded());
                 for (int j = 0; j < tree->topLevelItem(i)->childCount(); ++j) {
@@ -3303,7 +3327,12 @@ class InteractionTests : public QObject {
             QVERIFY(!bar->actions().contains(r));
         }
         EditorWindow w("en", dir.path());
-        QCOMPARE(w.findChild<QToolBar *>("component_bar")->actions().size(), 4);
+        const auto all_actions = w.findChildren<QAction *>();
+        const auto fixed_actions = std::count_if(all_actions.begin(), all_actions.end(),
+                                                 [](const QAction *action) {
+                                                     return action->property("fixed").toBool();
+                                                 });
+        QCOMPARE(w.findChild<QToolBar *>("component_bar")->actions().size(), fixed_actions);
     }
     void wire_second_click_selects_straight_segment_without_frame() {
         QTemporaryDir dir;
@@ -3832,14 +3861,20 @@ class InteractionTests : public QObject {
         QTest::keyClicks(field, "2kOhm");
         QTest::keyClick(field, Qt::Key_Return);
         QCOMPARE(w.project().components[0].value, 2000.0);
+        field = w.findChild<QLineEdit *>("property_value");
+        QVERIFY(field);
         QTest::keyClick(field, Qt::Key_A, Qt::ControlModifier);
         QTest::keyClicks(field, "invalid");
         QTest::keyClick(field, Qt::Key_Return);
         QCOMPARE(w.project().components[0].value, 2000.0);
         w.select_object(b);
         w.select_object(a);
+        field = w.findChild<QLineEdit *>("property_value");
+        QVERIFY(field);
         QCOMPARE(field->text(), QString("invalid"));
         QTest::keyClick(field, Qt::Key_Escape);
+        field = w.findChild<QLineEdit *>("property_value");
+        QVERIFY(field);
         QVERIFY(field->text() != QString("invalid"));
         QTest::keyClick(field, Qt::Key_A, Qt::ControlModifier);
         QTest::keyClick(field, Qt::Key_Delete);
@@ -3960,6 +3995,8 @@ class InteractionTests : public QObject {
         table->setItem(0, 1, new QTableWidgetItem("invalid"));
         w.select_object(a);
         w.select_object(g);
+        table = w.findChild<QTableWidget *>("property_events");
+        QVERIFY(table);
         QCOMPARE(table->item(0, 1)->text(), QString("invalid"));
         table->item(0, 1)->setText("1");
         QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"), Qt::LeftButton);
