@@ -143,9 +143,11 @@ private:
         if(name=="pwm"||name=="square"||name=="phasepwm") {
             if(!options_.allow_gate_functions)error("Gate functions are not available here");
             if(a.size()!=3||a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Use pwm(frequency,duty,delay) with duty 0..1");
-            if(a[1]==0)return 0;if(a[1]==1)return 1;
+            if(a[1]==0)return 0;
+            if(a[1]==1)return 1;
             const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];
-            if(delay<0)delay+=period;if(name!="phasepwm"&&time_<delay)return 0;
+            if(delay<0)delay+=period;
+            if(name!="phasepwm"&&time_<delay)return 0;
             double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;return phase<a[1]*period;
         }
         if(name=="abs"&&a.size()==1)return std::abs(a[0]);

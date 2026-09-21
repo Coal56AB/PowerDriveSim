@@ -122,10 +122,6 @@ bool generate_phase_pwm_edges(const GatePattern &g, double stop,
     if (!ramp)
         return false;
     const auto [t0, t1, d0, d1] = *ramp;
-    auto delay_at = [&](double t) {
-        const double k = std::clamp((t - t0) / (t1 - t0), 0.0, 1.0);
-        return d0 + (d1 - d0) * k;
-    };
     auto emit_interval = [&](double begin, double end, double slope, double intercept) {
         if (end <= begin)
             return;

@@ -511,7 +511,11 @@ void write_project(const Project& p, std::ostream& out) {
         out<<"parameter_expression "<<std::quoted(expression.object)<<' '<<std::quoted(expression.field)<<' '<<std::quoted(hex_text(expression.source))<<'\n';
     auto write_orientation=[&](const auto& object){const auto& o=object.orientation;if(o.quarter_turns>3||!std::isfinite(o.scale)||o.scale<=0||!std::isfinite(o.scale_x)||o.scale_x<=0||!std::isfinite(o.scale_y)||o.scale_y<=0)throw Diagnostic("invalid_orientation",object.id,"Invalid orientation");if(o.quarter_turns||o.mirrored||std::abs(o.scale-1)>1e-12||std::abs(o.scale_x-1)>1e-12||std::abs(o.scale_y-1)>1e-12)out<<"orientation "<<std::quoted(object.id)<<' '<<o.quarter_turns<<' '<<o.mirrored<<' '<<o.scale<<' '<<o.scale_x<<' '<<o.scale_y<<'\n';};
     for(const auto& experiment:p.experiments) { out<<"experiment ";write_experiment(out,experiment);out<<'\n'; }
-    for(const auto& c:p.components)write_orientation(c);for(const auto& n:p.nodes)write_orientation(n);for(const auto& t:p.tags)write_orientation(t);for(const auto& g:p.patterns)write_orientation(g);for(const auto& g:p.plots)write_orientation(g);
+    for(const auto& c:p.components)write_orientation(c);
+    for(const auto& n:p.nodes)write_orientation(n);
+    for(const auto& t:p.tags)write_orientation(t);
+    for(const auto& g:p.patterns)write_orientation(g);
+    for(const auto& g:p.plots)write_orientation(g);
     for(const auto& i:p.instances)write_orientation(i);
     for(const auto& i:p.instances){out<<"instance "<<std::quoted(i.id)<<' '<<std::quoted(i.name)<<' '<<std::quoted(i.definition)<<' '<<i.x<<' '<<i.y<<' '<<i.parameters.size();for(const auto& [key,value]:i.parameters)out<<' '<<std::quoted(key)<<' '<<value;out<<' '<<i.locked<<'\n';}
     out << "wiring " << (p.wired?"wires":"nets") << '\n';
