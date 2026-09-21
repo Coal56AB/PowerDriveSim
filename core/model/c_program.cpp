@@ -305,7 +305,7 @@ public:
     void validate(const std::vector<std::unique_ptr<Statement>> &statements) {
         scopes_.emplace_back();scopes_.back()["true"]=true;scopes_.back()["false"]=true;
         for(const auto *constant:{"M_PI","PI","M_E","E"})scopes_.back()[constant]=true;
-        if(options_.allow_time)scopes_.back()["t"]=true;
+        if(options_.allow_time){scopes_.back()["t"]=true;scopes_.back()["stime"]=true;}
         for(const auto &name:options_.writable_variables)
             if(!options_.external_variables.contains(name))error("Writable variable '"+name+"' is not external");
         for(const auto &name:options_.external_variables) {
@@ -394,7 +394,7 @@ public:
             scopes_.back().emplace(name,Binding{found==inputs.end()?0.0:found->second,
                                                !options_.writable_variables.contains(name),{}});
         }
-        if(options.allow_time)scopes_.back().emplace("t",Binding{time,true,{}});
+        if(options.allow_time){scopes_.back().emplace("t",Binding{time,true,{}});scopes_.back().emplace("stime",Binding{time,true,{}});}
         scopes_.back().emplace("true",Binding{1,true,{}});scopes_.back().emplace("false",Binding{0,true,{}});
         scopes_.back().emplace("M_PI",Binding{3.1415926535897932384626433832795,true,{}});
         scopes_.back().emplace("PI",Binding{3.1415926535897932384626433832795,true,{}});
@@ -408,7 +408,7 @@ public:
         CProgramResult result;if(outcome.flow==Flow::returned)result.return_value=outcome.value;
         if(options_.require_return&&!result.return_value)error("C program must return a value");
         if(result.return_value&&!std::isfinite(*result.return_value))error("C program return value must be finite");
-        for(const auto &[name,binding]:scopes_.front())if(name!="t"&&name!="true"&&name!="false")result.variables[name]=binding.value;
+        for(const auto &[name,binding]:scopes_.front())if(name!="t"&&name!="stime"&&name!="true"&&name!="false")result.variables[name]=binding.value;
         return result;
     }
 private:

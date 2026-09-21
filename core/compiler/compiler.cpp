@@ -180,7 +180,8 @@ bool gate_script_value(const GatePattern &g, double t, const ScriptProgram *prep
     return script_number(expression, t, variables) != 0;
 }
 bool legacy_gate_script(const std::string &code) {
-    return code.find('{')==std::string::npos&&code.find('}')==std::string::npos&&
+    return code.find(';')==std::string::npos&&code.find("return")==std::string::npos&&
+           code.find('{')==std::string::npos&&code.find('}')==std::string::npos&&
            code.find("if") == std::string::npos&&code.find("for") == std::string::npos&&
            code.find("while") == std::string::npos&&code.find("++") == std::string::npos&&
            code.find("--") == std::string::npos&&code.find("+=") == std::string::npos&&
@@ -346,10 +347,11 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         CProgramState c_state;
         bool previous=gate_c_value(c_program,c_state,0);
         g.initial=previous;
-        const auto steps=project.profile.stop/g.script_step;
-        if(!std::isfinite(steps)||steps>1000000)throw Diagnostic("pwm_event_limit",g.id,"Gate script exceeds one million probes; increase script step or reduce duration");
+        const double script_step=project.profile.step;
+        const auto steps=project.profile.stop/script_step;
+        if(!std::isfinite(steps)||steps>1000000)throw Diagnostic("pwm_event_limit",g.id,"Gate script exceeds one million solver steps; increase the simulation step or reduce duration");
         for(size_t k=1;k<=static_cast<size_t>(std::ceil(steps));++k) {
-            const double t=std::min(project.profile.stop,static_cast<double>(k)*g.script_step);
+            const double t=std::min(project.profile.stop,static_cast<double>(k)*script_step);
             const bool value=gate_c_value(c_program,c_state,t);
             if(value!=previous) {
                 generated_edge(g,t,value,generated);

@@ -278,6 +278,12 @@ static void serialization() {
     error("bounded_c",[&]{(void)compile_c_program("if (false) return missing_name; return 0;",returning_options);});
     const auto cast_program=compile_c_program("double angle = M_PI; return (int)(angle > 3.0) + 1u;",returning_options);
     require(execute_c_program(cast_program).return_value==2,"C scalar casts, suffixes and math constants");
+    returning_options.allow_time=true;returning_options.allow_gate_functions=true;
+    const auto ramp_program=compile_c_program(
+        "double curr_ramp = ramp(0, 10, 0.008333333, 0.001111111); "
+        "return phasepwm(50, 0.02, curr_ramp) + (stime == t ? 0 : 10);",returning_options);
+    require(execute_c_program(ramp_program,5).return_value.has_value(),
+            "Gate C accepts local ramp variables and stime aliases the current invocation time");
     CProgramOptions ports;ports.diagnostic_code="code_ports";
     ports.external_variables={"error","dt","command"};ports.writable_variables={"command"};
     const auto pi=compile_c_program("static double integral = 0; integral += error * dt; command = 2 * error + integral;",ports);

@@ -141,6 +141,7 @@ int main(int argc, char **argv) {
         auto script=doc.add_pattern(180,100);
         doc.apply("Gate table",[&](Project& p){p.events.push_back({.0002,script,true});});
         doc.apply("Gate script",[&](Project& p){auto& g=p.patterns.back();g.name="Script";
+            p.profile.step=1e-5;
             write_property(p,script,"gate_mode",unsigned(2));
             g.code="const double base = 500; double frequency = base * 2; double duty = 1.0 / 4.0; "
                    "return pwm(frequency, duty, 100e-6);";g.script_step=1e-5;});
@@ -193,6 +194,15 @@ int main(int argc, char **argv) {
             if(!previous_c&&gate&&std::abs(sample.time-.0002)<1e-9)c_rise=true;
             if(previous_c&&!gate&&std::abs(sample.time-.0005)<1e-9)c_fall=true;previous_c=gate;}
         check(c_rise&&c_fall,"Gate C supports functions, branches, assignments and persistent static state");
+        doc.apply("Ramped C gate script",[&](Project& p){auto& g=p.patterns.back();
+            g.code="double curr_ramp = ramp(0, 10, 0.008333333, 0.001111111); "
+                   "return phasepwm(50, 0.02, curr_ramp) && stime == t;";
+            g.script_step=1; // Legacy saved value must not control Gate execution anymore.
+            p.profile.stop=.03;p.profile.step=1e-5;});
+        auto ramp_result=execute(compile(doc.project()),nullptr,nullptr,&dynamic);
+        bool ramp_pulse=false;
+        for(const auto& sample:ramp_result.samples)ramp_pulse|=sample.gates[0];
+        check(ramp_pulse,"Gate C evaluates a local ramp variable on the simulation step using stime");
         doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().code=
             "double a = b; double b = a; return a;";});
         bool addressed_script_error=false;

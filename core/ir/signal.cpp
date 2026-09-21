@@ -47,7 +47,7 @@ void validate_signal_ir(const SignalIR &ir) {
             throw Diagnostic("invalid_code_block", task.id, "Code block source must not be empty");
         if (task.outputs.empty())
             throw Diagnostic("invalid_code_block", task.id, "Code block requires at least one output");
-        std::set<std::string> port_ids, names{"t", "dt"};
+        std::set<std::string> port_ids, names{"t", "stime", "dt"};
         auto port = [&](const SignalPortIR &candidate) {
             if (!valid_uuid(candidate.id) || !port_ids.insert(candidate.id).second)
                 throw Diagnostic("invalid_signal_port", task.id, "Signal port UUID must be unique within its block");

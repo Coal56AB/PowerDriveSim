@@ -98,19 +98,6 @@
           2
         ]
       }
-    },
-    {
-      "key": "script_step",
-      "editor": "number",
-      "label": "script_step",
-      "unit": "s",
-      "min": 0,
-      "exclusiveMin": true,
-      "when": {
-        "gate_mode": [
-          2
-        ]
-      }
     }
   ],
   "palette": {

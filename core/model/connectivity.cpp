@@ -102,7 +102,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     for(const auto& g:p.patterns) {
         uuid(g.id);
         if(g.pwm&&(!std::isfinite(g.frequency)||g.frequency<=0||!std::isfinite(g.duty)||g.duty<0||g.duty>1||!std::isfinite(g.delay)||g.delay<0))throw Diagnostic("invalid_pwm",g.id,"PWM frequency must be positive, duty must be 0..1 and delay non-negative");
-        if(g.script&&(!std::isfinite(g.script_step)||g.script_step<=0||g.code.empty()))throw Diagnostic("invalid_gate_script",g.id,"Gate script requires code and a positive sample step");
+        if(g.script&&g.code.empty())throw Diagnostic("invalid_gate_script",g.id,"Gate script requires code");
         if(g.pwm&&g.script)throw Diagnostic("invalid_gate_script",g.id,"Gate script and PWM modes are mutually exclusive");
         if(!std::isfinite(g.x)||!std::isfinite(g.y)) throw Diagnostic("invalid_geometry",g.id,"Pattern position must be finite");
     }

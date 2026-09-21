@@ -12,14 +12,6 @@
       "editor": "code",
       "label": "gate_code",
       "span": true
-    },
-    {
-      "key": "script_step",
-      "editor": "number",
-      "label": "script_step",
-      "unit": "s",
-      "min": 0,
-      "exclusiveMin": true
     }
   ],
   "palette": {
