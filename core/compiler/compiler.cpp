@@ -4,6 +4,7 @@
 #include "core/model/semiconductor.hpp"
 #include "core/model/connectivity.hpp"
 #include "core/model/expression.hpp"
+#include "core/model/c_program.hpp"
 #include "core/model/hierarchy.hpp"
 #include <algorithm>
 #include <array>
@@ -178,6 +179,18 @@ bool gate_script_value(const GatePattern &g, double t, const ScriptProgram *prep
     }
     return script_number(expression, t, variables) != 0;
 }
+bool legacy_gate_script(const std::string &code) {
+    return code.find('{')==std::string::npos&&code.find('}')==std::string::npos&&
+           code.find("if") == std::string::npos&&code.find("for") == std::string::npos&&
+           code.find("while") == std::string::npos&&code.find("++") == std::string::npos&&
+           code.find("--") == std::string::npos&&code.find("+=") == std::string::npos&&
+           code.find("-=") == std::string::npos&&code.find("*=") == std::string::npos&&
+           code.find("/=") == std::string::npos;
+}
+bool gate_c_value(const CProgram &program,CProgramState &state,double time) {
+    const auto result=execute_c_program(program,time,&state);
+    return result.return_value.value_or(0)!=0;
+}
 } // namespace
 
 static SimulationIR compile_flat(const Project& p) {
@@ -307,31 +320,37 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     }
     for(auto& g:project.patterns)if(g.script){
       try {
-        const auto program=script_program(g.code);
-        {
-            auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
-            if(generate_phase_pwm_edges(g,project.profile.stop,edge,&program)) {
-                g.initial=gate_script_value(g,0,&program);
+        CProgramOptions c_options;c_options.diagnostic_code="invalid_gate_script";c_options.object=g.id;
+        c_options.allow_time=true;c_options.allow_gate_functions=true;c_options.require_return=true;
+        const auto c_program=compile_c_program(g.code,c_options);
+        if(legacy_gate_script(g.code)) {
+            const auto program=script_program(g.code);
+            {
+                auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
+                if(generate_phase_pwm_edges(g,project.profile.stop,edge,&program)) {
+                    g.initial=gate_script_value(g,0,&program);
+                    continue;
+                }
+            }
+            if(auto args=script_pwm_arguments(g,{},&program);!args.empty()) {
+                g.initial=args[2]==0&&args[1]>0;
+                if(args[1]==0||args[2]>project.profile.stop)continue;
+                auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
+                if(args[1]==1){edge(args[2],true);continue;}
+                double count=(project.profile.stop-args[2])*args[0];
+                if(!std::isfinite(count)||count>500000)throw Diagnostic("pwm_event_limit",g.id,"Gate script PWM exceeds one million edges; reduce frequency or simulation duration");
+                for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=args[2]+static_cast<double>(k)/args[0];double fall=args[2]+(static_cast<double>(k)+args[1])/args[0];edge(rise,true);edge(fall,false);}
                 continue;
             }
         }
-        if(auto args=script_pwm_arguments(g,{},&program);!args.empty()) {
-            g.initial=args[2]==0&&args[1]>0;
-            if(args[1]==0||args[2]>project.profile.stop)continue;
-            auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
-            if(args[1]==1){edge(args[2],true);continue;}
-            double count=(project.profile.stop-args[2])*args[0];
-            if(!std::isfinite(count)||count>500000)throw Diagnostic("pwm_event_limit",g.id,"Gate script PWM exceeds one million edges; reduce frequency or duration");
-            for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=args[2]+static_cast<double>(k)/args[0];double fall=args[2]+(static_cast<double>(k)+args[1])/args[0];edge(rise,true);edge(fall,false);}
-            continue;
-        }
-        bool previous=gate_script_value(g,0,&program);
+        CProgramState c_state;
+        bool previous=gate_c_value(c_program,c_state,0);
         g.initial=previous;
         const auto steps=project.profile.stop/g.script_step;
         if(!std::isfinite(steps)||steps>1000000)throw Diagnostic("pwm_event_limit",g.id,"Gate script exceeds one million probes; increase script step or reduce duration");
         for(size_t k=1;k<=static_cast<size_t>(std::ceil(steps));++k) {
             const double t=std::min(project.profile.stop,static_cast<double>(k)*g.script_step);
-            const bool value=gate_script_value(g,t,&program);
+            const bool value=gate_c_value(c_program,c_state,t);
             if(value!=previous) {
                 generated_edge(g,t,value,generated);
                 previous=value;

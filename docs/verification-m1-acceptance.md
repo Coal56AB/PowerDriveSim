@@ -18,7 +18,7 @@
 | 10 | `editor-model`, `hierarchy`, UI gestures: добавление/удаление/соединение/движение/параметры, grouping/detach/expand и undo/redo. |
 | 11 | `benchmark_run_stop_responsiveness`: штатные RC/RLC/2L/NPC с длинным профилем, живые UI-события, pan, Stop и целостность частичного результата. Числа ниже. |
 | 12 | Поставляются RC, RLC, 2L VSI, 3L NPC; assertions в `examples` и `converters`. |
-| 13 | `.github/workflows/ci.yml` включает headless и Qt CTest на Windows/Linux. Новые группы подключены через CMake. Удалённый запуск этой локальной серии не выполнялся: пользователь запретил push. |
+| 13 | `.github/workflows/ci.yml` включает headless и Qt CTest на Windows. Новые группы подключены через CMake. Удалённый запуск этой локальной серии не выполнялся: пользователь запретил push. |
 
 Проверена также отдельная чистая конфигурация без Qt: 12/12 групп CTest, 1.03 s.
 Desktop-конфигурация: 15/15 групп CTest. Подробности численных допусков:

@@ -2,6 +2,7 @@
 #include "results/csv.hpp"
 #include "core/solver/reference/factorization.hpp"
 #include "core/model/expression.hpp"
+#include "core/model/c_program.hpp"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -258,7 +259,10 @@ static void serialization() {
     auto a=execute(compile(p)),b=execute(compile(q));
     require(a.samples.back().values==b.samples.back().values,"Semantics round trip");
     auto expression_project=p;
-    expression_project.initialization_code="const double base = 4;\n// UTF-8: параметры\ndouble multiplier = 3;";
+    expression_project.initialization_code=
+        "double accumulate(int count) { double value = 0; for (int i = 0; i < count; ++i) value += 1; return value; }\n"
+        "double base = accumulate(4);\n// UTF-8: параметры\ndouble multiplier = 0;\n"
+        "if (base == 4) { multiplier = 3; } else { multiplier = 1; }";
     expression_project.parameter_expressions={{id(14),"value","base * multiplier"}};
     std::istringstream expression_input(saved(expression_project));const auto expression_loaded=read_project(expression_input);
     require(expression_loaded.initialization_code==expression_project.initialization_code&&
@@ -266,6 +270,15 @@ static void serialization() {
             "Initialization source and parameter expressions round trip");
     const auto resolved=resolve_parameter_expressions(expression_loaded);
     require(resolved.components.back().value==12,"Parameter expression changes the compiled numeric property");
+    CProgramOptions bounded_options;bounded_options.instruction_budget=100;bounded_options.diagnostic_code="bounded_c";
+    error("bounded_c",[&]{const auto endless=compile_c_program("while (true) {}",bounded_options);(void)execute_c_program(endless);});
+    error("bounded_c",[&]{const auto invalid_shift=compile_c_program("return 1 << 64;",bounded_options);(void)execute_c_program(invalid_shift);});
+    CProgramOptions returning_options;returning_options.diagnostic_code="bounded_c";returning_options.require_return=true;
+    error("bounded_c",[&]{const auto nonfinite=compile_c_program("return log(-1);",returning_options);(void)execute_c_program(nonfinite);});
+    error("bounded_c",[&]{(void)compile_c_program("if (false) return missing_name; return 0;",returning_options);});
+    const auto cast_program=compile_c_program("double angle = M_PI; return (int)(angle > 3.0) + 1u;",returning_options);
+    require(execute_c_program(cast_program).return_value==2,"C scalar casts, suffixes and math constants");
+    error("bounded_c",[&]{(void)compile_c_program("return "+std::string(300,'!')+"true;",returning_options);});
     auto invalid=expression_loaded;invalid.parameter_expressions={{id(999),"value","base"}};
     error("invalid_parameter_expression",[&]{compile(invalid);});
     error("schema_version",[]{std::istringstream s("PowerDriveSim 99\n"); read_project(s);});

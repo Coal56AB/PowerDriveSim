@@ -2890,7 +2890,13 @@ class InteractionTests : public QObject {
             auto *dialog=w.findChild<QDialog *>("expression_settings_dialog");QVERIFY(dialog);
             QTimer::singleShot(3000,dialog,&QDialog::reject);
             auto *code=dialog->findChild<QPlainTextEdit *>("expression_initialization_code");QVERIFY(code);
-            code->setPlainText("const double base = 2e3;\ndouble factor = 2;");
+            code->setPlainText("double scale(double value) { return value * 2; }\n"
+                               "double base = 2e3;\ndouble factor = 0;\n"
+                               "for (int i = 0; i < 2; ++i) factor += 0.5;\n"
+                               "if (factor == 1) factor = scale(factor);");
+            auto *compile=dialog->findChild<QPushButton *>("compile_initialization_code");QVERIFY(compile);
+            compile->click();
+            QCOMPARE(dialog->findChild<QLabel *>("expression_error")->text(),QString("Код успешно скомпилирован."));
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();edited=true;
         });
         w.show_expression_settings();QVERIFY(edited);
@@ -2910,6 +2916,20 @@ class InteractionTests : public QObject {
         QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
         QCOMPARE(w.project().components[1].value,3000.0);
         QVERIFY(w.project().parameter_expressions.empty());
+    }
+    void gate_code_compile_button() {
+        QTemporaryDir dir;
+        EditorWindow w("en",dir.path());ready(w);
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR)+"/examples/gate-script-pwm.pds"));
+        QVERIFY(!w.project().patterns.empty());w.select_object(w.project().patterns.front().id);
+        auto *code=w.findChild<QPlainTextEdit *>("property_gate_code");
+        auto *compile=w.findChild<QPushButton *>("compile_gate_code");
+        auto *error=w.findChild<QLabel *>("property_error");
+        QVERIFY(code&&compile&&compile->isVisible()&&error);
+        code->setPlainText("double threshold(double x) { if (x > 0.1) return 1; return 0; } return threshold(t);");
+        compile->click();QCOMPARE(error->text(),QString("Code compiled successfully."));
+        code->setPlainText("while (true) {} return false;");
+        compile->click();QVERIFY(error->text().contains("budget"));
     }
     void simulation_snapshots_and_step() {
         QTemporaryDir dir;

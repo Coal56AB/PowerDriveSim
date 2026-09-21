@@ -4,6 +4,7 @@
 #include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
 #include "core/model/expression.hpp"
+#include "core/model/c_program.hpp"
 #include "formats/project/project.hpp"
 #include "formats/samples/table.hpp"
 #include <QCheckBox>
@@ -24,6 +25,7 @@
 #include <QTableWidget>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <sstream>
 namespace pds::desktop {
 namespace {
@@ -82,12 +84,17 @@ QWidget *EditorWindow::create_inspector_page() {
     apply_button_ = new QPushButton(text("apply"));
     apply_button_->setObjectName("apply_properties");
     properties_->addRow(apply_button_);
+    compile_code_button_ = new QPushButton(text("compile_code"));
+    compile_code_button_->setObjectName("compile_gate_code");
+    compile_code_button_->hide();
+    properties_->addRow(compile_code_button_);
     property_error_ = new QLabel;
     property_error_->setObjectName("property_error");
     property_error_->setStyleSheet("color:palette(bright-text)");
     property_error_->setWordWrap(true);
     properties_->addRow(property_error_);
     connect(apply_button_, &QPushButton::clicked, this, [this] { apply_inspector(); });
+    connect(compile_code_button_, &QPushButton::clicked, this, [this] { compile_inspector_code(); });
     return page;
 }
 bool property_visible(const Project &project, const std::string &id, const QJsonObject &field) {
@@ -344,6 +351,7 @@ void EditorWindow::fill_inspector() {
     inspector_hint_->setText(text("inspector_empty"));
     inspector_type_->setVisible(valid && targets.size() == 1);
     apply_button_->setVisible(valid);
+    compile_code_button_->setVisible(false);
     if (!valid) {
         publish();
         return;
@@ -532,8 +540,19 @@ void EditorWindow::fill_inspector() {
         }
         active_fields_.append(field);
     }
+    compile_code_button_->setVisible(targets.size()==1&&common.contains("gate_code"));
     update_command_state();
     publish();
+}
+void EditorWindow::compile_inspector_code() {
+    if(!editing_allowed()||selected_.empty()||!property_editors_.contains("gate_code"))return;
+    try {
+        CProgramOptions options;options.diagnostic_code="invalid_gate_script";options.object=selected_;
+        options.allow_time=true;options.allow_gate_functions=true;options.require_return=true;
+        const auto source=field_text(property_editors_.at("gate_code")).toStdString();
+        (void)execute_c_program(compile_c_program(source,options),0);
+        property_error_->setText(text("code_valid"));
+    } catch(const std::exception &error) { property_error_->setText(QString::fromUtf8(error.what())); }
 }
 void EditorWindow::import_samples(const QString &key) {
     if (!editing_allowed() || inspector_id_ != selected_ || selected_.empty())
@@ -603,11 +622,13 @@ void EditorWindow::apply_inspector() {
                             write_property(p,target,key.toStdString(),value);
                         }
                     } catch(const std::exception &) {
-                        const ExpressionOptions initialization_options{"invalid_initialization",p.id,false,false};
-                        const auto program=parse_expression_program(p.initialization_code,initialization_options);
+                        CProgramOptions initialization_options;initialization_options.diagnostic_code="invalid_initialization";initialization_options.object=p.id;
+                        const auto initialized=execute_c_program(compile_c_program(p.initialization_code,initialization_options));
+                        std::map<std::string,std::string> variables;
+                        for(const auto &[name,number]:initialized.variables){std::ostringstream encoded;encoded.precision(std::numeric_limits<double>::max_digits10);encoded<<number;variables.emplace(name,encoded.str());}
                         for(const auto &target:targets) {
                             const ExpressionOptions options{"invalid_parameter_expression",target,false,false};
-                            const double value=evaluate_expression(input.toStdString(),program.variables,0,options);
+                            const double value=evaluate_expression(input.toStdString(),variables,0,options);
                             validate_numeric_range(value, field, true);
                             write_property(p,target,key.toStdString(),value);
                             auto binding=std::find_if(p.parameter_expressions.begin(),p.parameter_expressions.end(),

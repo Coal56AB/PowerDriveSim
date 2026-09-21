@@ -7,7 +7,7 @@ cmake --build build --config Release --parallel 2
 ctest --test-dir build -C Release --output-on-failure
 
 Сборка без предупреждений. 6/6 групп CTest прошли (0.86 s).
-Это локальная проверка Windows; workflow Windows/Linux добавлен,
+Это локальная проверка Windows; Windows workflow добавлен,
 но удалённый запуск CI на момент записи ещё не подтверждён.
 
 ## Критерии приёмки

@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "core/model/expression.hpp"
+#include "core/model/c_program.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include <QCheckBox>
 #include <QComboBox>
@@ -31,15 +32,23 @@ void EditorWindow::show_expression_settings() {
     layout->addWidget(code,1);
     auto *error=new QLabel;error->setObjectName("expression_error");error->setWordWrap(true);layout->addWidget(error);
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    auto *compile=buttons->addButton(text("compile_code"),QDialogButtonBox::ActionRole);
+    compile->setObjectName("compile_initialization_code");
     buttons->button(QDialogButtonBox::Cancel)->setText(text("dialog_cancel"));layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
     connect(code,&QPlainTextEdit::textChanged,error,&QLabel::clear);
+    connect(compile,&QPushButton::clicked,&dialog,[&]{
+        try {
+            CProgramOptions options;options.diagnostic_code="invalid_initialization";options.object=project().id;
+            (void)execute_c_program(compile_c_program(code->toPlainText().toStdString(),options));
+            error->setText(text("code_valid"));
+        } catch(const std::exception &exception) { error->setText(QString::fromUtf8(exception.what())); }
+    });
     connect(buttons,&QDialogButtonBox::accepted,&dialog,[&]{
         try {
             const auto source=code->toPlainText().toStdString();
-            const ExpressionOptions options{"invalid_initialization",project().id,false,false};
-            const auto program=parse_expression_program(source,options);
-            for(const auto &[name,value]:program.variables){(void)name;(void)evaluate_expression(value,program.variables,0,options);}
+            CProgramOptions options;options.diagnostic_code="invalid_initialization";options.object=project().id;
+            (void)execute_c_program(compile_c_program(source,options));
             document_->apply("Initialization variables",[&](Project &p){p.initialization_code=source;});
             dialog.accept();
         } catch(const std::exception &exception) { error->setText(QString::fromUtf8(exception.what())); }

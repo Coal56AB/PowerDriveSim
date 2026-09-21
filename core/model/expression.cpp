@@ -1,10 +1,13 @@
 #include "core/model/expression.hpp"
+#include "core/model/c_program.hpp"
 #include "core/model/model.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/editor/properties.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
+#include <sstream>
 #include <set>
 #include <vector>
 
@@ -209,10 +212,14 @@ bool expression_depends_on_time(const std::string &expression,const std::map<std
 namespace {
 void resolve_schematic(Project &body,const std::string &identity) {
     const ExpressionOptions initialization_options{"invalid_initialization",identity,false,false};
-    const auto program=parse_expression_program(body.initialization_code,initialization_options);
-    for(const auto &[name,source]:program.variables) {
-        (void)name;
-        (void)evaluate_expression(source,program.variables,0,initialization_options);
+    std::map<std::string,std::string> variables;
+    if(!body.initialization_code.empty()) {
+        CProgramOptions options;options.diagnostic_code="invalid_initialization";options.object=identity;
+        const auto result=execute_c_program(compile_c_program(body.initialization_code,options));
+        for(const auto &[name,value]:result.variables) {
+            std::ostringstream text;text.precision(std::numeric_limits<double>::max_digits10);text<<value;
+            variables.emplace(name,text.str());
+        }
     }
     std::set<std::pair<std::string,std::string>> bindings;
     for(const auto &binding:body.parameter_expressions) {
@@ -221,7 +228,7 @@ void resolve_schematic(Project &body,const std::string &identity) {
             throw Diagnostic("invalid_parameter_expression",binding.object,
                              "Parameter expression binding is empty or duplicated");
         const ExpressionOptions options{"invalid_parameter_expression",binding.object,false,false};
-        const double value=evaluate_expression(binding.source,program.variables,0,options);
+        const double value=evaluate_expression(binding.source,variables,0,options);
         try {
             const auto current=read_property(body,binding.object,binding.field);
             if(!std::holds_alternative<double>(current))

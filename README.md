@@ -80,7 +80,7 @@ cmake -S . -B build -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH="путь/к/Qt"
 cmake --build build --config Release
 ```
 
-В Windows приложение находится в `build/Release/powerdrive-desktop.exe`, в Linux — в `build/powerdrive-desktop`. Для запуска Windows-сборки рядом с приложением нужно разместить библиотеки Qt; [команды сборки и запуска](docs/desktop.md#сборка-и-запуск) приведены отдельно. Локальную Windows-сборку также можно выполнить двойным щелчком по `build-windows.cmd`; путь к нестандартной установке Qt задаётся переменной `PDS_QT_ROOT`.
+Приложение находится в `build/Release/powerdrive-desktop.exe`. Рядом с ним нужно разместить библиотеки Qt; [команды сборки и запуска](docs/desktop.md#сборка-и-запуск) приведены отдельно. Локальную сборку можно выполнить двойным щелчком по `build-windows.cmd`; путь к нестандартной установке Qt задаётся переменной `PDS_QT_ROOT`.
 
 Установщик ещё не выпущен. Запуск без графического интерфейса также поддерживается.
 

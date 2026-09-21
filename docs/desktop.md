@@ -152,8 +152,6 @@ build/Release/powerdrive-desktop.exe
 
 Английский интерфейс: `powerdrive-desktop.exe --lang en`. Путь к `.pds` можно передать первым позиционным аргументом.
 
-Для Linux используйте Qt для соответствующей платформы, добавьте `-DCMAKE_BUILD_TYPE=Release` при конфигурации; приложение создаётся в `build/powerdrive-desktop`. Готовые схемы копируются в `examples` рядом с исполняемым файлом.
-
 Без Qt: не задавайте `PDS_BUILD_DESKTOP=ON`. Пример запуска ядра в Windows:
 
 ```powershell

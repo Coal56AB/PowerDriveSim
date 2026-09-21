@@ -184,6 +184,15 @@ int main(int argc, char **argv) {
             previous_boolean=gate;
         }
         check(boolean_rise&&boolean_fall,"C-like gate script evaluates declarations, arithmetic, return and logic");
+        doc.apply("Stateful C gate script",[&](Project& p){auto& g=p.patterns.back();
+            g.code="double pulse(double now) { if (now >= 0.0002 && now < 0.0005) return 1; return 0; } "
+                   "static int calls = 0; calls++; if (calls > 100000) return false; return pulse(t);";});
+        auto c_result=execute(compile(doc.project()),nullptr,nullptr,&dynamic);
+        bool c_rise=false,c_fall=false,previous_c=false;
+        for(const auto& sample:c_result.samples){const bool gate=sample.gates[0];
+            if(!previous_c&&gate&&std::abs(sample.time-.0002)<1e-9)c_rise=true;
+            if(previous_c&&!gate&&std::abs(sample.time-.0005)<1e-9)c_fall=true;previous_c=gate;}
+        check(c_rise&&c_fall,"Gate C supports functions, branches, assignments and persistent static state");
         doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().code=
             "double a = b; double b = a; return a;";});
         bool addressed_script_error=false;
