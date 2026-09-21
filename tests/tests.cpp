@@ -278,6 +278,16 @@ static void serialization() {
     error("bounded_c",[&]{(void)compile_c_program("if (false) return missing_name; return 0;",returning_options);});
     const auto cast_program=compile_c_program("double angle = M_PI; return (int)(angle > 3.0) + 1u;",returning_options);
     require(execute_c_program(cast_program).return_value==2,"C scalar casts, suffixes and math constants");
+    CProgramOptions ports;ports.diagnostic_code="code_ports";
+    ports.external_variables={"error","dt","command"};ports.writable_variables={"command"};
+    const auto pi=compile_c_program("static double integral = 0; integral += error * dt; command = 2 * error + integral;",ports);
+    CProgramState pi_state;
+    auto first=execute_c_program(pi,0,&pi_state,{{"error",3},{"dt",.1},{"command",0}});
+    auto second=execute_c_program(pi,.1,&pi_state,{{"error",2},{"dt",.1},{"command",first.variables.at("command")}});
+    near(first.variables.at("command"),6.3,1e-15,"C external output and static state");
+    near(second.variables.at("command"),4.5,1e-15,"C external inputs and persistent state");
+    error("code_ports",[&]{(void)compile_c_program("error = 1;",ports);});
+    error("code_ports",[&]{(void)execute_c_program(pi,0,&pi_state,{{"unknown",1}});});
     error("bounded_c",[&]{(void)compile_c_program("return "+std::string(300,'!')+"true;",returning_options);});
     auto invalid=expression_loaded;invalid.parameter_expressions={{id(999),"value","base"}};
     error("invalid_parameter_expression",[&]{compile(invalid);});

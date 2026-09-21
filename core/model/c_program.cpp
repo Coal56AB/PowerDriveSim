@@ -306,6 +306,12 @@ public:
         scopes_.emplace_back();scopes_.back()["true"]=true;scopes_.back()["false"]=true;
         for(const auto *constant:{"M_PI","PI","M_E","E"})scopes_.back()[constant]=true;
         if(options_.allow_time)scopes_.back()["t"]=true;
+        for(const auto &name:options_.writable_variables)
+            if(!options_.external_variables.contains(name))error("Writable variable '"+name+"' is not external");
+        for(const auto &name:options_.external_variables) {
+            if(name.empty())error("External variable name must not be empty");
+            declare(name,!options_.writable_variables.contains(name));
+        }
         for(const auto &statement:statements)if(statement->kind==Statement::Kind::declaration)
             for(const auto &declaration:statement->declarations)declare(declaration.name,declaration.constant);
         for(const auto &[name,function]:functions_) {
@@ -380,7 +386,14 @@ public:
     Runtime(const CProgramOptions &options,const std::map<std::string,Function> &functions,double time,
             CProgramState *state,const std::map<std::string,double> &inputs)
         : options_(options),functions_(functions),time_(time),state_(state) {
-        scopes_.emplace_back();for(const auto &[name,value]:inputs)scopes_.back().emplace(name,Binding{value,true,{}});
+        scopes_.emplace_back();
+        for(const auto &[name,value]:inputs)
+            if(!options_.external_variables.contains(name))error("Undeclared external variable '"+name+"'");
+        for(const auto &name:options_.external_variables) {
+            const auto found=inputs.find(name);
+            scopes_.back().emplace(name,Binding{found==inputs.end()?0.0:found->second,
+                                               !options_.writable_variables.contains(name),{}});
+        }
         if(options.allow_time)scopes_.back().emplace("t",Binding{time,true,{}});
         scopes_.back().emplace("true",Binding{1,true,{}});scopes_.back().emplace("false",Binding{0,true,{}});
         scopes_.back().emplace("M_PI",Binding{3.1415926535897932384626433832795,true,{}});

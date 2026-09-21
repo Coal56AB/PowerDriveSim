@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 
 namespace pds {
@@ -15,6 +16,10 @@ struct CProgramOptions {
     bool require_return = false;
     std::size_t instruction_budget = 100000;
     std::size_t call_depth_limit = 32;
+    // Declared by the embedding runtime rather than by user code. Inputs are
+    // read-only unless explicitly listed as writable outputs.
+    std::set<std::string> external_variables;
+    std::set<std::string> writable_variables;
 };
 
 struct CProgramState {
