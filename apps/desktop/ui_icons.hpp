@@ -18,6 +18,7 @@ enum class UiIcon {
     time_window,
     measurements,
     spectrum,
+    code,
     settings,
     gear,
     export_data,
@@ -65,6 +66,14 @@ class UiIconEngine final : public QIconEngine {
             line(12, 19, 15, 16);
         };
         switch (kind_) {
+        case UiIcon::code: {
+            auto font = p->font();
+            font.setPixelSize(13);
+            font.setBold(true);
+            p->setFont(font);
+            p->drawText(QRectF(1, 1, 22, 22), Qt::AlignCenter, "{C}");
+            break;
+        }
         case UiIcon::spectrum:
             line(3, 20, 21, 20);
             line(6, 20, 6, 13);

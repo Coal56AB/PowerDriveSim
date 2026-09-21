@@ -1680,6 +1680,42 @@ void EditorWindow::build_ui() {
                 return from ? w.from : w.to;
         return Endpoint{};
     };
+    canvas_->select_conductor = [this](const std::string &id) {
+        auto source = std::find_if(project().wires.begin(), project().wires.end(),
+                                   [&](const Wire &wire) { return wire.id == id; });
+        if (source == project().wires.end())
+            return;
+        const auto graph = resolve_connections(project());
+        auto network = graph.nets.find(endpoint_key(source->from));
+        if (network == graph.nets.end())
+            network = graph.nets.find(endpoint_key(source->to));
+        rebuilding_ = true;
+        canvas_->scene()->clearSelection();
+        bool selected = false;
+        for (const auto &wire : project().wires) {
+            auto candidate = graph.nets.find(endpoint_key(wire.from));
+            if (candidate == graph.nets.end())
+                candidate = graph.nets.find(endpoint_key(wire.to));
+            if (network != graph.nets.end() && candidate != graph.nets.end() &&
+                candidate->second == network->second) {
+                auto *item = wires_.at(wire.id);
+                item->setData(wire_segment_role, 0);
+                item->setSelected(true);
+                selected = true;
+            }
+        }
+        if (!selected) {
+            auto *item = wires_.at(id);
+            item->setData(wire_segment_role, 0);
+            item->setSelected(true);
+        }
+        selected_ = id;
+        rebuilding_ = false;
+        fill_inspector();
+        update_wires();
+        update_command_state();
+        canvas_->viewport()->update();
+    };
     canvas_->edit_route = [this](std::string id, std::vector<Point> bends) {
         if (running())
             return;
@@ -2830,6 +2866,8 @@ void EditorWindow::commit_positions() {
     std::set<std::string> moved_ids;
     for (auto *item : canvas_->scene()->selectedItems()) {
         if (item->data(1).toString() == "wire" || item->data(1).toString() == "label")
+            continue;
+        if (!canvas_->gesture_contains(item))
             continue;
         const auto id = item->data(0).toString().toStdString();
         if (!id.empty())

@@ -64,6 +64,7 @@ class Canvas : public QGraphicsView {
     std::function<Endpoint(const std::string &, bool)> wire_endpoint;
     std::function<void(WireAnchor, WireAnchor, std::vector<Point>, std::string)> connect_wire;
     std::function<void(std::string, std::vector<Point>)> edit_route;
+    std::function<void(std::string)> select_conductor;
     std::function<void(QPointF)> quick_insert;
     std::function<void(QPointF)> add_junction;
     std::function<bool(QPoint)> edit_text;
@@ -74,6 +75,7 @@ class Canvas : public QGraphicsView {
     void set_editable(bool enabled);
     bool editing_gesture() const;
     bool transform_move(int turns, bool mirror);
+    bool gesture_contains(QGraphicsItem *item) const { return positions_.contains(item); }
     Point moving_point(const std::string &from, const std::string &to, Point point) const;
     QPointF insertion_position() const;
     void set_ghost(QGraphicsItem *item);
@@ -100,6 +102,7 @@ class Canvas : public QGraphicsView {
     void drawForeground(QPainter *, const QRectF &) override;
     bool viewportEvent(QEvent *) override;
     void keyPressEvent(QKeyEvent *) override;
+    bool focusNextPrevChild(bool next) override;
 
   private:
     enum class Gesture { idle, selecting, moving, placing, wiring, routing, reconnecting, panning, scaling, moving_port };
@@ -138,6 +141,7 @@ class Canvas : public QGraphicsView {
     QGraphicsPathItem *wire_preview_ = nullptr;
     QColor wire_preview_color_ = QColor("#467fe0");
     std::optional<Endpoint> port_at(QPoint point) const;
+    bool select_whole_conductor();
     QPoint pan_origin_, last_mouse_;
 };
 class Scope : public QWidget {

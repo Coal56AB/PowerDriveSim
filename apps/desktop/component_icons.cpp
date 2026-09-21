@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/theme.hpp"
+#include "apps/desktop/ui_icons.hpp"
 #include "formats/project/project.hpp"
 #include <QAction>
 #include <QCoreApplication>
@@ -515,6 +516,13 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
 }
 void EditorWindow::rebuild_component_bar() {
     component_bar_->clear();
+    if (auto found = commands_.find("expression_settings"); found != commands_.end()) {
+        auto *initialization = found->second;
+        initialization->setIcon(ui_icon(UiIcon::code));
+        initialization->setToolTip(text("initialization_block"));
+        component_bar_->addAction(initialization);
+        component_bar_->addSeparator();
+    }
     for (int id : {100, 7, 8, 103, 107})
         if (component_actions_.count(id) && component_actions_.at(id)->property("fixed").toBool())
             component_bar_->addAction(component_actions_.at(id));

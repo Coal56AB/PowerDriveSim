@@ -389,7 +389,27 @@ void Canvas::keyPressEvent(QKeyEvent *e) {
         e->accept();
         return;
     }
+    if (e->key() == Qt::Key_Tab && !editing_gesture() && select_whole_conductor()) {
+        e->accept();
+        return;
+    }
     QGraphicsView::keyPressEvent(e);
+}
+bool Canvas::focusNextPrevChild(bool next) {
+    // QWidget consumes Tab for focus traversal before keyPressEvent. Keep it on
+    // the schematic when a routed segment is the active selection.
+    if (next && !editing_gesture() && select_whole_conductor())
+        return true;
+    return QGraphicsView::focusNextPrevChild(next);
+}
+bool Canvas::select_whole_conductor() {
+    for (auto *item : scene()->selectedItems())
+        if (item->data(1).toString() == "wire" && item->data(wire_segment_role).toInt() > 0) {
+            if (select_conductor)
+                select_conductor(item->data(0).toString().toStdString());
+            return true;
+        }
+    return false;
 }
 bool Canvas::viewportEvent(QEvent *e) {
     if ((e->type() == QEvent::WindowDeactivate || e->type() == QEvent::UngrabMouse) && editing_gesture() &&
@@ -429,6 +449,7 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
         return;
     }
     auto *object = object_at(e->pos());
+    auto *wire = wire_at(e->pos());
     if (editable_ && connect_mode_ && !object && !port_at(e->pos()) && !wire_at(e->pos())) {
         const auto point = snap_point(mapToScene(e->pos()));
         connect_mode_ = false;
@@ -450,11 +471,14 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
             e->accept();
             return;
         }
-        QGraphicsItem *resize_target = object;
+        // A conductor crossing a frame edge must remain draggable as a
+        // conductor. Frame resizing is deliberately lower priority than the
+        // much narrower wire hit area.
+        QGraphicsItem *resize_target = wire ? nullptr : object;
         std::optional<ResizeHit> resize_origin;
         if (resize_target && !port_at(e->pos()))
             resize_origin = resize_corner(resize_target, e->pos(), this);
-        if (!resize_origin && !port_at(e->pos()))
+        if (!wire && !resize_origin && !port_at(e->pos()))
             for (auto *item : scene()->selectedItems())
                 if ((resize_origin = resize_corner(item, e->pos(), this))) {
                     resize_target = item;
@@ -468,19 +492,15 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
             scale_x_axis_ = resize_origin->x;
             scale_y_axis_ = resize_origin->y;
             scale_start_distance_ = std::max(1.0, QLineF(scale_origin_, press_scene_).length());
-            for (auto *item : scene()->selectedItems())
-                if (item->data(1).toString() != "wire" &&
-                    item->data(1).toString() == resize_target->data(1).toString()) {
-                    positions_[item] = item->pos();
-                    transforms_[item] = item->transform();
-                }
+            positions_[resize_target] = resize_target->pos();
+            transforms_[resize_target] = resize_target->transform();
             gesture_ = Gesture::scaling;
             scroll_timer_.start();
             e->accept();
             return;
         }
     }
-    if (editable_ && object && !port_at(e->pos())) {
+    if (editable_ && !wire && object && !port_at(e->pos())) {
         if (auto origin = resize_corner(object, e->pos(), this)) {
             positions_.clear();
             transforms_.clear();
@@ -489,18 +509,14 @@ void Canvas::mousePressEvent(QMouseEvent *e) {
             scale_x_axis_ = origin->x;
             scale_y_axis_ = origin->y;
             scale_start_distance_ = std::max(1.0, QLineF(scale_origin_, press_scene_).length());
-            for (auto *item : scene()->selectedItems())
-                if (item->data(1).toString() != "wire" && item->data(1).toString() == object->data(1).toString()) {
-                    positions_[item] = item->pos();
-                    transforms_[item] = item->transform();
-                }
+            positions_[object] = object->pos();
+            transforms_[object] = object->transform();
             gesture_ = Gesture::scaling;
             scroll_timer_.start();
             e->accept();
             return;
         }
     }
-    auto *wire = wire_at(e->pos());
     if (editable_ && wire && wire->isSelected() && !(e->modifiers() & Qt::ControlModifier)) {
         const auto path = wire->path();
         auto pos = mapToScene(e->pos());
@@ -846,7 +862,7 @@ void Canvas::mouseMoveEvent(QMouseEvent *e) {
     }
     QGraphicsView::mouseMoveEvent(e);
     std::optional<ResizeHit> resize_hit;
-    if (editable_) {
+    if (editable_ && !wire_at(e->pos())) {
         if (auto *object = object_at(e->pos()))
             resize_hit = resize_corner(object, e->pos(), this);
         if (!resize_hit)
@@ -1020,46 +1036,11 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
     p->restore();
     p->save();
     p->resetTransform();
+    // Resize and route hit areas remain available, but their old hollow
+    // squares obscured pins and looked like stray schematic objects. Selection
+    // itself is already communicated by the block outline or wire colour.
     p->setPen(QPen(theme_colors().accent, 1));
     p->setBrush(theme_colors().surface);
-    for (auto *item : scene()->selectedItems())
-        if (item->isVisible() && item->data(1).toString() != "wire" &&
-            item->data(1).toString() != "label" && item->parentItem() == nullptr) {
-            const auto r = item->boundingRect();
-            const std::array<QPointF, 4> corners{r.topLeft(), r.topRight(), r.bottomLeft(), r.bottomRight()};
-            for (auto corner : corners) {
-                const auto pos = mapFromScene(item->mapToScene(corner));
-                p->drawRoundedRect(QRectF(pos.x() - 5, pos.y() - 5, 10, 10), 2, 2);
-            }
-            const std::array<QPointF, 2> x_handles{QPointF(r.left(), r.center().y()),
-                                                   QPointF(r.right(), r.center().y())};
-            for (auto handle : x_handles) {
-                const auto pos = mapFromScene(item->mapToScene(handle));
-                p->drawRoundedRect(QRectF(pos.x() - 4, pos.y() - 8, 8, 16), 3, 3);
-                p->drawLine(QPointF(pos.x(), pos.y() - 4), QPointF(pos.x(), pos.y() + 4));
-            }
-            const std::array<QPointF, 2> y_handles{QPointF(r.center().x(), r.top()),
-                                                   QPointF(r.center().x(), r.bottom())};
-            for (auto handle : y_handles) {
-                const auto pos = mapFromScene(item->mapToScene(handle));
-                p->drawRoundedRect(QRectF(pos.x() - 8, pos.y() - 4, 16, 8), 3, 3);
-                p->drawLine(QPointF(pos.x() - 4, pos.y()), QPointF(pos.x() + 4, pos.y()));
-            }
-        }
-    for (auto *item : scene()->selectedItems())
-        if (item->data(1).toString() == "wire") {
-            auto path = static_cast<QGraphicsPathItem *>(item)->path();
-            const int segment = item->data(wire_segment_role).toInt();
-            if (segment <= 0)
-                continue;
-            for (int i = 0; i < path.elementCount(); ++i) {
-                if (i != segment - 1 && i != segment)
-                    continue;
-                auto v = path.elementAt(i);
-                auto pos = mapFromScene(QPointF(v.x, v.y));
-                p->drawRect(QRectF(pos.x() - 3, pos.y() - 3, 6, 6));
-            }
-        }
     if (auto endpoint = hovered_port())
         for (auto *item : items(QRect(last_mouse_ - QPoint(11, 11), QSize(22, 22))))
             if (item->data(1).toString() == "port" &&

@@ -1579,9 +1579,15 @@ class InteractionTests : public QObject {
 
             if (close(grid, 20.0)) {
                 auto *block = item(w, instance.id);
+                auto *untouched = item(w, plot.id);
                 QVERIFY(block);
+                QVERIFY(untouched);
                 const double old_width = block->mapRectToScene(block->shape().boundingRect()).width();
                 w.select_object(instance.id);
+                untouched->setSelected(true);
+                const auto untouched_position = untouched->pos();
+                const auto untouched_transform = untouched->transform();
+                const auto untouched_model = w.project().plots.front();
                 block = item(w, instance.id);
                 const QPointF handle = block->mapToScene(
                     {block->boundingRect().right(), block->boundingRect().center().y()});
@@ -1593,6 +1599,12 @@ class InteractionTests : public QObject {
                 const double new_width = block->mapRectToScene(block->shape().boundingRect()).width();
                 QVERIFY(!close(new_width, old_width));
                 QVERIFY(close(new_width / grid, std::round(new_width / grid)));
+                QVERIFY(QLineF(untouched->pos(), untouched_position).length() < 1e-9);
+                QVERIFY(close(untouched->transform().m11(), untouched_transform.m11()));
+                QVERIFY(close(untouched->transform().m22(), untouched_transform.m22()));
+                QCOMPARE(w.project().plots.front().x, untouched_model.x);
+                QCOMPARE(w.project().plots.front().y, untouched_model.y);
+                QCOMPARE(w.project().plots.front().orientation, untouched_model.orientation);
                 verify(instance.id);
             }
         }
@@ -3280,7 +3292,19 @@ class InteractionTests : public QObject {
                                                      [](const QAction *action) {
                                                          return action->property("fixed").toBool();
                                                      });
-            QCOMPARE(bar->actions().size(), fixed_actions);
+            QCOMPARE(bar->actions().size(), fixed_actions + 2); // Init action and its separator.
+            auto *initialization = w.findChild<QAction *>("action_expression_settings");
+            QVERIFY(initialization);
+            QCOMPARE(bar->actions().front(), initialization);
+            bool initialization_opened = false;
+            QTimer::singleShot(0, &w, [&] {
+                auto *dialog = w.findChild<QDialog *>("expression_settings_dialog");
+                QVERIFY(dialog);
+                initialization_opened = true;
+                dialog->reject();
+            });
+            initialization->trigger();
+            QVERIFY(initialization_opened);
             for (int i = 0; i < tree->topLevelItemCount(); ++i) {
                 QVERIFY(!tree->topLevelItem(i)->isExpanded());
                 for (int j = 0; j < tree->topLevelItem(i)->childCount(); ++j) {
@@ -3359,7 +3383,7 @@ class InteractionTests : public QObject {
                                                  [](const QAction *action) {
                                                      return action->property("fixed").toBool();
                                                  });
-        QCOMPARE(w.findChild<QToolBar *>("component_bar")->actions().size(), fixed_actions);
+        QCOMPARE(w.findChild<QToolBar *>("component_bar")->actions().size(), fixed_actions + 2);
     }
     void wire_second_click_selects_straight_segment_without_frame() {
         QTemporaryDir dir;
@@ -3394,6 +3418,11 @@ class InteractionTests : public QObject {
         QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, at);
         QCOMPARE(wire->data(wire_segment_role).toInt(), 2);
         QCOMPARE(wire->pen().color(), QColor("#146cca"));
+        QTest::keyClick(c, Qt::Key_Tab);
+        QCOMPARE(wire->data(wire_segment_role).toInt(), 0);
+        QCOMPARE(wire->pen().color(), QColor("#e88b22"));
+        QTest::mouseClick(vp, Qt::LeftButton, Qt::NoModifier, at);
+        QCOMPARE(wire->data(wire_segment_role).toInt(), 2);
         const auto preview = render(true);
         QCOMPARE(preview.pixelColor(140, 140), QColor("#e88b22"));
         QCOMPARE(preview.pixelColor(20, 80), QColor("#146cca"));
@@ -3411,6 +3440,46 @@ class InteractionTests : public QObject {
         QCOMPARE(wire->data(wire_segment_role).toInt(), 2);
         if (qEnvironmentVariableIsSet("PDS_WIRE_SCREENSHOT"))
             QVERIFY(vp->grab().save(qEnvironmentVariable("PDS_WIRE_SCREENSHOT")));
+    }
+    void wire_over_frame_edge_never_resizes_block() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        PlotBlock plot;
+        plot.id = derived_uuid("wire-over-frame-plot");
+        plot.name = "Plot";
+        plot.x = 0;
+        plot.y = 0;
+        project.plots.push_back(plot);
+        const auto left = derived_uuid("wire-over-frame-left");
+        const auto right = derived_uuid("wire-over-frame-right");
+        project.nodes = {{left, "", false, -200, 0}, {right, "", false, 200, 0}};
+        project.wires.push_back({derived_uuid("wire-over-frame-wire"),
+                                 {left, "node"}, {right, "node"}, {{-60, 0}, {60, 0}}});
+        w.set_project(project);
+        ready(w);
+        auto *block = item(w, plot.id);
+        auto *wire = static_cast<QGraphicsPathItem *>(item(w, project.wires.front().id));
+        QVERIFY(block && wire);
+        w.select_object(plot.id);
+        const auto original_transform = block->transform();
+        const auto original_position = block->pos();
+        const auto frame = block->boundingRect();
+        const auto resize_handle = block->mapToScene(QPointF(frame.right(), frame.center().y()));
+        QPainterPath crossing_path(resize_handle - QPointF(80, 0));
+        crossing_path.lineTo(resize_handle + QPointF(80, 0));
+        wire->setPath(crossing_path);
+        const auto crossing = resize_handle;
+        QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          w.canvas()->mapFromScene(crossing));
+        QVERIFY(wire->isSelected());
+        QCOMPARE(block->transform(), original_transform);
+        QCOMPARE(block->pos(), original_position);
+        drag(w, crossing, crossing + QPointF(0, 40));
+        QCOMPARE(block->transform(), original_transform);
+        QCOMPARE(block->pos(), original_position);
     }
     void deleting_complete_wire_segment_leaves_no_orphan_nodes() {
         QTemporaryDir dir;
