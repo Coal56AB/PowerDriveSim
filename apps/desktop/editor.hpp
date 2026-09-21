@@ -445,6 +445,7 @@ class EditorWindow : public QMainWindow {
     QWidget *create_inspector_page();
     void build_property_editors();
     void update_workspace_variables();
+    void edit_workspace_variable(int row, int column);
     void update_properties_tab(bool visible);
     void compile_inspector_code();
     bool edit_text_at(QPoint position);

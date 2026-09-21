@@ -133,7 +133,8 @@ void EditorWindow::build_property_editors() {
             }
             QWidget *widget = nullptr;
             if (kind == "text" || kind == "number") {
-                auto *line = new QLineEdit;
+                auto *line = kind == "number" ? static_cast<QLineEdit *>(new ExpressionLineEdit)
+                                               : new QLineEdit;
                 if (kind == "number")
                     normalize_decimal_point(line);
                 widget = line;
@@ -248,8 +249,8 @@ void EditorWindow::build_property_editors() {
                 edit->setMaximumHeight(kind == "code" ? 150 : 100);
                 if (kind == "code") {
                     edit->setPlaceholderText(
-                        "curr_ramp = ramp(0, 10, 0.008333333, 0.001111111);\n"
-                        "phasepwm(50, 0.02, curr_ramp);");
+                        "double curr_ramp = ramp(0, 10, 0.008333333, 0.001111111);\n"
+                        "return phasepwm(50, 0.02, curr_ramp);");
                     edit->setStyleSheet(
                         "QPlainTextEdit{background:#111827;color:#d8dee9;border:1px solid #334155;"
                         "border-radius:6px;padding:8px;selection-background-color:#2563eb;"

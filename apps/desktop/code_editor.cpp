@@ -11,6 +11,7 @@
 #include <QSyntaxHighlighter>
 #include <QTextBlock>
 #include <QTextCharFormat>
+#include <array>
 
 namespace pds::desktop {
 namespace {
@@ -84,7 +85,7 @@ CCodeEdit::CCodeEdit(bool gate_functions, QWidget *parent) : QPlainTextEdit(pare
     if (gate_functions)
         base_completions_ << "phasepwm(frequency, duty, phase)" << "pwm(frequency, duty, delay)"
                           << "ramp(t0, t1, value0, value1)" << "square(frequency, duty, delay)"
-                          << "curr_ramp" << "t";
+                          << "stime" << "t";
     base_completions_.sort(Qt::CaseInsensitive);
     completer_ = new QCompleter(base_completions_, this);
     completer_->setWidget(this);
@@ -114,12 +115,19 @@ QString CCodeEdit::completion_prefix() const {
 
 void CCodeEdit::update_completions() {
     QStringList completions = base_completions_;
-    QRegularExpression identifier(R"(\b[A-Za-z_][A-Za-z0-9_]*\b)");
-    auto matches = identifier.globalMatch(toPlainText());
-    while (matches.hasNext()) {
-        const auto word = matches.next().captured();
-        if (word.size() > 1 && !completions.contains(word, Qt::CaseInsensitive))
-            completions.push_back(word);
+    const auto cursor = textCursor();
+    const auto prefix = completion_prefix();
+    const auto source = toPlainText().left(cursor.position() - prefix.size());
+    const std::array<QRegularExpression, 2> declarations{
+        QRegularExpression(R"(\b(?:const\s+)?(?:auto|bool|double|float|int)\s+([A-Za-z_][A-Za-z0-9_]*))"),
+        QRegularExpression(R"(\b(?:bool|double|float|int|void)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\()")};
+    for (const auto &declaration : declarations) {
+        auto matches = declaration.globalMatch(source);
+        while (matches.hasNext()) {
+            const auto word = matches.next().captured(1);
+            if (word != prefix && !completions.contains(word, Qt::CaseInsensitive))
+                completions.push_back(word);
+        }
     }
     completions.sort(Qt::CaseInsensitive);
     static_cast<QStringListModel *>(completer_->model())->setStringList(completions);
@@ -161,10 +169,11 @@ void CCodeEdit::keyPressEvent(QKeyEvent *event) {
         insertPlainText("    ");
         return;
     }
+    const bool popup_was_visible = completer_->popup()->isVisible();
     if (!explicit_request)
         QPlainTextEdit::keyPressEvent(event);
     const auto prefix = completion_prefix();
-    if (!explicit_request && prefix.size() < 2) {
+    if (!explicit_request && !popup_was_visible && prefix.isEmpty()) {
         completer_->popup()->hide();
         return;
     }
@@ -175,6 +184,7 @@ void CCodeEdit::keyPressEvent(QKeyEvent *event) {
         return;
     }
     auto rect = cursorRect();
+    rect.translate(0, fontMetrics().height() + 6);
     rect.setWidth(completer_->popup()->sizeHintForColumn(0) +
                   completer_->popup()->verticalScrollBar()->sizeHint().width() + 18);
     completer_->complete(rect);

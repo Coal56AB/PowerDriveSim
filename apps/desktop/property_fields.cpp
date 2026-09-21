@@ -21,6 +21,7 @@
 #include <QPushButton>
 #include <QPixmap>
 #include <QScopedValueRollback>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
@@ -30,6 +31,43 @@
 #include <sstream>
 namespace pds::desktop {
 namespace {
+QString replace_initialization_value(const QString &source, const QString &name,
+                                     const QString &number) {
+    const QRegularExpression declaration(
+        QString(R"((\b(?:(?:const|static)\s+)*(?:auto|bool|char|short|int|long|float|double)\s+%1\s*)(?:=\s*[^;]*)?;)")
+            .arg(QRegularExpression::escape(name)));
+    auto matches = declaration.globalMatch(source);
+    while (matches.hasNext()) {
+        const auto match = matches.next();
+        int depth = 0;
+        bool quoted = false, line_comment = false, block_comment = false;
+        for (int i = 0; i < match.capturedStart(); ++i) {
+            const QChar current = source[i];
+            const QChar next = i + 1 < source.size() ? source[i + 1] : QChar();
+            if (line_comment) {
+                if (current == '\n') line_comment = false;
+                continue;
+            }
+            if (block_comment) {
+                if (current == '*' && next == '/') { block_comment = false; ++i; }
+                continue;
+            }
+            if (!quoted && current == '/' && next == '/') { line_comment = true; ++i; continue; }
+            if (!quoted && current == '/' && next == '*') { block_comment = true; ++i; continue; }
+            if (current == '"' && (i == 0 || source[i - 1] != '\\')) quoted = !quoted;
+            if (quoted) continue;
+            if (current == '{') ++depth;
+            if (current == '}') --depth;
+        }
+        if (depth != 0)
+            continue;
+        QString updated = source;
+        updated.replace(match.capturedStart(), match.capturedLength(),
+                        match.captured(1) + "= " + number + ";");
+        return updated;
+    }
+    throw std::runtime_error("Variable declaration was not found in initialization code");
+}
 bool same_field_contract(const QJsonObject &a, const QJsonObject &b) {
     const QStringList keys{"key", "editor", "unit", "scale", "min", "max", "exclusiveMin", "options", "span", "group"};
     for (const auto &key : keys)
@@ -111,6 +149,7 @@ QWidget *EditorWindow::create_inspector_page() {
 void EditorWindow::update_workspace_variables() {
     if (!workspace_variables_)
         return;
+    const QSignalBlocker blocker(workspace_variables_);
     workspace_variables_->setRowCount(0);
     try {
         CProgramOptions options;
@@ -127,6 +166,7 @@ void EditorWindow::update_workspace_variables() {
                 continue;
             auto *name_item = new QTableWidgetItem(QString::fromStdString(name));
             auto *value_item = new QTableWidgetItem(QString::number(value, 'g', 15));
+            name_item->setFlags(name_item->flags() & ~Qt::ItemIsEditable);
             value_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
             workspace_variables_->setItem(row, 0, name_item);
             workspace_variables_->setItem(row, 1, value_item);
@@ -138,6 +178,48 @@ void EditorWindow::update_workspace_variables() {
         workspace_variables_->setItem(0, 0, new QTableWidgetItem(QString::fromUtf8("⚠")));
         workspace_variables_->setItem(0, 1, new QTableWidgetItem(QString::fromUtf8(error.what())));
         workspace_variables_->setToolTip(QString::fromUtf8(error.what()));
+    }
+}
+void EditorWindow::edit_workspace_variable(int row, int column) {
+    if (column != 1 || running() || row < 0 || row >= workspace_variables_->rowCount())
+        return;
+    const auto *name_item = workspace_variables_->item(row, 0);
+    const auto *value_item = workspace_variables_->item(row, 1);
+    if (!name_item || !value_item)
+        return;
+    try {
+        const double value = parse_si(value_item->text().toStdString(), "");
+        if (!std::isfinite(value))
+            throw std::runtime_error("Variable value must be finite");
+        QString encoded = QString::number(value, 'g', std::numeric_limits<double>::max_digits10);
+        const auto source = QString::fromStdString(project().initialization_code);
+        const auto updated = replace_initialization_value(source, name_item->text(), encoded);
+        CProgramOptions options;
+        options.diagnostic_code = "invalid_initialization";
+        options.object = project().id;
+        const auto checked = execute_c_program(compile_c_program(updated.toStdString(), options));
+        const auto found = checked.variables.find(name_item->text().toStdString());
+        if (found == checked.variables.end() ||
+            std::abs(found->second - value) > 1e-12 * std::max(1.0, std::abs(value)))
+            throw std::runtime_error("Variable is changed again later in initialization code");
+        const auto definition_id = hierarchy_path().empty() ? std::string() : document_->current_definition();
+        document_->apply("Edit initialization variable", [&](Project &root) {
+            if (definition_id.empty()) {
+                root.initialization_code = updated.toStdString();
+                return;
+            }
+            auto definition = std::find_if(root.definitions.begin(), root.definitions.end(),
+                                           [&](const Definition &candidate) {
+                                               return candidate.id == definition_id;
+                                           });
+            if (definition == root.definitions.end())
+                throw std::runtime_error("Current definition no longer exists");
+            definition->initialization_code = updated.toStdString();
+        });
+        refresh();
+    } catch (const std::exception &error) {
+        update_workspace_variables();
+        show_warning(QString::fromUtf8(error.what()));
     }
 }
 void EditorWindow::update_properties_tab(bool visible) {
@@ -484,6 +566,20 @@ void EditorWindow::fill_inspector() {
         }
         inspector_type_->setText(label);
     }
+    QStringList model_variables;
+    try {
+        CProgramOptions options;
+        options.diagnostic_code = "invalid_initialization";
+        options.object = project().id;
+        const auto initialized = execute_c_program(compile_c_program(project().initialization_code, options));
+        for (const auto &[name, value] : initialized.variables) {
+            (void)value;
+            if (name != "E" && name != "M_E" && name != "M_PI" && name != "PI")
+                model_variables.push_back(QString::fromStdString(name));
+        }
+        model_variables.sort(Qt::CaseInsensitive);
+    } catch (const std::exception &) {
+    }
     int row = 2;
     QString current_group;
     for (const auto &ordered_key : field_order) {
@@ -503,6 +599,14 @@ void EditorWindow::fill_inspector() {
             current_group = group;
         }
         auto *widget = property_editors_.at(key);
+        if (field.value("editor") == "number")
+            if (auto *line = qobject_cast<QLineEdit *>(widget)) {
+                auto *completer = new QCompleter(model_variables, line);
+                completer->setCaseSensitivity(Qt::CaseSensitive);
+                completer->setFilterMode(Qt::MatchStartsWith);
+                completer->setCompletionMode(QCompleter::PopupCompletion);
+                line->setCompleter(completer);
+            }
         if (key == "name" && targets.size() == 1 && object_type(project(), targets.front()) == "tag")
             if (auto *line = qobject_cast<QLineEdit *>(widget)) {
                 const auto current = std::find_if(project().tags.begin(), project().tags.end(),
@@ -537,10 +641,12 @@ void EditorWindow::fill_inspector() {
         if (auto *spin = qobject_cast<QSpinBox *>(widget))
             spin->setRange(field.value("min").toInt(0), field.value("max").toInt(2147483647));
         QString contents;
+        QString calculated_contents;
         bool mixed = false;
         bool expression_bound = false;
         try {
             contents = display_value(read_property(project(), targets.front(), key.toStdString()), field);
+            calculated_contents = contents;
             for (size_t i = 1; i < targets.size(); ++i)
                 mixed |= display_value(read_property(project(), targets[i], key.toStdString()), field) != contents;
             if(targets.size()==1&&field.value("editor")=="number") {
@@ -559,6 +665,45 @@ void EditorWindow::fill_inspector() {
         if (restored_draft)
             contents = draft->second.value(key);
         set_field_text(widget, contents);
+        if (auto *line = dynamic_cast<ExpressionLineEdit *>(widget)) {
+            line->set_calculated_value(expression_bound ? calculated_contents : QString());
+            const auto target = targets.size() == 1 ? targets.front() : std::string();
+            const auto update_calculated_value = [this, line, field, target](const QString &input) {
+                if (target.empty()) {
+                    line->set_calculated_value({});
+                    return;
+                }
+                try {
+                    (void)parse_field(input, field);
+                    line->set_calculated_value({});
+                    return;
+                } catch (const std::exception &) {
+                }
+                try {
+                    CProgramOptions initialization_options;
+                    initialization_options.diagnostic_code = "invalid_initialization";
+                    initialization_options.object = project().id;
+                    const auto initialized = execute_c_program(
+                        compile_c_program(project().initialization_code, initialization_options));
+                    std::map<std::string, std::string> variables;
+                    for (const auto &[name, number] : initialized.variables) {
+                        std::ostringstream encoded;
+                        encoded.precision(std::numeric_limits<double>::max_digits10);
+                        encoded << number;
+                        variables.emplace(name, encoded.str());
+                    }
+                    const ExpressionOptions options{"invalid_parameter_expression", target, false, false};
+                    const double value = evaluate_expression(input.toStdString(), variables, 0, options);
+                    validate_numeric_range(value, field, true);
+                    line->set_calculated_value(display_value(PropertyValue(value), field));
+                } catch (const std::exception &) {
+                    line->set_calculated_value(QString::fromUtf8("—"));
+                }
+            };
+            connect(line, &QLineEdit::textChanged, line, update_calculated_value);
+            if (restored_draft)
+                update_calculated_value(line->text());
+        }
         widget->setProperty("loaded_text", contents);
         widget->setProperty("draft", restored_draft);
         widget->show();

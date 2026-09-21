@@ -5,9 +5,44 @@
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QLabel>
 #include <QMenu>
+#include <QResizeEvent>
+#include <algorithm>
 
 namespace pds::desktop {
+class ExpressionLineEdit final : public QLineEdit {
+  public:
+    explicit ExpressionLineEdit(QWidget *parent = nullptr) : QLineEdit(parent) {
+        value_ = new QLabel(this);
+        value_->setObjectName("calculated_value");
+        value_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        value_->setStyleSheet("QLabel{background:palette(alternate-base);color:palette(placeholder-text);"
+                              "border-left:1px solid palette(mid);padding:0 7px;}");
+        value_->hide();
+    }
+    void set_calculated_value(const QString &value) {
+        value_->setText(value);
+        value_->setVisible(!value.isEmpty());
+        layout_value();
+    }
+  protected:
+    void resizeEvent(QResizeEvent *event) override {
+        QLineEdit::resizeEvent(event);
+        layout_value();
+    }
+  private:
+    QLabel *value_ = nullptr;
+    void layout_value() {
+        if (!value_->isVisible()) {
+            setTextMargins(0, 0, 0, 0);
+            return;
+        }
+        const int width = std::clamp(value_->sizeHint().width() + 8, 64, std::max(64, this->width() / 2));
+        value_->setGeometry(this->width() - width - 1, 1, width, std::max(0, height() - 2));
+        setTextMargins(0, 0, width + 4, 0);
+    }
+};
 // Normalize before insertion, preserving QLineEdit's cursor, selection and undo history.
 // Only attach to scalar fields; units and range checks remain with the field's parser.
 class DecimalPointNormalizer final : public QObject {

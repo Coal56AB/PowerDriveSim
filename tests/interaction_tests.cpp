@@ -2933,6 +2933,12 @@ class InteractionTests : public QObject {
             code->setPlainText("sq");code->moveCursor(QTextCursor::End);
             QTest::keyClick(code,Qt::Key_Space,Qt::ControlModifier);
             QVERIFY(c_editor->code_completer()->completionCount()>0);
+            code->setPlainText("double ulim = 10;\n");code->moveCursor(QTextCursor::End);
+            QTest::keyClicks(code,"u");
+            QTRY_VERIFY(c_editor->code_completer()->completionCount()>0);
+            QTest::keyClicks(code,"d");
+            QTRY_COMPARE(c_editor->code_completer()->completionCount(),0);
+            QVERIFY(!c_editor->code_completer()->popup()->isVisible());
             code->setPlainText("double scale(double value) { return value * 2; }\n"
                                "double base = 2e3;\ndouble factor = 0;\n"
                                "for (int i = 0; i < 2; ++i) factor += 0.5;\n"
@@ -2953,13 +2959,23 @@ class InteractionTests : public QObject {
                                          [](const Component &component){return component.kind==Kind::resistor;})->id;
         w.select_object(resistor);
         QCOMPARE(right_tabs->count(),2);
-        QCOMPARE(right_tabs->tabText(0),QString("Рабочая область"));
+        QCOMPARE(right_tabs->tabText(0),QString("Переменные"));
         QCOMPARE(right_tabs->tabText(1),QString("Свойства"));
         auto *value=w.findChild<QLineEdit *>("property_value");QVERIFY(value);
+        QVERIFY(value->completer());
+        value->clear();QTest::keyClicks(value,"b");
+        QTRY_VERIFY(value->completer()->completionCount()>0);
         value->setText("base * factor");
+        auto *calculated=value->findChild<QLabel *>("calculated_value");
+        QVERIFY(calculated&&calculated->isVisible()&&!calculated->text().isEmpty());
         QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
         QCOMPARE(w.project().components[1].value,4000.0);
         QCOMPARE(w.project().parameter_expressions.size(),size_t(1));
+        for(int row=0;row<variables->rowCount();++row)
+            if(variables->item(row,0)->text()=="base")variables->item(row,1)->setText("3000");
+        QVERIFY(QString::fromStdString(w.project().initialization_code).contains("base = 3000"));
+        w.undo();QVERIFY(QString::fromStdString(w.project().initialization_code).contains("base = 2e3"));
+        w.redo();QVERIFY(QString::fromStdString(w.project().initialization_code).contains("base = 3000"));
         QVERIFY(w.save_project(dir.filePath("expressions.pds")));
         QVERIFY(w.open_project(dir.filePath("expressions.pds")));
         w.select_object(resistor);
@@ -2991,6 +3007,10 @@ class InteractionTests : public QObject {
         QVERIFY(c_editor->code_completer()->completionCount()>0);
         code->setPlainText("double threshold(double x) { if (x > 0.1) return 1; return 0; } return threshold(t);");
         compile->click();QCOMPARE(error->text(),QString("Code compiled successfully."));
+        code->setPlainText("double curr_ramp = ramp(0, 10, 0.008333333, 0.001111111); "
+                           "return phasepwm(50, 0.02, curr_ramp) && stime == t;");
+        compile->click();QCOMPARE(error->text(),QString("Code compiled successfully."));
+        QVERIFY(!w.findChild<QLineEdit *>("property_script_step"));
         code->setPlainText("while (true) {} return false;");
         compile->click();QVERIFY(error->text().contains("budget"));
     }

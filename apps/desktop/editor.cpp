@@ -1593,11 +1593,15 @@ void EditorWindow::build_ui() {
     workspace_variables_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     workspace_variables_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     workspace_variables_->verticalHeader()->hide();
-    workspace_variables_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    workspace_variables_->setEditTriggers(QAbstractItemView::DoubleClicked |
+                                           QAbstractItemView::SelectedClicked |
+                                           QAbstractItemView::EditKeyPressed);
     workspace_variables_->setSelectionBehavior(QAbstractItemView::SelectRows);
     workspace_variables_->setAlternatingRowColors(true);
     variables_layout->addWidget(workspace_variables_);
-    right_tabs_->addTab(variables_page, text("workspace"));
+    connect(workspace_variables_, &QTableWidget::cellChanged, this,
+            [this](int row, int column) { edit_workspace_variable(row, column); });
+    right_tabs_->addTab(variables_page, text("variables"));
     inspector_stack_ = new QStackedWidget;
     inspector_stack_->setObjectName("inspector_stack");
     inspector_page_ = create_inspector_page();

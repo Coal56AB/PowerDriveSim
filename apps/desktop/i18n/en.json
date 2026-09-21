@@ -209,6 +209,7 @@
   "step_short": "Step, s",
   "canvas_title": "Circuit",
   "workspace": "Workspace",
+  "variables": "Variables",
   "connect_tool": "Connect",
   "scope_tab": "Oscilloscope",
   "results": "Results",
