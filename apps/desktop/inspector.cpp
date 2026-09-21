@@ -62,6 +62,8 @@ void EditorWindow::update_command_state() {
         apply_button_->setEnabled(editing_allowed());
     if (compile_code_button_)
         compile_code_button_->setEnabled(editing_allowed());
+    if (format_code_button_)
+        format_code_button_->setEnabled(editing_allowed());
     bool can_advance = true;
     if (continuation_ && stop_) {
         try {

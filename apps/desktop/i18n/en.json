@@ -84,6 +84,7 @@
   "initialization_block": "Schematic initialization (C code)",
   "expression_hint": "Write C initialization code with named circuit variables. Functions, branches, and instruction-bounded loops are available. Numeric element fields can use the resulting variables; expressions use internal units without text suffixes.",
   "compile_code": "Compile",
+  "format_code": "Format",
   "code_valid": "Code compiled successfully.",
   "initial_mode": "Initial state",
   "initial_specified": "Specified component states",

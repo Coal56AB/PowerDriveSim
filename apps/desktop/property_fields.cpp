@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/code_editor.hpp"
 #include "core/model/hierarchy.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/theme.hpp"
@@ -88,6 +89,10 @@ QWidget *EditorWindow::create_inspector_page() {
     compile_code_button_->setObjectName("compile_gate_code");
     compile_code_button_->hide();
     properties_->addRow(compile_code_button_);
+    format_code_button_ = new QPushButton(text("format_code"));
+    format_code_button_->setObjectName("format_gate_code");
+    format_code_button_->hide();
+    properties_->addRow(format_code_button_);
     property_error_ = new QLabel;
     property_error_->setObjectName("property_error");
     property_error_->setStyleSheet("color:palette(bright-text)");
@@ -95,6 +100,12 @@ QWidget *EditorWindow::create_inspector_page() {
     properties_->addRow(property_error_);
     connect(apply_button_, &QPushButton::clicked, this, [this] { apply_inspector(); });
     connect(compile_code_button_, &QPushButton::clicked, this, [this] { compile_inspector_code(); });
+    connect(format_code_button_, &QPushButton::clicked, this, [this] {
+        const auto found = property_editors_.find("gate_code");
+        if (found != property_editors_.end())
+            if (auto *editor = dynamic_cast<CCodeEdit *>(found->second))
+                editor->format_code();
+    });
     return page;
 }
 bool property_visible(const Project &project, const std::string &id, const QJsonObject &field) {
@@ -352,6 +363,7 @@ void EditorWindow::fill_inspector() {
     inspector_type_->setVisible(valid && targets.size() == 1);
     apply_button_->setVisible(valid);
     compile_code_button_->setVisible(false);
+    format_code_button_->setVisible(false);
     if (!valid) {
         publish();
         return;
@@ -540,7 +552,9 @@ void EditorWindow::fill_inspector() {
         }
         active_fields_.append(field);
     }
-    compile_code_button_->setVisible(targets.size()==1&&common.contains("gate_code"));
+    const bool gate_code = targets.size()==1&&common.contains("gate_code");
+    compile_code_button_->setVisible(gate_code);
+    format_code_button_->setVisible(gate_code);
     update_command_state();
     publish();
 }

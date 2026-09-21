@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/code_editor.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "core/model/expression.hpp"
 #include "core/model/c_program.hpp"
@@ -26,16 +27,19 @@ void EditorWindow::show_expression_settings() {
     dialog.setWindowTitle(text("expression_settings"));dialog.resize(720,500);
     auto *layout=new QVBoxLayout(&dialog);
     auto *hint=new QLabel(text("expression_hint"));hint->setWordWrap(true);layout->addWidget(hint);
-    auto *code=new QPlainTextEdit;code->setObjectName("expression_initialization_code");
+    auto *code=new CCodeEdit(false);code->setObjectName("expression_initialization_code");
     code->setPlainText(QString::fromStdString(project().initialization_code));
     code->setPlaceholderText("const double udc = 540;\ndouble load = 10;\n");
     layout->addWidget(code,1);
     auto *error=new QLabel;error->setObjectName("expression_error");error->setWordWrap(true);layout->addWidget(error);
     auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    auto *format=buttons->addButton(text("format_code"),QDialogButtonBox::ActionRole);
+    format->setObjectName("format_initialization_code");
     auto *compile=buttons->addButton(text("compile_code"),QDialogButtonBox::ActionRole);
     compile->setObjectName("compile_initialization_code");
     buttons->button(QDialogButtonBox::Cancel)->setText(text("dialog_cancel"));layout->addWidget(buttons);
     connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    connect(format,&QPushButton::clicked,code,&CCodeEdit::format_code);
     connect(code,&QPlainTextEdit::textChanged,error,&QLabel::clear);
     connect(compile,&QPushButton::clicked,&dialog,[&]{
         try {

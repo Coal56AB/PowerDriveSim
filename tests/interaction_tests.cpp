@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/code_editor.hpp"
 #include "apps/desktop/routing.hpp"
 #include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
@@ -2922,6 +2923,13 @@ class InteractionTests : public QObject {
             auto *dialog=w.findChild<QDialog *>("expression_settings_dialog");QVERIFY(dialog);
             QTimer::singleShot(3000,dialog,&QDialog::reject);
             auto *code=dialog->findChild<QPlainTextEdit *>("expression_initialization_code");QVERIFY(code);
+            auto *c_editor=dynamic_cast<CCodeEdit *>(code);QVERIFY(c_editor&&c_editor->code_completer());
+            code->setPlainText("double scale(double value) {\nreturn value * 2;\n}");
+            dialog->findChild<QPushButton *>("format_initialization_code")->click();
+            QVERIFY(code->toPlainText().contains("\n    return value * 2;\n"));
+            code->setPlainText("sq");code->moveCursor(QTextCursor::End);
+            QTest::keyClick(code,Qt::Key_Space,Qt::ControlModifier);
+            QVERIFY(c_editor->code_completer()->completionCount()>0);
             code->setPlainText("double scale(double value) { return value * 2; }\n"
                                "double base = 2e3;\ndouble factor = 0;\n"
                                "for (int i = 0; i < 2; ++i) factor += 0.5;\n"
@@ -2957,7 +2965,16 @@ class InteractionTests : public QObject {
         auto *code=w.findChild<QPlainTextEdit *>("property_gate_code");
         auto *compile=w.findChild<QPushButton *>("compile_gate_code");
         auto *error=w.findChild<QLabel *>("property_error");
-        QVERIFY(code&&compile&&compile->isVisible()&&error);
+        auto *format=w.findChild<QPushButton *>("format_gate_code");
+        auto *c_editor=dynamic_cast<CCodeEdit *>(code);
+        QVERIFY(code&&compile&&compile->isVisible()&&format&&format->isVisible()&&error);
+        QVERIFY(c_editor&&c_editor->code_completer());
+        code->setPlainText("if (t > 0) {\nreturn true;\n}");
+        format->click();
+        QVERIFY(code->toPlainText().contains("\n    return true;\n"));
+        code->setPlainText("ph");code->moveCursor(QTextCursor::End);
+        QTest::keyClick(code,Qt::Key_Space,Qt::ControlModifier);
+        QVERIFY(c_editor->code_completer()->completionCount()>0);
         code->setPlainText("double threshold(double x) { if (x > 0.1) return 1; return 0; } return threshold(t);");
         compile->click();QCOMPARE(error->text(),QString("Code compiled successfully."));
         code->setPlainText("while (true) {} return false;");

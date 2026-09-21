@@ -1,4 +1,5 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/code_editor.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/theme.hpp"
 #include <QAction>
@@ -83,111 +84,6 @@ class EventTableWidget final : public QTableWidget {
         }
         setCurrentCell(first + int(pairs.size()) - 1, 1);
         event->accept();
-    }
-};
-class GateCodeHighlighter final : public QSyntaxHighlighter {
-  public:
-    explicit GateCodeHighlighter(QTextDocument *document) : QSyntaxHighlighter(document) {
-        keyword_.setForeground(QColor("#7aa2f7"));
-        keyword_.setFontWeight(QFont::DemiBold);
-        function_.setForeground(QColor("#73daca"));
-        number_.setForeground(QColor("#ff9e64"));
-        comment_.setForeground(QColor("#6b7280"));
-        variable_.setForeground(QColor("#c0caf5"));
-        assign_.setForeground(QColor("#bb9af7"));
-    }
-
-  protected:
-    void highlightBlock(const QString &text) override {
-        apply(R"(\b(auto|bool|double|float|int|return|true|false)\b)", keyword_);
-        apply(R"(\b(pwm|phasepwm|square|ramp)\s*(?=\())", function_);
-        apply(R"((?<![A-Za-z_])[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?)", number_);
-        apply(R"(\b[A-Za-z_][A-Za-z0-9_]*(?=\s*=))", variable_);
-        apply(R"([=;,()])", assign_);
-        if (const auto start = text.indexOf("//"); start >= 0)
-            setFormat(start, text.size() - start, comment_);
-    }
-
-  private:
-    QTextCharFormat keyword_, function_, number_, comment_, variable_, assign_;
-    void apply(const QString &pattern, const QTextCharFormat &format) {
-        QRegularExpression re(pattern);
-        auto it = re.globalMatch(currentBlock().text());
-        while (it.hasNext()) {
-            const auto match = it.next();
-            setFormat(match.capturedStart(), match.capturedLength(), format);
-        }
-    }
-};
-class GateCodeEdit final : public QPlainTextEdit {
-  public:
-    explicit GateCodeEdit(QWidget *parent = nullptr) : QPlainTextEdit(parent) {
-        completer_ = new QCompleter(QStringList{
-                                        "phasepwm(frequency, duty, delay)",
-                                        "pwm(frequency, duty, delay)",
-                                        "square(frequency, duty, delay)",
-                                        "ramp(t0, t1, value0, value1)",
-                                        "curr_ramp",
-                                        "t",
-                                        "true",
-                                        "false",
-                                    },
-                                    this);
-        completer_->setWidget(this);
-        completer_->setCompletionMode(QCompleter::PopupCompletion);
-        completer_->setCaseSensitivity(Qt::CaseInsensitive);
-        completer_->setFilterMode(Qt::MatchStartsWith);
-        connect(completer_, QOverload<const QString &>::of(&QCompleter::activated), this,
-                [this](const QString &completion) { insert_completion(completion); });
-    }
-
-  protected:
-    void keyPressEvent(QKeyEvent *event) override {
-        if (completer_->popup()->isVisible()) {
-            switch (event->key()) {
-            case Qt::Key_Enter:
-            case Qt::Key_Return:
-            case Qt::Key_Escape:
-            case Qt::Key_Tab:
-            case Qt::Key_Backtab:
-                event->ignore();
-                return;
-            default:
-                break;
-            }
-        }
-        const bool explicit_request =
-            event->key() == Qt::Key_Space && (event->modifiers() & Qt::ControlModifier);
-        if (!explicit_request)
-            QPlainTextEdit::keyPressEvent(event);
-        const auto prefix = completion_prefix();
-        if (!explicit_request && prefix.size() < 1) {
-            completer_->popup()->hide();
-            return;
-        }
-        completer_->setCompletionPrefix(prefix);
-        if (completer_->completionCount() == 0) {
-            completer_->popup()->hide();
-            return;
-        }
-        auto rect = cursorRect();
-        rect.setWidth(completer_->popup()->sizeHintForColumn(0) +
-                      completer_->popup()->verticalScrollBar()->sizeHint().width() + 18);
-        completer_->complete(rect);
-    }
-
-  private:
-    QCompleter *completer_ = nullptr;
-    QString completion_prefix() const {
-        auto cursor = textCursor();
-        cursor.select(QTextCursor::WordUnderCursor);
-        return cursor.selectedText();
-    }
-    void insert_completion(const QString &completion) {
-        auto cursor = textCursor();
-        cursor.select(QTextCursor::WordUnderCursor);
-        cursor.insertText(completion);
-        setTextCursor(cursor);
     }
 };
 } // namespace
@@ -346,13 +242,11 @@ void EditorWindow::build_property_editors() {
                     connect(button, &QPushButton::clicked, this, [this, key] { import_samples(key); });
                 }
             } else {
-                auto *edit = kind == "code" ? static_cast<QPlainTextEdit *>(new GateCodeEdit)
+                auto *edit = kind == "code" ? static_cast<QPlainTextEdit *>(new CCodeEdit(true))
                                             : new QPlainTextEdit;
                 widget = edit;
                 edit->setMaximumHeight(kind == "code" ? 150 : 100);
                 if (kind == "code") {
-                    edit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-                    edit->setTabStopDistance(QFontMetricsF(edit->font()).horizontalAdvance(' ') * 4);
                     edit->setPlaceholderText(
                         "curr_ramp = ramp(0, 10, 0.008333333, 0.001111111);\n"
                         "phasepwm(50, 0.02, curr_ramp);");
@@ -360,7 +254,6 @@ void EditorWindow::build_property_editors() {
                         "QPlainTextEdit{background:#111827;color:#d8dee9;border:1px solid #334155;"
                         "border-radius:6px;padding:8px;selection-background-color:#2563eb;"
                         "selection-color:#f8fafc;}");
-                    new GateCodeHighlighter(edit->document());
                 } else {
                     edit->setPlaceholderText("x y");
                 }
