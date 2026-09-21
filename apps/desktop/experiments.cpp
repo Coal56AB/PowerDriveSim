@@ -120,6 +120,21 @@ struct ExperimentRun {
     std::vector<ExperimentCase> cases;
     QString unexpected_error;
 };
+
+struct ExperimentCaseDisplay {
+    size_t index = 0;
+    QString scenario;
+    double simulated_time = 0;
+    double elapsed_seconds = 0;
+    QString error_code;
+    QString error_message;
+    bool cancelled = false;
+};
+
+ExperimentCaseDisplay display_case(const ExperimentCase &entry) {
+    return {entry.index, q(entry.scenario), entry.simulated_time, entry.elapsed_seconds,
+            q(entry.error_code), q(entry.error_message), entry.cancelled};
+}
 } // namespace
 
 void EditorWindow::show_experiments() {
@@ -186,6 +201,20 @@ void EditorWindow::show_experiments() {
     cases->setHorizontalHeaderLabels({"#", "status", "scenario", "t", "elapsed", "error"});
     cases->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     right_layout->addWidget(cases, 1);
+    auto append_case = [this, cases](const ExperimentCaseDisplay &entry) {
+        const int row = cases->rowCount();
+        cases->insertRow(row);
+        const QString status = entry.cancelled ? text("cancelled")
+            : entry.error_code.isEmpty() ? text("complete") : entry.error_code;
+        for (int column = 0; column < 6; ++column)
+            cases->setItem(row, column, new QTableWidgetItem);
+        cases->item(row, 0)->setText(QString::number(entry.index));
+        cases->item(row, 1)->setText(status);
+        cases->item(row, 2)->setText(entry.scenario);
+        cases->item(row, 3)->setText(QString::number(entry.simulated_time, 'g', 8));
+        cases->item(row, 4)->setText(QString::number(entry.elapsed_seconds, 'f', 3));
+        cases->item(row, 5)->setText(entry.error_message);
+    };
     splitter->addWidget(right);
     splitter->setStretchFactor(1, 1);
 
@@ -348,30 +377,33 @@ void EditorWindow::show_experiments() {
             } catch (...) {
                 result.unexpected_error = text("unexpected_internal_error");
             }
+            if (result.unexpected_error.isEmpty() && !path.isEmpty()) {
+                try {
+                    std::ofstream out(path.toStdString());
+                    if (!out)
+                        throw Diagnostic("write_error", path.toStdString(),
+                                         "Cannot open experiment summary");
+                    write_experiment_csv_header(out);
+                    for (const auto &entry : result.cases)
+                        write_experiment_csv_case(out, entry);
+                    out.close();
+                    if (!out)
+                        throw Diagnostic("write_error", path.toStdString(),
+                                         "Cannot finish experiment summary");
+                } catch (const std::exception &error) {
+                    result.unexpected_error = QString::fromUtf8(error.what());
+                } catch (...) {
+                    result.unexpected_error = text("unexpected_internal_error");
+                }
+            }
             if (!result.unexpected_error.isEmpty())
                 show_warning(result.unexpected_error);
-            if (result.unexpected_error.isEmpty() && !path.isEmpty()) {
-                std::ofstream out(path.toStdString());
-                write_experiment_csv_header(out);
-                for (const auto &entry : result.cases)
-                    write_experiment_csv_case(out, entry);
-            }
-            for (const auto &entry : result.cases) {
-                const int row_index = cases->rowCount();
-                cases->insertRow(row_index);
-                const QString status = entry.cancelled ? text("cancelled")
-                    : entry.error_code.empty() ? text("complete") : q(entry.error_code);
-                const QString error = entry.error_message.empty() ? QString() : q(entry.error_message);
-                for (int column = 0; column < 6; ++column)
-                    cases->setItem(row_index, column, new QTableWidgetItem);
-                cases->item(row_index, 0)->setText(QString::number(entry.index));
-                cases->item(row_index, 1)->setText(status);
-                cases->item(row_index, 2)->setText(q(entry.scenario));
-                cases->item(row_index, 3)->setText(QString::number(entry.simulated_time, 'g', 8));
-                cases->item(row_index, 4)->setText(QString::number(entry.elapsed_seconds, 'f', 3));
-                cases->item(row_index, 5)->setText(error);
-            }
-            progress->setValue(int(result.progress.completed + result.progress.failed));
+            // Rebuild from the authoritative worker result. The same rows were
+            // delivered incrementally while the sweep was running.
+            cases->setRowCount(0);
+            for (const auto &entry : result.cases)
+                append_case(display_case(entry));
+            progress->setValue(int(result.cases.size()));
             if (!result.unexpected_error.isEmpty())
                 banner_->setText(text("warning_hint"));
             else
@@ -389,12 +421,31 @@ void EditorWindow::show_experiments() {
             watcher->deleteLater();
         });
         const auto unexpected_error = text("unexpected_internal_error");
-        watcher->setFuture(QtConcurrent::run([source = root_project(), experiment, cancel, unexpected_error] {
+        const QPointer<QDialog> dialog_guard(&dialog);
+        const QPointer<QProgressBar> progress_guard(progress);
+        watcher->setFuture(QtConcurrent::run([this, source = root_project(), experiment, cancel,
+                                               unexpected_error, dialog_guard, progress_guard,
+                                               append_case] {
             ExperimentRun result;
             try {
                 result.progress = run_experiment(source, experiment, cancel.get(),
                                                  [&](ExperimentCase &&c) {
+                                                     const auto display = display_case(c);
                                                      result.cases.push_back(std::move(c));
+                                                     const auto processed = result.cases.size();
+                                                     QMetaObject::invokeMethod(
+                                                         dialog_guard,
+                                                         [this, dialog_guard, progress_guard, append_case,
+                                                          display, processed, total = experiment_size(experiment)] {
+                                                             if (!dialog_guard || !progress_guard)
+                                                                 return;
+                                                             append_case(display);
+                                                             progress_guard->setValue(int(processed));
+                                                             banner_->setText(text("experiment_running")
+                                                                                  .arg(processed)
+                                                                                  .arg(total));
+                                                         },
+                                                         Qt::QueuedConnection);
                                                  });
             } catch (const std::exception &error) {
                 result.unexpected_error = QString::fromUtf8(error.what());

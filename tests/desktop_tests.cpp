@@ -13,6 +13,7 @@
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QProgressBar>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTemporaryDir>
@@ -389,6 +390,7 @@ class DesktopTests : public QObject {
         QVERIFY(window.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc-sweep.pds"));
         QCOMPARE(window.root_project().experiments.size(), size_t(1));
         bool checked = false;
+        std::vector<int> live_progress;
         QTimer::singleShot(80, [&] {
             auto *dialog = window.findChild<QDialog *>("experiments_dialog");
             QVERIFY(dialog);
@@ -397,6 +399,10 @@ class DesktopTests : public QObject {
             QCOMPARE(list->count(), 1);
             auto *run = dialog->findChild<QPushButton *>("experiment_run");
             QVERIFY(run);
+            auto *progress = dialog->findChild<QProgressBar *>("experiment_progress");
+            QVERIFY(progress);
+            connect(progress, &QProgressBar::valueChanged, dialog,
+                    [&](int value) { live_progress.push_back(value); });
             QTest::mouseClick(run, Qt::LeftButton);
         });
         QTimer::singleShot(1400, [&] {
@@ -407,6 +413,8 @@ class DesktopTests : public QObject {
             QCOMPARE(cases->rowCount(), 6);
             for (int row = 0; row < cases->rowCount(); ++row)
                 QVERIFY(cases->item(row, 5)->text().isEmpty());
+            QVERIFY(std::any_of(live_progress.begin(), live_progress.end(),
+                                [](int value) { return value > 0 && value < 6; }));
             checked = true;
             dialog->accept();
         });
