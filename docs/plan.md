@@ -90,6 +90,11 @@ Trapezoidal, ideal diode / active-set solve, иерархический реда
 5. Документация компонентов, energy balance/steady-state/fault assertions,
    общая проверка критериев M2. Ускоренные варианты сравнивать с generic там, где реализованы.
 
+Контракт причинности будущих задержанных signal/gate-значений зафиксирован в
+[отдельном документе](delayed-signal-api.md). Он не означает реализацию runtime:
+типизированный Signal IR и scheduler выполняются только после приёмки M2, а
+Controller/ADC/MCU/C++ остаются M6.
+
 Не переходить к M3 до проверки всей приёмки M2. Controller/ADC/MCU остаются M6.
 ## Состояние после плоского редактора
 
