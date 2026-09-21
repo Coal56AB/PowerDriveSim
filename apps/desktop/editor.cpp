@@ -200,6 +200,7 @@ class Atom final : public QGraphicsItem {
     unsigned input_count = 2;
     std::vector<std::pair<QString, QPointF>> public_ports;
     std::vector<PublicPort> definition_ports;
+    double frame_half_height = 0.0;
     int library_icon_id = -1;
     QImage custom_image;
     bool ground = false, separate_labels = false, differential_plot = false;
@@ -260,6 +261,11 @@ class Atom final : public QGraphicsItem {
         }
         if (definition_ports == definition.ports)
             return;
+        const bool interface_changed = definition_ports.size() != definition.ports.size() ||
+            !std::equal(definition_ports.begin(), definition_ports.end(), definition.ports.begin(),
+                        [](const PublicPort &left, const PublicPort &right) {
+                            return left.id == right.id;
+                        });
         prepareGeometryChange();
         definition_ports = definition.ports;
         public_ports.clear();
@@ -308,11 +314,18 @@ class Atom final : public QGraphicsItem {
             for (const auto &port : definition.ports)
                 if (child->data(2).toString() == q(port.id))
                     child->setToolTip(q(port.name));
+        // A frame is part of the block layout, not a function of a pin's
+        // current position. Keep the natural size captured when the item is
+        // created; otherwise snapping a pin (or merely rebuilding after a
+        // wire edit) feeds its outward endpoint back into the size calculation
+        // and makes the block grow on every Undo/Redo cycle.
+        if (frame_half_height <= 0.0 || interface_changed)
+            frame_half_height = natural_body_half_height();
     }
     double port_spacing() const {
         return input_count > 18 ? 14.0 : input_count > 12 ? 18.0 : input_count > 8 ? 22.0 : 28.0;
     }
-    double body_half_height() const {
+    double natural_body_half_height() const {
         if (type == 4) {
             double extent = (std::max(1u, input_count) - 1) * port_spacing() / 2.0;
             for (const auto &[port_name, point] : public_ports) {
@@ -328,6 +341,10 @@ class Atom final : public QGraphicsItem {
         if (type == 3)
             return std::max(40.0, input_count * 20.0);
         return 40.0;
+    }
+    double body_half_height() const {
+        return type == 4 && frame_half_height > 0.0 ? frame_half_height
+                                                    : natural_body_half_height();
     }
     QRectF boundingRect() const override {
         if (type == 4) {

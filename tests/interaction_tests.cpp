@@ -1417,6 +1417,16 @@ class InteractionTests : public QObject {
         QVERIFY(!instance_id.empty());
         const auto definition_id = w.project().instances.front().definition;
         const auto port_id = definition(w.root_project(), definition_id).ports.front().id;
+        auto frame_size = [&] {
+            auto *instance = item(w, instance_id);
+            return instance ? instance->mapRectToScene(instance->shape().boundingRect()).size() : QSizeF();
+        };
+        const auto original_frame = frame_size();
+        auto verify_stable_frame = [&] {
+            const auto current = frame_size();
+            QVERIFY(std::abs(current.width() - original_frame.width()) < 1e-6);
+            QVERIFY(std::abs(current.height() - original_frame.height()) < 1e-6);
+        };
         auto move_port = [&](QPointF target) -> std::optional<PublicPort> {
             w.select_object(instance_id);
             auto *instance = item(w, instance_id);
@@ -1444,12 +1454,22 @@ class InteractionTests : public QObject {
         };
         auto port = move_port({0, -200});
         QVERIFY(port && port->has_position && port->y < 0 && std::abs(port->x) < 90);
-        port = move_port({200, 0});
+        verify_stable_frame();
+        port = move_port({200, 35});
         QVERIFY(port && port->x > 0 && std::abs(port->y) < 100);
+        verify_stable_frame();
         port = move_port({0, 200});
         QVERIFY(port && port->y > 0 && std::abs(port->x) < 90);
-        port = move_port({-200, 0});
+        verify_stable_frame();
+        port = move_port({-200, 35});
         QVERIFY(port && port->x < 0 && std::abs(port->y) < 100);
+        verify_stable_frame();
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            w.undo();
+            verify_stable_frame();
+            w.redo();
+            verify_stable_frame();
+        }
     }
     void transformed_public_ports_render_on_world_grid() {
         QTemporaryDir dir;
