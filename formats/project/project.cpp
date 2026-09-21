@@ -27,6 +27,13 @@ std::string unhex_text(const std::string &value,const std::string &object) {
     for(size_t i=0;i<value.size();i+=2){const int high=digit(value[i]),low=digit(value[i+1]);if(high<0||low<0)throw Diagnostic("parse_error",object,"Invalid encoded expression text");result.push_back(char((high<<4)|low));}
     return result;
 }
+bool parse_complete_quoted_text(const std::string &source,std::string &value) {
+    std::istringstream input(source);
+    input>>std::quoted(value);
+    if(input.fail())return false;
+    input>>std::ws;
+    return input.eof();
+}
 } // namespace
 static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     Project p;
@@ -310,7 +317,27 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         } else if(tag=="pwm" && p.schema>=6){
             GatePattern g;g.pwm=true;row>>std::quoted(g.id)>>std::quoted(g.name)>>g.x>>g.y>>g.frequency>>g.duty>>g.delay;p.patterns.push_back(g);
         } else if(tag=="gate_script" && p.schema>=16){
-            GatePattern g;g.script=true;row>>std::quoted(g.id)>>std::quoted(g.name)>>g.x>>g.y>>g.initial>>g.script_step>>std::quoted(g.code);p.patterns.push_back(g);
+            GatePattern g;g.script=true;
+            row>>std::quoted(g.id)>>std::quoted(g.name)>>g.x>>g.y>>g.initial>>g.script_step;
+            if(p.schema>=23) {
+                std::string encoded;row>>std::quoted(encoded);g.code=unhex_text(encoded,g.id);
+            } else if(!row.fail()) {
+                // Versions 16..22 wrote formatted C source directly. Recover scripts
+                // whose physical newlines accidentally split one project record.
+                std::string quoted_source;
+                std::getline(row,quoted_source);
+                while(!parse_complete_quoted_text(quoted_source,g.code)) {
+                    std::string continuation;
+                    if(!std::getline(in,continuation)||quoted_source.size()+continuation.size()+1>1024*1024) {
+                        row.setstate(std::ios::failbit);
+                        break;
+                    }
+                    ++number;
+                    quoted_source+='\n';
+                    quoted_source+=continuation;
+                }
+            }
+            p.patterns.push_back(std::move(g));
         } else if(tag=="orientation" && p.schema>=6){
             std::string id;Orientation orientation;int mirror=-1;row>>std::quoted(id)>>orientation.quarter_turns>>mirror;
             std::vector<double> values;
@@ -583,7 +610,7 @@ void write_project(const Project& p, std::ostream& out) {
         out << ' ' << std::quoted(wire.color) << ' ' << wire.width << ' ' << unsigned(wire.line) << '\n';
     }
     for(const auto& tag:p.tags)out<<"tag "<<std::quoted(tag.id)<<' '<<std::quoted(tag.name)<<' '<<tag.x<<' '<<tag.y<<' '<<unsigned(tag.domain)<<' '<<unsigned(tag.scope)<<' '<<tag.listed<<'\n';
-    for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(g.code)<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
+    for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(hex_text(g.code))<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
     for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<' '<<g.differential<<'\n';
     for(const auto& g:p.plots)for(const auto& pin:g.pin_positions)out<<"x-plot-pin "<<std::quoted(g.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
     for(const auto& block:p.code_blocks) {

@@ -5,6 +5,7 @@
 #include "results/measurements.hpp"
 #include <cmath>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 using namespace pds;
@@ -158,8 +159,23 @@ int main(int argc, char **argv) {
             previous_script=gate;
         }
         check(script_rise&&script_fall,"Gate script schedules reproducible PWM edges");
+        doc.apply("Formatted gate script",[&](Project& p){auto& gate=p.patterns.back();
+            gate.code="double duty = 0.4;\n// formatted source\nreturn pwm(1000, duty, 0);";});
         std::ostringstream scripted_roundtrip;write_project(doc.project(),scripted_roundtrip);std::istringstream scripted_reload(scripted_roundtrip.str());auto scripted_restored=read_project(scripted_reload);
-        check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("return pwm")!=std::string::npos,"Gate script roundtrip");
+        check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("// formatted source\nreturn pwm")!=std::string::npos,"Multiline gate script roundtrip");
+        check(scripted_roundtrip.str().find("// formatted source")==std::string::npos,"Gate script source is encoded on one project-file line");
+        std::string legacy_script=scripted_roundtrip.str();
+        legacy_script.replace(0,std::string("PowerDriveSim 23").size(),"PowerDriveSim 22");
+        const auto gate_begin=legacy_script.find("gate_script ");
+        const auto gate_end=legacy_script.find('\n',gate_begin);
+        std::ostringstream legacy_record;
+        const auto& legacy_gate=doc.project().patterns.back();
+        legacy_record<<"gate_script "<<std::quoted(legacy_gate.id)<<' '<<std::quoted(legacy_gate.name)<<' '
+                     <<legacy_gate.x<<' '<<legacy_gate.y<<' '<<legacy_gate.initial<<' '<<legacy_gate.script_step
+                     <<" \"double duty = 0.4;\n// legacy formatted source\nreturn pwm(1000, duty, 0);\"";
+        legacy_script.replace(gate_begin,gate_end-gate_begin,legacy_record.str());
+        std::istringstream legacy_script_input(legacy_script);const auto legacy_script_restored=read_project(legacy_script_input);
+        check(legacy_script_restored.patterns.back().code.find("// legacy formatted source\nreturn pwm")!=std::string::npos,"Legacy multiline gate script recovery");
         doc.apply("Gate timing mode",[&](Project& p){write_property(p,script,"gate_mode",unsigned(0));});
         check(!doc.project().patterns.back().pwm&&!doc.project().patterns.back().script&&
                   std::get<std::vector<GateEvent>>(read_property(doc.project(),script,"events")).size()==1,
