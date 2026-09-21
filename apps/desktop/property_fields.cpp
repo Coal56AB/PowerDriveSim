@@ -108,6 +108,50 @@ QWidget *EditorWindow::create_inspector_page() {
     });
     return page;
 }
+void EditorWindow::update_workspace_variables() {
+    if (!workspace_variables_)
+        return;
+    workspace_variables_->setRowCount(0);
+    try {
+        CProgramOptions options;
+        options.diagnostic_code = "invalid_initialization";
+        options.object = project().id;
+        const auto result = execute_c_program(compile_c_program(project().initialization_code, options));
+        static const std::set<std::string> builtins{"E", "M_E", "M_PI", "PI"};
+        const int visible_count = int(std::count_if(result.variables.begin(), result.variables.end(),
+            [](const auto &variable) { return !builtins.contains(variable.first); }));
+        workspace_variables_->setRowCount(visible_count);
+        int row = 0;
+        for (const auto &[name, value] : result.variables) {
+            if (builtins.contains(name))
+                continue;
+            auto *name_item = new QTableWidgetItem(QString::fromStdString(name));
+            auto *value_item = new QTableWidgetItem(QString::number(value, 'g', 15));
+            value_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            workspace_variables_->setItem(row, 0, name_item);
+            workspace_variables_->setItem(row, 1, value_item);
+            ++row;
+        }
+        workspace_variables_->setToolTip({});
+    } catch (const std::exception &error) {
+        workspace_variables_->setRowCount(1);
+        workspace_variables_->setItem(0, 0, new QTableWidgetItem(QString::fromUtf8("⚠")));
+        workspace_variables_->setItem(0, 1, new QTableWidgetItem(QString::fromUtf8(error.what())));
+        workspace_variables_->setToolTip(QString::fromUtf8(error.what()));
+    }
+}
+void EditorWindow::update_properties_tab(bool visible) {
+    if (!right_tabs_ || !inspector_stack_)
+        return;
+    const int index = right_tabs_->indexOf(inspector_stack_);
+    if (visible && index < 0) {
+        right_tabs_->addTab(inspector_stack_, text("properties"));
+        right_tabs_->setCurrentWidget(inspector_stack_);
+    } else if (!visible && index >= 0) {
+        right_tabs_->removeTab(index);
+        right_tabs_->setCurrentIndex(0);
+    }
+}
 bool property_visible(const Project &project, const std::string &id, const QJsonObject &field) {
     const auto conditions = field.value("when").toObject();
     for (auto condition = conditions.begin(); condition != conditions.end(); ++condition) {
@@ -358,6 +402,7 @@ void EditorWindow::fill_inspector() {
     if (targets.empty() && (atoms_.count(selected_) || wires_.count(selected_)))
         targets.push_back(selected_);
     bool valid = !targets.empty();
+    update_properties_tab(valid);
     inspector_hint_->setVisible(!valid);
     inspector_hint_->setText(text("inspector_empty"));
     inspector_type_->setVisible(valid && targets.size() == 1);

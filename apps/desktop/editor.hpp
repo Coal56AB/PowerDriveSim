@@ -389,6 +389,9 @@ class EditorWindow : public QMainWindow {
     QComboBox *method_ = nullptr;
     QFormLayout *properties_ = nullptr;
     QStackedWidget *inspector_stack_ = nullptr;
+    QTabWidget *right_tabs_ = nullptr;
+    QTableWidget *workspace_variables_ = nullptr;
+    QWidget *inspector_page_ = nullptr;
     QLabel *banner_ = nullptr;
     QProgressBar *simulation_progress_ = nullptr;
     QLabel *inspector_hint_ = nullptr, *inspector_type_ = nullptr;
@@ -441,6 +444,8 @@ class EditorWindow : public QMainWindow {
     void load_component_specs();
     QWidget *create_inspector_page();
     void build_property_editors();
+    void update_workspace_variables();
+    void update_properties_tab(bool visible);
     void compile_inspector_code();
     bool edit_text_at(QPoint position);
     void cancel_inline_edit();

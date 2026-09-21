@@ -2918,6 +2918,9 @@ class InteractionTests : public QObject {
         QTemporaryDir dir;
         EditorWindow w("ru",dir.path());ready(w);
         QVERIFY(w.open_project(QString(PDS_SOURCE_DIR)+"/examples/rc.pds"));
+        auto *right_tabs=w.findChild<QTabWidget *>("right_workspace_tabs");
+        auto *variables=w.findChild<QTableWidget *>("workspace_variables");
+        QVERIFY(right_tabs&&variables);QCOMPARE(right_tabs->count(),1);
         bool edited=false;
         QTimer::singleShot(0,&w,[&]{
             auto *dialog=w.findChild<QDialog *>("expression_settings_dialog");QVERIFY(dialog);
@@ -2940,9 +2943,18 @@ class InteractionTests : public QObject {
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();edited=true;
         });
         w.show_expression_settings();QVERIFY(edited);
+        QCOMPARE(variables->rowCount(),2);
+        QMap<QString,QString> workspace;
+        for(int row=0;row<variables->rowCount();++row)
+            workspace[variables->item(row,0)->text()]=variables->item(row,1)->text();
+        QCOMPARE(workspace.value("base"),QString("2000"));
+        QCOMPARE(workspace.value("factor"),QString("2"));
         const auto resistor=std::find_if(w.project().components.begin(),w.project().components.end(),
                                          [](const Component &component){return component.kind==Kind::resistor;})->id;
         w.select_object(resistor);
+        QCOMPARE(right_tabs->count(),2);
+        QCOMPARE(right_tabs->tabText(0),QString("Рабочая область"));
+        QCOMPARE(right_tabs->tabText(1),QString("Свойства"));
         auto *value=w.findChild<QLineEdit *>("property_value");QVERIFY(value);
         value->setText("base * factor");
         QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
@@ -2956,6 +2968,8 @@ class InteractionTests : public QObject {
         QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
         QCOMPARE(w.project().components[1].value,3000.0);
         QVERIFY(w.project().parameter_expressions.empty());
+        w.canvas()->scene()->clearSelection();
+        QTRY_COMPARE(right_tabs->count(),1);
     }
     void gate_code_compile_button() {
         QTemporaryDir dir;

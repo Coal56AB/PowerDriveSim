@@ -1581,13 +1581,32 @@ void EditorWindow::build_ui() {
     auto *left = dock("workspace", left_tabs, Qt::LeftDockWidgetArea);
     left->setMinimumWidth(300);
     left->setMaximumWidth(380);
+    right_tabs_ = new QTabWidget;
+    right_tabs_->setObjectName("right_workspace_tabs");
+    auto *variables_page = new QWidget;
+    auto *variables_layout = new QVBoxLayout(variables_page);
+    variables_layout->setContentsMargins(8, 8, 8, 8);
+    workspace_variables_ = new QTableWidget;
+    workspace_variables_->setObjectName("workspace_variables");
+    workspace_variables_->setColumnCount(2);
+    workspace_variables_->setHorizontalHeaderLabels({text("name"), text("value")});
+    workspace_variables_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    workspace_variables_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    workspace_variables_->verticalHeader()->hide();
+    workspace_variables_->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    workspace_variables_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    workspace_variables_->setAlternatingRowColors(true);
+    variables_layout->addWidget(workspace_variables_);
+    right_tabs_->addTab(variables_page, text("workspace"));
     inspector_stack_ = new QStackedWidget;
     inspector_stack_->setObjectName("inspector_stack");
-    inspector_stack_->addWidget(create_inspector_page());
+    inspector_page_ = create_inspector_page();
+    inspector_stack_->addWidget(inspector_page_);
     for (auto *field : {stop_, step_})
         connect(field, &QLineEdit::editingFinished, this, [this] { commit_profile(); });
     connect(method_, &QComboBox::activated, this, [this] { commit_profile(); });
-    auto *right = dock("inspector", inspector_stack_, Qt::RightDockWidgetArea);
+    auto *right = dock("inspector", right_tabs_, Qt::RightDockWidgetArea);
+    right->setWindowTitle(text("workspace"));
     right->setMinimumWidth(280);
     right->setMaximumWidth(400);
     bottom_ = new QTabWidget;
@@ -2224,6 +2243,7 @@ void EditorWindow::refresh(bool invalidate) {
         scope_->set_result(result_ ? &*result_ : nullptr, result_indices(project().scope_channels),
                            project());
     update_graphs();
+    update_workspace_variables();
     scene_project_ = project();
     rebuilding_ = false;
     fill_inspector();
