@@ -3212,6 +3212,31 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
     simulation_timer_.start();
     if (!commit_inline_edit())
         return;
+    auto restore_failed_dispatch = [this] {
+        if (!busy_)
+            return;
+        cancel_ = true;
+        paused_ = false;
+        preparing_ = false;
+        busy_ = false;
+        if (simulation_progress_)
+            simulation_progress_->hide();
+        if (scope_)
+            scope_->set_live(false);
+        for (auto &[id, view] : plot_views_)
+            if (view)
+                view->set_live(false);
+        canvas_->set_editable(editing_allowed());
+        library_->setEnabled(editing_allowed());
+        run_->setEnabled(true);
+        scope_enable_->setEnabled(true);
+        if (channels_)
+            channels_->setEnabled(true);
+        undo_->setEnabled(document_->can_undo());
+        redo_->setEnabled(document_->can_redo());
+        update_run_button();
+        update_command_state();
+    };
     try {
         Profile profile = project().profile;
         profile.stop = parse_si(stop_->text().toStdString(), "s");
@@ -3315,7 +3340,11 @@ void EditorWindow::launch_simulation(std::optional<SimulationSnapshot> state, si
         }));
         update_title();
     } catch (const std::exception &e) {
+        restore_failed_dispatch();
         show_error(e);
+    } catch (...) {
+        restore_failed_dispatch();
+        show_warning(text("unexpected_internal_error"));
     }
 }
 void EditorWindow::stop_simulation() {
@@ -3337,7 +3366,16 @@ void EditorWindow::stop_simulation() {
 }
 void EditorWindow::finish_simulation() {
     auto completed = watcher_.future();
-    auto outcome = completed.takeResult();
+    Outcome outcome;
+    try {
+        outcome = completed.takeResult();
+    } catch (const std::exception &error) {
+        outcome.error = QString::fromUtf8(error.what());
+        outcome.warning = true;
+    } catch (...) {
+        outcome.error = text("unexpected_internal_error");
+        outcome.warning = true;
+    }
     drain_simulation_stream();
     busy_ = false;
     paused_ = false;

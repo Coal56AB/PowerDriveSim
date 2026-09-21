@@ -340,7 +340,14 @@ void EditorWindow::show_experiments() {
         auto *stop = buttons->addButton(text("stop"), QDialogButtonBox::ActionRole);
         connect(stop, &QPushButton::clicked, &dialog, [cancel] { *cancel = true; });
         connect(watcher, &QFutureWatcher<ExperimentRun>::finished, &dialog, [&, watcher, stop, path] {
-            const auto result = watcher->result();
+            ExperimentRun result;
+            try {
+                result = watcher->result();
+            } catch (const std::exception &error) {
+                result.unexpected_error = QString::fromUtf8(error.what());
+            } catch (...) {
+                result.unexpected_error = text("unexpected_internal_error");
+            }
             if (!result.unexpected_error.isEmpty())
                 show_warning(result.unexpected_error);
             if (result.unexpected_error.isEmpty() && !path.isEmpty()) {
