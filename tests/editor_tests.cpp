@@ -23,6 +23,52 @@ int main(int argc,char** argv) {
     try {
         Project p; p.id=new_uuid(); p.name="New circuit"; p.wired=true; p.profile={.005,1e-6};
         {
+            Project circuit; circuit.id=new_uuid(); circuit.wired=true;
+            CodeBlock source; source.id=new_uuid(); source.name="Source"; source.x=40;
+            source.code="out = 1;";
+            source.outputs={{new_uuid(),"out","",SignalScalarType::real,0}};
+            CodeBlock sink; sink.id=new_uuid(); sink.name="Sink"; sink.x=240;
+            sink.code="out = in;";
+            sink.inputs={{new_uuid(),"in","",SignalScalarType::real,0}};
+            sink.outputs={{new_uuid(),"out","",SignalScalarType::real,0}};
+            circuit.code_blocks={source,sink};
+            circuit.wires.push_back({new_uuid(),{source.id,source.outputs[0].id},
+                                     {sink.id,sink.inputs[0].id}});
+            Document editor(circuit);
+            const auto fragment=editor.copy({source.id,sink.id});
+            check(fragment.code_blocks.size()==2&&fragment.wires.size()==1,
+                  "Clipboard includes selected code blocks and their signal wire");
+            const auto pasted=editor.paste(fragment,0,160);
+            check(pasted.size()==2&&editor.project().code_blocks.size()==4&&
+                  editor.project().wires.size()==2&&
+                  editor.project().wires.back().from.object==pasted[0]&&
+                  editor.project().wires.back().to.object==pasted[1],
+                  "Paste remaps code-block identities and connected wire endpoints");
+            editor.undo();
+            check(editor.project()==circuit,"Code-block paste is undoable");
+            editor.redo();
+            editor.erase({pasted[0]});
+            check(editor.project().code_blocks.size()==3&&editor.project().wires.size()==1,
+                  "Deleting a code block removes its incident signal wire");
+            editor.undo();
+            check(editor.project().code_blocks.size()==4&&editor.project().wires.size()==2,
+                  "Code-block deletion and wire cleanup share one undo transaction");
+            auto visual=editor.project();
+            visual.code_blocks[0].x+=80;
+            visual.code_blocks[0].orientation.quarter_turns=1;
+            check(same_simulation(visual,editor.project()),
+                  "Code-block placement and orientation do not alter simulation");
+            const auto instance=editor.create_definition({source.id},"Grouped source");
+            check(editor.project().code_blocks.size()==3&&
+                  definition(editor.project(),editor.project().instances.back().definition).code_blocks.size()==1&&
+                  editor.project().wires.front().from.object==instance,
+                  "Grouping a code block exposes its connected output");
+            editor.expand_instance(instance);
+            check(editor.project().code_blocks.size()==4&&editor.project().wires.size()==2&&
+                  editor.project().wires.front().from.object==expanded_uuid({instance},source.id),
+                  "Expanding restores editable code block and signal connection");
+        }
+        {
             Project references; references.id=new_uuid(); references.wired=true;
             references.nodes={{new_uuid(),"GND1",true},{new_uuid(),"GND1",true},{new_uuid(),"GND2",true}};
             const auto resolved=resolve_connections(references);

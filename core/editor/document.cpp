@@ -82,6 +82,8 @@ Point endpoint_point(const Schematic &p, const Endpoint &endpoint) {
         return *point;
     if (auto point = find(p.plots))
         return *point;
+    if (auto point = find(p.code_blocks))
+        return *point;
     if (auto point = find(p.instances))
         return *point;
     return {};
@@ -294,7 +296,7 @@ bool same_simulation(const Project& a,const Project& b) {
         auto strip=[](auto& objects){for(auto& o:objects){o.name.clear();o.x=0;o.y=0;o.orientation={};}};
         auto strip_tags=[](auto& objects){for(auto& o:objects){o.x=0;o.y=0;o.orientation={};o.listed=true;o.connection_name.clear();o.scope_path.clear();}};
         auto schematic=[&](Schematic& s){
-            strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.instances);
+            strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.code_blocks);strip(s.instances);
             for(auto& w:s.wires){w.bends.clear();w.color.clear();w.width=2;w.line=WireLine::automatic;}
             for(auto& g:s.patterns)g.pin_positions.clear();
             for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;g.pin_positions.clear();}
@@ -398,6 +400,7 @@ Project Document::copy(const std::vector<std::string>& list) const {
     for(const auto& t:project().tags)if(ids.count(t.id))result.tags.push_back(t);
     for(const auto& g:project().patterns)if(ids.count(g.id))result.patterns.push_back(g);
     for(const auto& g:project().plots)if(ids.count(g.id))result.plots.push_back(g);
+    for(const auto& block:project().code_blocks)if(ids.count(block.id))result.code_blocks.push_back(block);
     for(const auto& i:project().instances)if(ids.count(i.id))result.instances.push_back(i);
     if(!result.instances.empty())result.definitions=project().definitions;
     for(const auto& w:project().wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
@@ -459,10 +462,10 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
         };
         for(auto& i:fragment.instances)i.definition=remap_definition(i.definition);
         std::map<std::string,std::string> ids;std::set<std::string> names;
-        auto remember=[&](const auto& objects){for(const auto& o:objects)names.insert(o.name);};remember(p.components);remember(p.nodes);remember(p.patterns);remember(p.plots);remember(p.instances);
+        auto remember=[&](const auto& objects){for(const auto& o:objects)names.insert(o.name);};remember(p.components);remember(p.nodes);remember(p.patterns);remember(p.plots);remember(p.code_blocks);remember(p.instances);
         auto copy=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;object.name=next_name(object.name,names);names.insert(object.name);to.push_back(std::move(object));}};
         auto copy_tags=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;to.push_back(std::move(object));}};
-        copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy_tags(fragment.tags,p.tags);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.instances,p.instances);
+        copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy_tags(fragment.tags,p.tags);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.code_blocks,p.code_blocks);copy(fragment.instances,p.instances);
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}
         for(auto event:fragment.events)if(ids.count(event.target)){event.target=ids.at(event.target);p.events.push_back(event);}
         const bool compatible_initialization=p.initialization_code.empty()||p.initialization_code==fragment.initialization_code;
@@ -504,7 +507,7 @@ void Document::transform(const std::vector<std::string>& list,int turns,bool mir
     apply("Transform objects",[&](Project& p){
         double cx=0,cy=0;size_t count=0;
         auto center=[&](const auto& objects){for(const auto& o:objects)if(ids.count(o.id)){cx+=o.x;cy+=o.y;++count;}};
-        center(p.components);center(p.nodes);center(p.tags);center(p.patterns);center(p.plots);center(p.instances);
+        center(p.components);center(p.nodes);center(p.tags);center(p.patterns);center(p.plots);center(p.code_blocks);center(p.instances);
         if(count){cx=std::round(cx/count/20)*20;cy=std::round(cy/count/20)*20;}
         auto point=[&](double& x,double& y){x-=cx;y-=cy;if(mirror)x=-x;else {int n=(turns%4+4)%4;while(n--){double old=x;x=-y;y=old;}}x+=cx;y+=cy;};
         auto change=[&](auto& objects){for(auto& object:objects)if(ids.count(object.id)){
@@ -512,13 +515,13 @@ void Document::transform(const std::vector<std::string>& list,int turns,bool mir
             auto& o=object.orientation;if(mirror)o.mirrored=!o.mirrored;
             int amount=o.mirrored?-turns:turns;o.quarter_turns=static_cast<unsigned>((static_cast<int>(o.quarter_turns)+amount%4+4)%4);
         }};
-        change(p.components);change(p.nodes);change(p.tags);change(p.patterns);change(p.plots);change(p.instances);
+        change(p.components);change(p.nodes);change(p.tags);change(p.patterns);change(p.plots);change(p.code_blocks);change(p.instances);
         if(count>1)for(auto& wire:p.wires)if(ids.count(wire.from.object)&&ids.count(wire.to.object))for(auto& b:wire.bends)point(b.x,b.y);
     });
 }
 void Document::arrange(const std::vector<std::string>& list,const std::string& mode){
     std::set<std::string> ids(list.begin(),list.end());
-    apply("Arrange objects",[&](Project& p){std::vector<std::pair<double*,double*>> points;auto add=[&](auto& objects){for(auto& o:objects)if(ids.count(o.id))points.push_back({&o.x,&o.y});};add(p.components);add(p.nodes);add(p.tags);add(p.patterns);add(p.plots);add(p.instances);if(points.size()<2)return;
+    apply("Arrange objects",[&](Project& p){std::vector<std::pair<double*,double*>> points;auto add=[&](auto& objects){for(auto& o:objects)if(ids.count(o.id))points.push_back({&o.x,&o.y});};add(p.components);add(p.nodes);add(p.tags);add(p.patterns);add(p.plots);add(p.code_blocks);add(p.instances);if(points.size()<2)return;
         bool horizontal=mode=="left"||mode=="right"||mode=="horizontal";
         auto coordinate=[&](auto point)->double&{return horizontal?*point.first:*point.second;};
         std::sort(points.begin(),points.end(),[&](auto a,auto b){return coordinate(a)<coordinate(b);});double low=coordinate(points.front()),high=coordinate(points.back());
@@ -567,6 +570,7 @@ void Document::erase(const std::vector<std::string>& list) {
             std::any_of(p.components.begin(),p.components.end(),[&](const Component& c){return ids.count(c.id);})||
             std::any_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& t){return ids.count(t.id);})||
             std::any_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return ids.count(g.id);})||
+            std::any_of(p.code_blocks.begin(),p.code_blocks.end(),[&](const CodeBlock& block){return ids.count(block.id);})||
             std::any_of(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& g){return ids.count(g.id);})||
             std::any_of(p.instances.begin(),p.instances.end(),[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.labels,[&](const LabelLayout& l){return ids.count(l.object);});
@@ -575,6 +579,7 @@ void Document::erase(const std::vector<std::string>& list) {
         std::erase_if(p.nodes,[&](const Node& n){return ids.count(n.id);});
         std::erase_if(p.tags,[&](const ConnectionTag& t){return ids.count(t.id);});
         std::erase_if(p.plots,[&](const PlotBlock& g){return ids.count(g.id);});
+        std::erase_if(p.code_blocks,[&](const CodeBlock& block){return ids.count(block.id);});
         std::erase_if(p.patterns,[&](const GatePattern& g){return ids.count(g.id);});
         std::erase_if(p.instances,[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.events,[&](const GateEvent& e){return ids.count(e.target);});
@@ -597,6 +602,7 @@ void Document::erase(const std::vector<std::string>& list) {
                        std::none_of(p.components.begin(),p.components.end(),[&](const Component& c){return c.id==l.object;})&&
                        std::none_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& t){return t.id==l.object;})&&
                        std::none_of(p.plots.begin(),p.plots.end(),[&](const PlotBlock& g){return g.id==l.object;})&&
+                       std::none_of(p.code_blocks.begin(),p.code_blocks.end(),[&](const CodeBlock& block){return block.id==l.object;})&&
                        std::none_of(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& g){return g.id==l.object;})&&
                        std::none_of(p.instances.begin(),p.instances.end(),[&](const Instance& i){return i.id==l.object;});
             });

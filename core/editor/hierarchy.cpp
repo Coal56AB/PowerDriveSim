@@ -174,6 +174,7 @@ std::string Document::create_definition(const std::vector<std::string> &selected
             center(p.tags);
             center(p.patterns);
             center(p.plots);
+            center(p.code_blocks);
             center(p.instances);
             if (!count || name.empty())
                 throw Diagnostic("invalid_selection", p.id, "Select objects and supply a subcircuit name");
@@ -193,8 +194,14 @@ std::string Document::create_definition(const std::vector<std::string> &selected
                             for (const auto &port : definition(p, nested.definition).ports)
                                 if (port.id == endpoint.port)
                                     port_name = port.name;
-                    auto base =
-                        std::get<std::string>(read_property(p, endpoint.object, "name")) + "." + port_name;
+                    std::string object_name;
+                    if (auto block = std::find_if(p.code_blocks.begin(), p.code_blocks.end(),
+                            [&](const CodeBlock &candidate) { return candidate.id == endpoint.object; });
+                        block != p.code_blocks.end())
+                        object_name = block->name;
+                    else
+                        object_name = std::get<std::string>(read_property(p, endpoint.object, "name"));
+                    auto base = object_name + "." + port_name;
                     port_name = base;
                     unsigned suffix = 2;
                     while (std::any_of(d.ports.begin(), d.ports.end(),
@@ -239,6 +246,7 @@ std::string Document::create_definition(const std::vector<std::string> &selected
             move(p.tags, d.tags);
             move(p.patterns, d.patterns);
             move(p.plots, d.plots);
+            move(p.code_blocks, d.code_blocks);
             move(p.instances, d.instances);
             for (auto wire : p.wires)
                 if (ids.count(wire.from.object) && ids.count(wire.to.object)) {
@@ -388,6 +396,7 @@ void Document::expand_instance(const std::string &id) {
         append(p.tags, expanded.project.tags);
         append(p.patterns, expanded.project.patterns);
         append(p.plots, expanded.project.plots);
+        append(p.code_blocks, expanded.project.code_blocks);
         append(p.wires, expanded.project.wires);
         append(p.events, expanded.project.events);
         append(p.labels, expanded.project.labels);
