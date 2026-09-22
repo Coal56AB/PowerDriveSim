@@ -364,7 +364,7 @@ class Atom final : public QGraphicsItem {
     QRectF boundingRect() const override {
         if (type == 6) {
             const double h = natural_body_half_height();
-            return {-112, -h - 8, 224, 2 * h + 40};
+            return {-132, -h - 8, 264, 2 * h + 40};
         }
         if (type == 4) {
             double h = body_half_height();
@@ -386,7 +386,7 @@ class Atom final : public QGraphicsItem {
         QPainterPath path;
         if (type == 6) {
             const double h = natural_body_half_height();
-            path.addRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
+            path.addRoundedRect(QRectF(-110, -h, 220, 2 * h), 6, 6);
             return path;
         }
         if (type == 4) {
@@ -654,7 +654,7 @@ class Atom final : public QGraphicsItem {
         if (type == 6) {
             const double h = natural_body_half_height();
             p->setBrush(theme_colors().canvas);
-            p->drawRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
+            p->drawRoundedRect(QRectF(-110, -h, 220, 2 * h), 6, 6);
             auto title_font = p->font();
             title_font.setBold(true);
             p->setFont(title_font);
@@ -667,10 +667,10 @@ class Atom final : public QGraphicsItem {
                     continue;
                 const QPointF point = child->pos();
                 const bool left = point.x() < 0;
-                p->drawLine(point, QPointF(left ? -90 : 90, point.y()));
+                p->drawLine(point, QPointF(left ? -110 : 110, point.y()));
                 const auto caption = QFontMetricsF(title_font).elidedText(
-                    child->data(8).toString(), Qt::ElideRight, 72);
-                label(p, QRectF(left ? -84 : 12, point.y() - 10, 72, 20),
+                    child->data(8).toString(), Qt::ElideRight, 100);
+                label(p, QRectF(left ? -104 : 4, point.y() - 10, 100, 20),
                       left ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
                       caption);
             }
@@ -1166,7 +1166,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
                 const double y = (double(index) - double(ports.size() - 1) / 2.0) * 28.0;
                 const QString scalar = port.type == SignalScalarType::boolean ? QString("bool") : QString("double");
                 const QString unit = port.unit.empty() ? QString() : QString(" [") + q(port.unit) + "]";
-                a->port(q(port.id), {input ? -100.0 : 100.0, y},
+                a->port(q(port.id), {input ? -120.0 : 120.0, y},
                         port.type == SignalScalarType::boolean ? QColor("#17866d") : QColor("#8c67c8"),
                         q(port.name) + ": " + scalar + unit);
             }
@@ -1254,6 +1254,15 @@ void EditorWindow::set_placement_preview() {
                 });
         } else if (placing_ == 106)
             fragment.apply("Tag", [](Project &p) { p.tags.push_back({new_uuid(), "TAG", 0, 0, Domain::gate}); });
+        else if (placing_ == 108)
+            fragment.apply("Code block", [](Project &p) {
+                CodeBlock block;
+                block.id = new_uuid();
+                block.name = text("code_block").toStdString();
+                block.code = "out = 0;";
+                block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
+                p.code_blocks.push_back(std::move(block));
+            });
         else if (placing_ == 103 || placing_ == 107)
             fragment.add_plot(0, 0, text(placing_ == 107 ? "differential_plot" : "plot").toStdString(),
                               placing_ == 107);
@@ -1274,6 +1283,13 @@ void EditorWindow::cancel_placement() {
 void EditorWindow::place_at(QPointF point) {
     if (running() || !paste_fragment_)
         return;
+    if (placing_ == 108) {
+        canvas_->set_ghost(nullptr);
+        cancel_placement();
+        (void)add_code_block(point);
+        canvas_->setFocus();
+        return;
+    }
     try {
         auto ids = document_->paste(*paste_fragment_, point.x(), point.y());
         canvas_->set_ghost(nullptr);
@@ -2510,7 +2526,7 @@ void EditorWindow::rebuild_scene() {
             for (size_t index = 0; index < group.size(); ++index) {
                 const auto &port = group[index];
                 const double y = (double(index) - double(group.size() - 1) / 2.0) * 28.0;
-                QPointF point{input ? -100.0 : 100.0, y};
+                QPointF point{input ? -120.0 : 120.0, y};
                 if (auto stored = std::find_if(block.pin_positions.begin(), block.pin_positions.end(),
                                                [&](const PinPosition &pin) { return pin.port == port.id; });
                     stored != block.pin_positions.end())
@@ -2666,8 +2682,9 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
         const double h = atom->type == 4 ? atom->body_half_height()
                          : atom->type == 6 ? atom->natural_body_half_height()
                                            : std::max(40.0, atom->input_count * 20.0);
-        const double vertical_edge_distance = atom->type == 4 || atom->type == 6
-            ? std::abs(std::abs(local.x()) - 100.0)
+        const double vertical_edge_distance = atom->type == 6
+            ? std::abs(std::abs(local.x()) - 120.0)
+            : atom->type == 4 ? std::abs(std::abs(local.x()) - 100.0)
             : std::min(std::abs(local.x() + 60.0), std::abs(local.x() - 60.0));
         const double horizontal_edge_distance = atom->type == 4 || atom->type == 6
             ? std::abs(std::abs(local.y()) - (h + 10.0))
@@ -2738,7 +2755,7 @@ void EditorWindow::update_wires() {
             atom->mapRectToScene(atom->type == 4   ? QRectF(-90, -atom->body_half_height(), 180,
                                                             2 * atom->body_half_height())
                                  : atom->type == 3 ? QRectF(-46, -h, 104, 2 * h)
-                                 : atom->type == 6 ? QRectF(-90, -h, 180, 2 * h)
+                                 : atom->type == 6 ? QRectF(-110, -h, 220, 2 * h)
                                                    : QRectF(-38, -28, 76, 56));
         obstacles.push_back(box);
         next_boxes[id] = box;

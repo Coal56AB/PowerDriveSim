@@ -1,0 +1,12 @@
+{
+  "type": "code_block",
+  "fields": [],
+  "palette": {
+    "id": 108,
+    "label": "code_block",
+    "category": "signals",
+    "short": "{C}",
+    "fixed": false,
+    "hidden": false
+  }
+}

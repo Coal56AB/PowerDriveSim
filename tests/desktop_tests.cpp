@@ -646,6 +646,12 @@ class DesktopTests : public QObject {
         window.set_project(project);
         window.show();
         window.select_object(sink.id);
+        const auto screenshot = qEnvironmentVariable("PDS_CODE_BLOCK_SCREENSHOT");
+        if (!screenshot.isEmpty()) {
+            window.findChild<QAction *>("action_fit")->trigger();
+            QTest::qWait(50);
+            QVERIFY(window.grab().save(screenshot));
+        }
         QVERIFY(window.findChild<QPushButton *>("edit_code_block"));
         QVERIFY(!window.port_position({sink.id, input_id}).isNull());
         QTimer first_safety;
@@ -702,6 +708,71 @@ class DesktopTests : public QObject {
         second_safety.stop();
         QVERIFY(window.project().code_blocks == blocks_before_rejected_edit);
         QVERIFY(window.project().wires == wires_before_rejected_edit);
+    }
+    void code_block_library_run_record_and_reopen() {
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        QTreeWidgetItem *entry = nullptr;
+        for (QTreeWidgetItemIterator it(library); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole).toInt() == 108) entry = *it;
+        QVERIFY(entry);
+        for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
+        library->scrollToItem(entry);
+        QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          library->visualItemRect(entry).center());
+        QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                           library->visualItemRect(entry).center());
+        const QPointF block_position(100, 100);
+        QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          window.canvas()->mapFromScene(block_position));
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        const auto block = window.project().code_blocks.front().id;
+        const auto output = window.project().code_blocks.front().outputs.front().id;
+        QCOMPARE(window.port_position({block, output}), QPointF(220, 100));
+        const auto plot = window.add_plot({420, 100});
+        QVERIFY(window.connect_ports({block, output}, {plot, "in1"}));
+        const auto voltage = window.add_component(Kind::voltage, {40, 300});
+        const auto resistor = window.add_component(Kind::resistor, {260, 300});
+        const auto ground = window.add_node(true, {150, 420});
+        QVERIFY(window.connect_ports({voltage, "p"}, {resistor, "p"}));
+        QVERIFY(window.connect_ports({resistor, "n"}, {ground, "node"}));
+        QVERIFY(window.connect_ports({voltage, "n"}, {ground, "node"}));
+        const auto channel = endpoint_key({block, output});
+        auto configured = window.project();
+        configured.profile.stop = 5e-6;
+        configured.profile.step = 1e-6;
+        configured.scope_enabled = true;
+        configured.scope_points = {channel};
+        configured.scope_channels = {channel};
+        window.set_project(configured);
+        QVERIFY(window.scope());
+        const auto path = temp.filePath("code-block.pds");
+        QVERIFY(window.save_project(path));
+        QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        QCOMPARE(window.project().code_blocks.front().outputs.front().id, output);
+        QCOMPARE(window.project().wires.size(), size_t(4));
+        QVERIFY(std::any_of(window.project().wires.begin(), window.project().wires.end(), [&](const Wire &wire) {
+            return wire.from == Endpoint{block, output} || wire.to == Endpoint{block, output};
+        }));
+        auto *insert = window.findChild<QAction *>("insert_component_108");
+        QVERIFY(insert && insert->isEnabled());
+        window.start_simulation();
+        QVERIFY(window.running());
+        QVERIFY(!insert->isEnabled());
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 5000);
+        QVERIFY(window.has_result());
+        const auto recorded = std::find_if(window.result().channels.begin(), window.result().channels.end(),
+                                           [&](const Channel &candidate) { return candidate.object == channel; });
+        QVERIFY(recorded != window.result().channels.end());
+        const auto index = size_t(recorded - window.result().channels.begin());
+        QVERIFY(!window.result().samples.empty());
+        QCOMPARE(window.result().samples.back().values[index], 0.0);
+        window.open_plot(plot);
+        QVERIFY(window.findChild<QDialog *>("plot_" + QString::fromStdString(plot)));
     }
 };
 int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }

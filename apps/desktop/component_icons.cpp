@@ -121,6 +121,17 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         p.drawPath(tag);
         p.drawEllipse(QPointF(9, 16), 1.8, 1.8);
         p.drawText(QRectF(12, 10, 12, 12), Qt::AlignCenter, "T");
+    } else if (id == 108) {
+        p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
+        for (int y : {11, 21}) {
+            p.drawLine(0, y, 3, y);
+            p.drawLine(29, y, 32, y);
+        }
+        auto f = p.font();
+        f.setPixelSize(9);
+        f.setBold(true);
+        p.setFont(f);
+        p.drawText(QRectF(3, 4, 26, 24), Qt::AlignCenter, "{C}");
     } else if (id == 7 || id == 8 || id == 3 || id == 4) {
         p.drawLine(1, 16, 6, 16);
         p.drawEllipse(QRectF(6, 6, 20, 20));

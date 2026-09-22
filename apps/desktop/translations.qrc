@@ -5,6 +5,7 @@
     <file alias="en.json">i18n/en.json</file>
   </qresource>
   <qresource prefix="/components">
+    <file alias="code_block.json">components/code_block.json</file>
     <file alias="differential_plot.json">components/differential_plot.json</file>
     <file alias="open-end-winding.json">components/open-end-winding.json</file>
     <file alias="npc-3l.json">components/npc-3l.json</file>
