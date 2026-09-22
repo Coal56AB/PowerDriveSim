@@ -29,6 +29,16 @@ int main(int argc, char **argv) {
         auto moved = std::move(blocks);
         check(blocks.empty() && moved.size() == 10 && moved.front() == 0 && moved.back() == 9,
               "Moving block history leaves a valid empty source");
+        Sample inline_sample{0, {1, 2}, {true, false}};
+        check(inline_sample.values.capacity() == 2 && inline_sample.gates.capacity() == 16,
+              "Small recorded samples stay inline");
+        inline_sample.values.push_back(3);
+        check(inline_sample.values.size() == 3 && inline_sample.values[2] == 3 &&
+                  inline_sample.values.capacity() >= 3,
+              "Recorded samples grow beyond inline capacity");
+        const Sample copied_sample = inline_sample;
+        check(copied_sample.values == inline_sample.values && copied_sample.gates == inline_sample.gates,
+              "Inline recorded samples copy exactly");
         std::ifstream file(std::string(argv[1]) + "/examples/rc.pds");
         Document doc(read_project(file));
         auto base = doc.project();

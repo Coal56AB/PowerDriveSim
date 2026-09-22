@@ -2,6 +2,7 @@
 #include "core/ir/ir.hpp"
 #include "core/ir/snapshot.hpp"
 #include "core/solver/reference/block_vector.hpp"
+#include "core/solver/reference/inline_vector.hpp"
 #include <atomic>
 #include <map>
 #include <functional>
@@ -18,7 +19,11 @@ public:
     void conductance(int p,int n,double value);
     std::vector<double> solve(const SimulationIR& ir,double time) const;
 };
-struct Sample { double time; std::vector<double> values; std::vector<bool> gates; };
+struct Sample {
+    double time;
+    InlineVector<double, 2> values;
+    InlineVector<bool, 16> gates;
+};
 struct Result {
     std::string project_id, backend="Reference CPU", precision="float64", engine="0.4.0";
     Profile profile;
