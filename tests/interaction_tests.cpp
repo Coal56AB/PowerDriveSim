@@ -2803,11 +2803,17 @@ class InteractionTests : public QObject {
         d->findChild<QTabWidget *>("measurement_tabs")->setCurrentIndex(3);
         d->findChild<QLineEdit *>("trigger_level")->setText("0.5");
         d->findChild<QLineEdit *>("trigger_holdoff")->setText("3");
-        d->findChild<QComboBox *>("trigger_mode")->setCurrentIndex(1);
+        auto *trigger_mode=d->findChild<QComboBox *>("trigger_mode");
+        QCOMPARE(trigger_mode->itemData(0).toInt(),1);
+        QCOMPARE(trigger_mode->itemData(1).toInt(),2);
+        QCOMPARE(trigger_mode->itemData(2).toInt(),0);
+        QCOMPARE(trigger_mode->currentIndex(),0);
+        trigger_mode->setCurrentIndex(0);
         auto arm = [&] {
             for (auto *button : d->findChildren<QPushButton *>())
-                if (button->text() == "Arm")
+                if (button->text() == "Apply")
                     button->click();
+            arm_toolbar->trigger();
         };
         arm();
         QVERIFY(stop_toolbar->isEnabled());
@@ -2840,13 +2846,13 @@ class InteractionTests : public QObject {
         QString position_text=position_toolbar->text();position_text.remove('%');
         QVERIFY(std::abs(position_text.trimmed().toDouble()-65)<1);
         stop_toolbar->trigger();QVERIFY(!stop_toolbar->isEnabled()&&arm_toolbar->isEnabled());
-        d->findChild<QComboBox *>("trigger_mode")->setCurrentIndex(2);
+        trigger_mode->setCurrentIndex(1);
         arm();
         for (int i = 8; i <= 12; ++i)
             r.samples.push_back({double(i), {0}, {}});
         s.set_result(&r, {0}, p);
         QCOMPARE(s.end, 12.);
-        d->findChild<QComboBox *>("trigger_mode")->setCurrentIndex(0);
+        trigger_mode->setCurrentIndex(2);
         d->findChild<QComboBox *>("trigger_edge")->setCurrentIndex(2);
         arm();
         r.samples.push_back({13, {1}, {}});

@@ -114,12 +114,16 @@ void Scope::set_live(bool live) {
         follow_action_->setChecked(follow_live_);
 }
 void Scope::update_trigger_controls() {
+    const bool active=trigger_armed_||trigger_time_.has_value()||trigger_capture_until_.has_value();
     if(trigger_level_edit_&&!trigger_level_edit_->hasFocus())
         trigger_level_edit_->setText(QString::number(trigger_level_,'g',8));
     if(trigger_position_edit_&&!trigger_position_edit_->hasFocus())
         trigger_position_edit_->setText(QString::number(trigger_position_*100,'g',5)+" %");
     if(trigger_arm_action_)trigger_arm_action_->setEnabled(result_&&!channels_.empty()&&!trigger_armed_);
-    if(trigger_stop_action_)trigger_stop_action_->setEnabled(trigger_armed_);
+    if(trigger_stop_action_)trigger_stop_action_->setEnabled(active);
+    if(trigger_level_label_action_)trigger_level_label_action_->setVisible(active);
+    if(trigger_level_action_)trigger_level_action_->setVisible(active);
+    if(trigger_position_action_)trigger_position_action_->setVisible(active);
 }
 void Scope::arm_trigger() {
     if(!result_||channels_.empty())return;
@@ -129,6 +133,7 @@ void Scope::arm_trigger() {
     if(!available)trigger_channel_=result_channel(*result_,channels_.front()).object;
     trigger_after_=live_&&!result_->samples.empty()?result_->samples.back().time:-1;
     trigger_time_.reset();
+    trigger_capture_until_.reset();
     trigger_armed_=true;
     if(trigger_mode_==1) {
         follow_live_=false;
@@ -142,6 +147,7 @@ void Scope::arm_trigger() {
 void Scope::stop_trigger() {
     trigger_armed_=false;
     trigger_time_.reset();
+    trigger_capture_until_.reset();
     update_measurements();
     update_trigger_controls();
     update();
@@ -157,6 +163,8 @@ void Scope::set_time_span(double seconds) {
         time_span_edit_->setText(engineering_value(time_span_, "s"));
     follow_live_ = true;
     trigger_armed_ = false;
+    trigger_time_.reset();
+    trigger_capture_until_.reset();
     if (follow_action_)
         follow_action_->setChecked(true);
     update_live_view(true);
@@ -169,7 +177,10 @@ void Scope::update_live_view(bool force) {
         update_trigger_controls();
         return;
     }
-    if (trigger_armed_) {
+    const double latest_time=result_->samples.empty()?0:result_->samples.back().time;
+    if(trigger_capture_until_&&latest_time>=*trigger_capture_until_)
+        trigger_capture_until_.reset();
+    if (trigger_armed_&&!trigger_capture_until_) {
         for (int ch : channels_)
             if (result_channel(*result_, ch).object == trigger_channel_) {
                 auto edges =
@@ -182,6 +193,8 @@ void Scope::update_live_view(bool force) {
                         trigger_time_ = edge.time;
                         trigger_armed_ = trigger_mode_ != 0;
                         triggered = true;
+                        const double span = time_span_ > 0 ? time_span_ : std::max(1e-6, end - begin);
+                        trigger_capture_until_=edge.time+span*(1-trigger_position_);
                         if (trigger_mode_ == 0)
                             break;
                     }
@@ -200,7 +213,7 @@ void Scope::update_live_view(bool force) {
                 break;
             }
     }
-    if (live_ && trigger_armed_ && trigger_mode_ == 2 &&
+    if (live_ && trigger_armed_ && trigger_mode_ == 2 && !trigger_capture_until_ &&
         (!trigger_time_ || result_->samples.back().time - *trigger_time_ > std::max(time_span_, end - begin)))
         follow_live_ = true;
     if ((live_ || force) && follow_live_) {
@@ -385,12 +398,14 @@ void Scope::show_measurements() {
     tf->addRow(text("trigger"), edge);
     auto *mode = new QComboBox;
     mode->setObjectName("trigger_mode");
-    mode->addItems({text("trigger_single"), text("trigger_normal"), text("trigger_auto")});
-    mode->setCurrentIndex(trigger_mode_);
+    mode->addItem(text("trigger_normal"), 1);
+    mode->addItem(text("trigger_auto"), 2);
+    mode->addItem(text("trigger_single"), 0);
+    mode->setCurrentIndex(std::max(0, mode->findData(trigger_mode_)));
     tf->addRow(text("trigger_mode"), mode);
     number(tf, "trigger_holdoff", text("trigger_holdoff"), trigger_holdoff_);
     number(tf, "trigger_position", text("trigger_position"), trigger_position_ * 100);
-    auto *arm = new QPushButton(text("trigger_arm"));
+    auto *arm = new QPushButton(text("apply"));
     auto *reset = new QPushButton(text("trigger_reset"));
     tf->addRow(arm, reset);
     auto *status = new QLabel;
@@ -407,10 +422,11 @@ void Scope::show_measurements() {
             trigger_level_ = level;
             trigger_holdoff_ = holdoff;
             trigger_position_ = position;
-            trigger_mode_ = mode->currentIndex();
+            trigger_mode_ = mode->currentData().toInt();
             trigger_channel_ = result_channel(*result_, trigger_signal->currentData().toInt()).object;
             trigger_edge_ = edge->currentIndex();
-            arm_trigger();
+            update_trigger_controls();
+            update();
         } catch (const std::exception &e) {
             status->setText(QString::fromUtf8(e.what()));
         }

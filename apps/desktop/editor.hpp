@@ -252,12 +252,13 @@ class Scope : public QWidget {
     QPointer<QDialog> spectrum_;
     QPointer<QAction> follow_action_;
     QPointer<QAction> trigger_arm_action_, trigger_stop_action_;
+    QPointer<QAction> trigger_level_label_action_, trigger_level_action_, trigger_position_action_;
     QPointer<QLineEdit> time_span_edit_, trigger_level_edit_, trigger_position_edit_;
     std::string trigger_channel_;
     bool trigger_armed_ = false;
-    int trigger_edge_ = 0, trigger_mode_ = 0;
+    int trigger_edge_ = 0, trigger_mode_ = 1;
     double trigger_level_ = 0, trigger_after_ = 0, trigger_holdoff_ = 0, trigger_position_ = .2;
-    std::optional<double> trigger_time_;
+    std::optional<double> trigger_time_, trigger_capture_until_;
     enum class TriggerDrag { none, level, position };
     TriggerDrag trigger_drag_ = TriggerDrag::none;
     double drag_trigger_level_ = 0, drag_trigger_position_ = .2;

@@ -294,13 +294,13 @@ QWidget *Scope::navigation() {
     connect(trigger_stop_action_,&QAction::triggered,this,&Scope::stop_trigger);
     auto *level_label=new QLabel("T:");
     level_label->setToolTip(text("trigger_level_hint"));
-    bar->addWidget(level_label);
+    trigger_level_label_action_=bar->addWidget(level_label);
     trigger_level_edit_=new QLineEdit(QString::number(trigger_level_,'g',8));
     normalize_decimal_point(trigger_level_edit_);
     trigger_level_edit_->setObjectName("trigger_level_toolbar");
     trigger_level_edit_->setFixedWidth(72);
     trigger_level_edit_->setToolTip(text("trigger_level_hint"));
-    bar->addWidget(trigger_level_edit_);
+    trigger_level_action_=bar->addWidget(trigger_level_edit_);
     connect(trigger_level_edit_,&QLineEdit::editingFinished,this,[this] {
         try {
             const double level=parse_si(trigger_level_edit_->text().toStdString(),"");
@@ -314,7 +314,7 @@ QWidget *Scope::navigation() {
     trigger_position_edit_->setObjectName("trigger_position_toolbar");
     trigger_position_edit_->setFixedWidth(64);
     trigger_position_edit_->setToolTip(text("trigger_position_hint"));
-    bar->addWidget(trigger_position_edit_);
+    trigger_position_action_=bar->addWidget(trigger_position_edit_);
     connect(trigger_position_edit_,&QLineEdit::editingFinished,this,[this] {
         QString source=trigger_position_edit_->text();source.remove('%');
         bool ok=false;const double position=source.trimmed().toDouble(&ok)/100.0;
@@ -547,6 +547,8 @@ void Scope::update_cursor_panel() {
 void Scope::notify_view() {
     follow_live_ = false;
     trigger_armed_ = false;
+    trigger_time_.reset();
+    trigger_capture_until_.reset();
     if (follow_action_)
         follow_action_->setChecked(false);
     if (separate_axes_ && !display_ranges_.empty())
@@ -556,6 +558,7 @@ void Scope::notify_view() {
     if (changed)
         changed(begin, end, cursor_a, cursor_b);
     update_cursor_panel();
+    update_trigger_controls();
     update();
 }
 void Scope::cancel_drag() {

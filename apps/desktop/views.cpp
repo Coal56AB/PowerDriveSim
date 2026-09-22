@@ -365,11 +365,12 @@ void Scope::paintEvent(QPaintEvent *) {
             if (screen_cursors_)
                 painter.drawLine(QPointF(plot.left(), cy), QPointF(plot.right(), cy));
         }
+        const bool trigger_visible=trigger_armed_||trigger_time_.has_value()||trigger_capture_until_.has_value();
         int trigger_channel=-1;
         for(int candidate:channels_)
             if(result_channel(*result_,candidate).object==trigger_channel_){trigger_channel=candidate;break;}
         const int trigger_lane=trigger_channel>=0?channel_display(trigger_channel):active_lane_;
-        if(lane==trigger_lane) {
+        if(trigger_visible&&lane==trigger_lane) {
             const double raw_y=plot.bottom()-(trigger_level_-low)/(high-low)*plot.height();
             const double ty=std::clamp(raw_y,plot.top(),plot.bottom());
             painter.setPen(QPen(theme_colors().error,1.2,Qt::DashLine));
@@ -379,11 +380,13 @@ void Scope::paintEvent(QPaintEvent *) {
             painter.drawText(QPointF(plot.right()-52,std::max(plot.top()+13,ty-5)),
                              "T " + QString::number(trigger_level_,'g',5));
         }
-        const double position_x=plot.left()+trigger_position_*plot.width();
-        painter.setPen(QPen(theme_colors().error,1,Qt::DotLine));
-        painter.drawLine(QPointF(position_x,plot.top()),QPointF(position_x,plot.bottom()));
-        painter.setBrush(theme_colors().error);
-        painter.drawPolygon(QPolygonF{{position_x,plot.top()+8},{position_x-5,plot.top()},{position_x+5,plot.top()}});
+        if(trigger_visible) {
+            const double position_x=plot.left()+trigger_position_*plot.width();
+            painter.setPen(QPen(theme_colors().error,1,Qt::DotLine));
+            painter.drawLine(QPointF(position_x,plot.top()),QPointF(position_x,plot.bottom()));
+            painter.setBrush(theme_colors().error);
+            painter.drawPolygon(QPolygonF{{position_x,plot.top()+8},{position_x-5,plot.top()},{position_x+5,plot.top()}});
+        }
         if (trigger_time_) {
             painter.setPen(QPen(theme_colors().error, 1, Qt::DashDotLine));
             double tx = x(*trigger_time_);
