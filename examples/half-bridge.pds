@@ -1,11 +1,13 @@
-PowerDriveSim 12
+PowerDriveSim 16
 project "b0ca1af3-18fc-5e13-b50e-d359387059a5" "Half bridge with RL load"
 profile 0.006 0.000002 Trapezoidal
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
-instance "87e2d040-2c9d-5478-be35-d3f064636481" "Half bridge" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" 0 0 0
+instance "87e2d040-2c9d-5478-be35-d3f064636481" "Half bridge" "0ebb782b-e954-56f3-8bd2-553833ad6d4d" 0 0 0 0
 node "144ad59a-e871-5c39-83a2-02ff09b5bdd1" "Neutral" 1 -380 300
 component "22914a1f-54f4-5a76-9e33-04d87b6a032c" "Supply+" V "" "" 12 0 -380 -100 0
 orientation "22914a1f-54f4-5a76-9e33-04d87b6a032c" 1 0
@@ -17,20 +19,8 @@ wire "47fe88cf-aa74-5d90-8618-f8da72248181" "73b94170-2909-5421-a4a2-f48d2b588b2
 wire "6cb7509a-c465-587c-aff0-9f90864acc83" "73b94170-2909-5421-a4a2-f48d2b588b2f" "node" "144ad59a-e871-5c39-83a2-02ff09b5bdd1" "node" 2 -500 0 -500 300
 wire "736c5435-8583-5bc4-8987-53b407beba31" "22914a1f-54f4-5a76-9e33-04d87b6a032c" "p" "87e2d040-2c9d-5478-be35-d3f064636481" "b6148504-a13e-510f-8eab-55f3765543d0" 2 -380 -220 -180 -220
 wire "0e62f386-7b90-58b4-a504-adb47f9ffb38" "0c31cee7-f120-594c-9370-cc0f97123b71" "n" "87e2d040-2c9d-5478-be35-d3f064636481" "a5c4f733-dfba-5022-847e-0a3264cacfeb" 3 -380 220 -180 220 -180 -13
-pattern "24783c95-a694-5692-9052-8b1f906820de" "Positive" -350 -380 1
-event 0.001 "24783c95-a694-5692-9052-8b1f906820de" 0
-event 0.002 "24783c95-a694-5692-9052-8b1f906820de" 1
-event 0.003 "24783c95-a694-5692-9052-8b1f906820de" 0
-event 0.004 "24783c95-a694-5692-9052-8b1f906820de" 1
-event 0.005 "24783c95-a694-5692-9052-8b1f906820de" 0
-event 0.006 "24783c95-a694-5692-9052-8b1f906820de" 1
-pattern "53017876-f595-5359-9c14-4dc014599ca2" "Negative" -350 -280 0
-event 0.001 "53017876-f595-5359-9c14-4dc014599ca2" 1
-event 0.002 "53017876-f595-5359-9c14-4dc014599ca2" 0
-event 0.003 "53017876-f595-5359-9c14-4dc014599ca2" 1
-event 0.004 "53017876-f595-5359-9c14-4dc014599ca2" 0
-event 0.005 "53017876-f595-5359-9c14-4dc014599ca2" 1
-event 0.006 "53017876-f595-5359-9c14-4dc014599ca2" 0
+gate_script "24783c95-a694-5692-9052-8b1f906820de" "Positive" -350 -380 1 1e-05 "return phasepwm(500, 0.5, 0);"
+gate_script "53017876-f595-5359-9c14-4dc014599ca2" "Negative" -350 -280 0 1e-05 "return phasepwm(500, 0.5, 0.001);"
 wire "461b9a5f-b1b3-5c73-a487-041b4e3ae963" "24783c95-a694-5692-9052-8b1f906820de" "out" "87e2d040-2c9d-5478-be35-d3f064636481" "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" 2 -140 -380 -140 13
 wire "72f308cb-8df3-5dec-86c1-94141d59a78f" "53017876-f595-5359-9c14-4dc014599ca2" "out" "87e2d040-2c9d-5478-be35-d3f064636481" "a71a5ff3-e829-54f4-9388-a7de7577074d" 2 -120 -280 -120 39
 component "7bcb7d63-e9d4-558f-927a-2401198cd6e5" "Load R" R "" "" 10 0 340 -100 0
@@ -54,10 +44,12 @@ public_port "a5c4f733-dfba-5022-847e-0a3264cacfeb" "DC-" "a4d6679e-95b3-5edf-a40
 public_port "02d7e064-dbb0-5f0d-a3b6-e4955a0d6ace" "gH" "6a4434c3-93b6-5857-b759-c9c7dae9f435" "gate" 1 1
 public_port "a71a5ff3-e829-54f4-9388-a7de7577074d" "gL" "de77c4ef-adc3-5d31-ae2b-1e3c0a071607" "gate" 1 1
 body
-PowerDriveSim 12
+PowerDriveSim 16
 project "0ebb782b-e954-56f3-8bd2-553833ad6d4d" "Half bridge"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1

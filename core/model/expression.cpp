@@ -151,7 +151,11 @@ private:
             const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];
             if(delay<0)delay+=period;
             if(name!="phasepwm"&&time_<delay)return 0;
-            double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;return phase<a[1]*period;
+            double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;
+            const double boundary=a[1]*period;
+            const double tolerance=64*std::numeric_limits<double>::epsilon()*
+                                   std::max({period,std::abs(time_),std::abs(delay)});
+            return phase<boundary-tolerance;
         }
         if(name=="abs"&&a.size()==1)return std::abs(a[0]);
         if(name=="min"&&a.size()==2)return std::min(a[0],a[1]);

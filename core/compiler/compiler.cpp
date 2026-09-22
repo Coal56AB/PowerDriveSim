@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -119,10 +120,6 @@ bool generate_phase_pwm_edges(const GatePattern &g, double stop,
     if (duty == 0 || duty == 1)
         return true;
     const double period = 1.0 / frequency;
-    const auto ramp = ramp_arguments(args[2], variables);
-    if (!ramp)
-        return false;
-    const auto [t0, t1, d0, d1] = *ramp;
     auto emit_interval = [&](double begin, double end, double slope, double intercept) {
         if (end <= begin)
             return;
@@ -138,11 +135,19 @@ bool generate_phase_pwm_edges(const GatePattern &g, double stop,
         for (long long n = first; n <= last; ++n) {
             for (auto [offset, state] : {std::pair{0.0, true}, std::pair{duty * period, false}}) {
                 const double t = (n * period + offset + intercept) / factor;
-                if (t > begin + 1e-12 && t <= end + 1e-12 && t > 0 && t <= stop)
+                if (t > begin + 1e-12 && t <= end + 1e-12 && t > 0)
                     edge(std::clamp(t, begin, end), state);
             }
         }
     };
+    const auto ramp = ramp_arguments(args[2], variables);
+    if (!ramp) {
+        if (expression_depends_on_time(args[2], variables))
+            return false;
+        emit_interval(0, stop, 0, script_number(args[2], 0, variables));
+        return true;
+    }
+    const auto [t0, t1, d0, d1] = *ramp;
     emit_interval(0, std::min(stop, t0), 0, d0);
     const double slope = (d1 - d0) / (t1 - t0);
     emit_interval(std::max(0.0, t0), std::min(stop, t1), slope, d0 - slope * t0);
@@ -169,7 +174,10 @@ bool gate_script_value(const GatePattern &g, double t, const ScriptProgram *prep
         double phase = std::fmod(t - delay, period);
         if (phase < 0)
             phase += period;
-        return phase < args[1] * period;
+        const double boundary = args[1] * period;
+        const double tolerance = 64 * std::numeric_limits<double>::epsilon() *
+                                 std::max({period, std::abs(t), std::abs(delay)});
+        return phase < boundary - tolerance;
     }
     if (auto args = script_pwm_arguments(g, t, prepared ? prepared : &parsed); !args.empty()) {
             if (t < args[2] || args[1] == 0) return false;
@@ -187,6 +195,26 @@ bool legacy_gate_script(const std::string &code) {
            code.find("--") == std::string::npos&&code.find("+=") == std::string::npos&&
            code.find("-=") == std::string::npos&&code.find("*=") == std::string::npos&&
            code.find("/=") == std::string::npos;
+}
+std::optional<std::string> simple_return_expression(const std::string &code) {
+    const auto first = code.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos || code.compare(first, 6, "return") != 0)
+        return {};
+    const auto after_keyword = first + 6;
+    if (after_keyword < code.size() &&
+        (std::isalnum(static_cast<unsigned char>(code[after_keyword])) || code[after_keyword] == '_'))
+        return {};
+    const auto semicolon = code.find(';', after_keyword);
+    if (semicolon == std::string::npos || code.find(';', semicolon + 1) != std::string::npos ||
+        code.find_first_not_of(" \t\r\n", semicolon + 1) != std::string::npos)
+        return {};
+    const auto expression_begin = code.find_first_not_of(" \t\r\n", after_keyword);
+    if (expression_begin == std::string::npos || expression_begin >= semicolon)
+        return {};
+    const auto expression_end = code.find_last_not_of(" \t\r\n", semicolon - 1);
+    if (expression_end == std::string::npos || expression_end < expression_begin)
+        return {};
+    return code.substr(expression_begin, expression_end - expression_begin + 1);
 }
 bool gate_c_value(const CProgram &program,CProgramState &state,double time) {
     const auto result=execute_c_program(program,time,&state);
@@ -306,7 +334,10 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
     size_t generated=0;
     auto generated_edge = [&](const GatePattern &g, double time, bool state, size_t &generated) {
-        if(time>0&&time<=project.profile.stop){
+        const double tolerance = 64 * std::numeric_limits<double>::epsilon() *
+                                 std::max({1.0, std::abs(time), std::abs(project.profile.stop)});
+        if(time>0&&time<=project.profile.stop+tolerance){
+            if(time>project.profile.stop)time=project.profile.stop;
             if(++generated>1000000)throw Diagnostic("pwm_event_limit",g.id,"Generated gate signal exceeds one million edges; reduce frequency, script step or duration");
             project.events.push_back({time,g.id,state});
         }
@@ -325,16 +356,21 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         CProgramOptions c_options;c_options.diagnostic_code="invalid_gate_script";c_options.object=g.id;
         c_options.allow_time=true;c_options.allow_gate_functions=true;c_options.require_return=true;
         const auto c_program=compile_c_program(g.code,c_options);
-        if(legacy_gate_script(g.code)) {
-            const auto program=script_program(g.code);
+        const auto simple_expression = legacy_gate_script(g.code)
+            ? std::optional<std::string>{g.code}
+            : simple_return_expression(g.code);
+        if(simple_expression) {
+            auto optimized = g;
+            optimized.code = *simple_expression;
+            const auto program=script_program(optimized.code);
             {
                 auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
-                if(generate_phase_pwm_edges(g,project.profile.stop,edge,&program)) {
-                    g.initial=gate_script_value(g,0,&program);
+                if(generate_phase_pwm_edges(optimized,project.profile.stop,edge,&program)) {
+                    g.initial=gate_script_value(optimized,0,&program);
                     continue;
                 }
             }
-            if(auto args=script_pwm_arguments(g,{},&program);!args.empty()) {
+            if(auto args=script_pwm_arguments(optimized,{},&program);!args.empty()) {
                 g.initial=args[2]==0&&args[1]>0;
                 if(args[1]==0||args[2]>project.profile.stop)continue;
                 auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
@@ -353,6 +389,22 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
             throw Diagnostic(diagnostic.code,g.id,diagnostic.what(),diagnostic.time);
         throw;
       }
+    }
+
+    std::sort(project.events.begin(), project.events.end(), [](const GateEvent &a, const GateEvent &b) {
+        return a.time == b.time ? a.target < b.target : a.time < b.time;
+    });
+    double simultaneous_time = 0;
+    bool have_time = false;
+    for (auto &event : project.events) {
+        const double scale = std::max({1.0, std::abs(simultaneous_time), std::abs(event.time)});
+        if (have_time && std::abs(event.time - simultaneous_time) <=
+                             64 * std::numeric_limits<double>::epsilon() * scale) {
+            event.time = simultaneous_time;
+        } else {
+            simultaneous_time = event.time;
+            have_time = true;
+        }
     }
 
     auto resolved=resolve_connections(project,origins);

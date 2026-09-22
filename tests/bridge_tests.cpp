@@ -76,12 +76,10 @@ int main(int argc, char **argv) try {
                 auto q = p;
                 q.profile.method = method;
                 if (deadtime)
-                    for (auto &e : q.events)
-                        if (e.closed)
-                            e.time += .00001;
-                q.events.erase(std::remove_if(q.events.begin(), q.events.end(),
-                                              [&](const auto &e) { return e.time > q.profile.stop; }),
-                               q.events.end());
+                    for (auto &gate : q.patterns)
+                        gate.code = gate.initial
+                            ? "return stime < 0.001 || phasepwm(500, 0.495, 0.00001);"
+                            : "return phasepwm(500, 0.495, 0.00101);";
                 verify(q, full, deadtime);
                 std::ostringstream out;
                 write_project(q, out);
@@ -93,7 +91,8 @@ int main(int argc, char **argv) try {
                 document.undo();
                 check(document.root_project() == q, "Bridge expansion undo");
             }
-        p.patterns[0].initial = p.patterns[1].initial = true;
+        for (auto &gate : p.patterns)
+            gate.code = "return 1;";
         try {
             execute(compile(p));
             check(false, "Shoot-through must be diagnosed");

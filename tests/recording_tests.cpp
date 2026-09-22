@@ -219,6 +219,18 @@ int main(int argc, char **argv) {
         bool ramp_pulse=false;
         for(const auto& sample:ramp_result.samples)ramp_pulse|=sample.gates[0];
         check(ramp_pulse,"Gate C evaluates a local ramp variable on the simulation step using stime");
+        for (const auto *name : {"bidirectional-charge", "bidirectional-discharge", "half-bridge",
+                                 "full-bridge", "vsi-2l", "npc-3l", "open-end-winding",
+                                 "thyristor-bridge-3p"}) {
+            std::ifstream example(std::string(argv[1]) + "/examples/" + name + ".pds");
+            auto periodic = read_project(example);
+            periodic.profile.stop = 10;
+            const auto periodic_ir = compile(periodic);
+            check(periodic_ir.gate_programs.empty(),
+                  "Constant programmable PWM is converted to exact scheduled edges");
+            check(!periodic_ir.events.empty() && periodic_ir.events.back().time > 9.95,
+                  "Periodic example keeps switching through a ten-second run");
+        }
         doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().code=
             "double a = b; double b = a; return a;";});
         bool addressed_script_error=false;

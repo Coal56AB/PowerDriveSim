@@ -23,9 +23,10 @@ static std::array<std::array<int, 3>, 6> states(bool npc) {
 static double analytical_current(double time, unsigned phase, bool npc) {
     double current = 0;
     const auto schedule = states(npc);
-    for (size_t interval = 0; interval < schedule.size(); ++interval) {
+    const auto intervals = static_cast<size_t>(std::ceil(time / .001 - 1e-12));
+    for (size_t interval = 0; interval < intervals; ++interval) {
         const auto duration = std::clamp(time - double(interval) * .001, 0., .001);
-        const auto target = 15. * schedule[interval][phase];
+        const auto target = 15. * schedule[interval % schedule.size()][phase];
         current = target + (current - target) * std::exp(-duration / .001);
     }
     return current;
@@ -46,14 +47,14 @@ static void verify_response(const Project &project, bool npc) {
         const auto suffix = std::string(1, char('A' + phase));
         const auto u = named_channel(result, "u:U" + suffix), i = named_channel(result, "i:I" + suffix);
         for (const auto &sample : result.samples) {
-            const auto interval = std::min(size_t(5), size_t((sample.time + 1e-12) / .001));
+            const auto interval = size_t((sample.time + 1e-12) / .001) % schedule.size();
             voltage_error =
                 std::max(voltage_error, std::abs(sample.values[u] - 300. * schedule[interval][phase]));
             current_error = std::max(
                 current_error, std::abs(sample.values[i] - analytical_current(sample.time, phase, npc)));
         }
     }
-    require(voltage_error < 1e-6, "Pole voltages follow the recorded switch states");
+    require(voltage_error < 1e-6, "Pole voltages follow the periodic programmable switch states");
     require(current_error < (project.profile.method == Method::backward_euler ? .08 : .0002),
             "Phase currents agree with the piecewise analytical RL transient");
     const auto resolved = resolve_connections(project).project;
@@ -197,7 +198,7 @@ int main(int argc, char **argv) try {
         auto shorted = project;
         for (auto &body : shorted.definitions)
             for (auto &gate : body.patterns)
-                gate.initial = true;
+                gate.code = "return 1;";
         bool diagnosed = false;
         try {
             (void)execute(compile(shorted));

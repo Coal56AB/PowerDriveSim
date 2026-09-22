@@ -22,9 +22,10 @@ static void near(double a, double b, double tolerance, const char *message) {
 static constexpr int states[6][3] = {{1, 0, -1}, {0, 1, -1}, {-1, 1, 0}, {-1, 0, 1}, {0, -1, 1}, {1, -1, 0}};
 static double exact(double time, size_t phase) {
     double value = 0;
-    for (size_t k = 0; k < 6; ++k) {
+    const auto intervals = static_cast<size_t>(std::ceil(time / .001 - 1e-12));
+    for (size_t k = 0; k < intervals; ++k) {
         const double dt = std::clamp(time - k * .001, 0., .001);
-        const double target = 2.4 * states[k][phase];
+        const double target = 2.4 * states[k % 6][phase];
         value = target + (value - target) * std::exp(-dt / .001);
     }
     return value;
@@ -41,7 +42,7 @@ static void verify(const Project &p) {
     double work = 0, loss = 0, stored = 0, damping = 0;
     for (size_t k = 0; k < r.samples.size(); ++k) {
         const auto &s = r.samples[k];
-        const auto interval = std::min(size_t(5), size_t((s.time + 1e-12) / .001));
+        const auto interval = size_t((s.time + 1e-12) / .001) % 6;
         double power = 0;
         for (const auto &c : circuit.components)
             if (c.kind != Kind::voltage_probe)
@@ -57,7 +58,7 @@ static void verify(const Project &p) {
             stored += .005 * s.values[i] * s.values[i];
             if (k) {
                 const auto &prior = r.samples[k - 1];
-                const auto previous_interval = std::min(size_t(5), size_t((prior.time + 1e-12) / .001));
+                const auto previous_interval = size_t((prior.time + 1e-12) / .001) % 6;
                 const double current = be ? s.values[i] : (s.values[i] + prior.values[i]) / 2;
                 const double dt = s.time - prior.time;
                 work += dt * 24 * states[previous_interval][phase] * current;

@@ -1,12 +1,14 @@
-PowerDriveSim 7
-project "5c4a10c9-1218-5cea-b1d0-6d8f1847a9d5" "2L VSI with RL load and recorded gates"
+PowerDriveSim 16
+project "5c4a10c9-1218-5cea-b1d0-6d8f1847a9d5" "2L VSI with RL load and programmable gates"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
-instance "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2L VSI" "7947b68c-41de-59de-aa7e-fe70a3849762" 0 0 0
-instance "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "Recorded gates" "0d90a35d-3213-5bb0-9ce3-915bb71d0794" -420 60 0
+instance "edfe5d7d-9058-5ab0-b71e-d049bc0daeec" "2L VSI" "7947b68c-41de-59de-aa7e-fe70a3849762" 0 0 0 0
+instance "5c4ce699-2771-5f73-9cb2-7b227e6b36d7" "Programmable gates" "0d90a35d-3213-5bb0-9ce3-915bb71d0794" -420 60 0 0
 node "a99bf2c4-e701-5365-a571-cb2933aecd65" "N" 1 -240 300
 component "f46ae810-53bf-5160-b810-fbf0d63c2251" "Supply+" V "" "" 300 0 -240 -300 0
 orientation "f46ae810-53bf-5160-b810-fbf0d63c2251" 1 0
@@ -81,10 +83,12 @@ public_port "dba42882-b662-56d9-ab96-6a8dee141438" "B2" "db72daac-acab-593f-aab0
 public_port "1f2930a9-cc2d-5f30-995f-c272702020b7" "C1" "ac8c0637-0656-512c-bc48-bf1ad06b318c" "77e8752f-1ec9-554e-99cc-dbf6d13e5772" 1 1
 public_port "2a0e2e8b-2d49-5f09-ab79-4a03e13855a2" "C2" "ac8c0637-0656-512c-bc48-bf1ad06b318c" "fc0311ad-bddc-5af6-bf8d-df11484d56e4" 1 1
 body
-PowerDriveSim 7
+PowerDriveSim 16
 project "7947b68c-41de-59de-aa7e-fe70a3849762" "2L VSI"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
@@ -105,13 +109,13 @@ orientation "8af9fc97-3540-5bd0-b5e8-ce6c4fefa2f3" 1 0
 wire "03cd1ca9-32c7-51ab-9fb3-d6f015ad6f34" "ea951fa0-f0c7-53ca-9279-bf540642f346" "node" "f4efa53e-0dc9-57ea-8a67-41441c79f73a" "p" 0
 wire "16a49a0f-9a35-54e0-aeaa-46637c564a74" "f4efa53e-0dc9-57ea-8a67-41441c79f73a" "n" "8af9fc97-3540-5bd0-b5e8-ce6c4fefa2f3" "p" 0
 wire "a5fafb07-758d-52f0-bc41-09eba00cf711" "8af9fc97-3540-5bd0-b5e8-ce6c4fefa2f3" "n" "64b5b349-267c-5ff0-b4db-fff1d475b197" "node" 0
-instance "58910263-c89e-522c-b74e-724e2f600c92" "Phase A" "26388654-8f48-579c-ad83-41f77db81330" 120 0 0
+instance "58910263-c89e-522c-b74e-724e2f600c92" "Phase A" "26388654-8f48-579c-ad83-41f77db81330" 120 0 0 0
 wire "8db30083-d4c1-5dbd-afd1-374c4cb82a50" "93c8185d-71e8-57ca-9474-617a7b8f056c" "node" "58910263-c89e-522c-b74e-724e2f600c92" "d1c3cc57-871c-504f-83b2-c8271056e7e6" 0
 wire "9d8e6b06-c74d-5d52-a000-75f5694e1630" "64b5b349-267c-5ff0-b4db-fff1d475b197" "node" "58910263-c89e-522c-b74e-724e2f600c92" "332c41d6-d598-5f7b-aa60-6e912592865a" 0
-instance "db72daac-acab-593f-aab0-c823bba489de" "Phase B" "c1f9adb0-043e-5fd4-bffe-0ec31449bc76" 400 0 0
+instance "db72daac-acab-593f-aab0-c823bba489de" "Phase B" "c1f9adb0-043e-5fd4-bffe-0ec31449bc76" 400 0 0 0
 wire "9097b465-ed5b-5ba5-b993-b2189da4b455" "93c8185d-71e8-57ca-9474-617a7b8f056c" "node" "db72daac-acab-593f-aab0-c823bba489de" "133a585d-930d-578a-b375-4def97eaa415" 0
 wire "07829d10-836b-5dcf-b719-3abe49d410c7" "64b5b349-267c-5ff0-b4db-fff1d475b197" "node" "db72daac-acab-593f-aab0-c823bba489de" "7b1dd523-9b7c-5edf-8fd0-bf0d4d391216" 0
-instance "ac8c0637-0656-512c-bc48-bf1ad06b318c" "Phase C" "38967a5b-f5ab-5366-9270-09463b18b196" 680 0 0
+instance "ac8c0637-0656-512c-bc48-bf1ad06b318c" "Phase C" "38967a5b-f5ab-5366-9270-09463b18b196" 680 0 0 0
 wire "fe049aef-d9e3-52f0-b923-15552e05324e" "93c8185d-71e8-57ca-9474-617a7b8f056c" "node" "ac8c0637-0656-512c-bc48-bf1ad06b318c" "a3103ee4-842e-5be4-a2b5-b66805acf6d2" 0
 wire "f55e8be2-701a-528b-8698-d578cc2e505e" "64b5b349-267c-5ff0-b4db-fff1d475b197" "node" "ac8c0637-0656-512c-bc48-bf1ad06b318c" "0185f5c7-f684-5aa2-8780-e672f59fc173" 0
 end_definition
@@ -122,10 +126,12 @@ public_port "332c41d6-d598-5f7b-aa60-6e912592865a" "DC-" "fd745081-8831-5f02-8d8
 public_port "028deb8e-9461-5e67-9dfa-8c39de3c1bec" "g1" "e12cb504-cc4c-5789-b3a6-23c60f9cd89b" "gate" 1 1
 public_port "2f15a3b7-43e4-5df6-90a7-a3927d2ddab9" "g2" "2c34f350-e81d-54b9-bc72-0c0796941091" "gate" 1 1
 body
-PowerDriveSim 7
+PowerDriveSim 16
 project "26388654-8f48-579c-ad83-41f77db81330" "Phase A"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
@@ -170,10 +176,12 @@ public_port "7b1dd523-9b7c-5edf-8fd0-bf0d4d391216" "DC-" "3e4513f1-3c6d-57a7-a8e
 public_port "43a1467b-59c5-5c8d-8562-6378e6f0e696" "g1" "9fbbe981-afcb-5b29-8830-e5a2c9e3531e" "gate" 1 1
 public_port "17990a2d-d09d-5c4a-aea3-ebe45a201c7f" "g2" "e4c69154-861a-5028-93fe-38aa72f3337d" "gate" 1 1
 body
-PowerDriveSim 7
+PowerDriveSim 16
 project "c1f9adb0-043e-5fd4-bffe-0ec31449bc76" "Phase B"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
@@ -218,10 +226,12 @@ public_port "0185f5c7-f684-5aa2-8780-e672f59fc173" "DC-" "46a9eb33-2df8-5a88-891
 public_port "77e8752f-1ec9-554e-99cc-dbf6d13e5772" "g1" "8cc72bf4-bc44-573b-a77e-85a20358f6aa" "gate" 1 1
 public_port "fc0311ad-bddc-5af6-bf8d-df11484d56e4" "g2" "9fd1ab38-0e80-556a-994c-f651789cd392" "gate" 1 1
 body
-PowerDriveSim 7
+PowerDriveSim 16
 project "38967a5b-f5ab-5366-9270-09463b18b196" "Phase C"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
@@ -259,7 +269,7 @@ wire "9480cbea-7eb2-56c5-87ed-f588f40570e3" "46a9eb33-2df8-5a88-8915-15db2039c47
 wire "54bb1bab-02b2-578e-b233-3ae055192208" "46a9eb33-2df8-5a88-8915-15db2039c478" "node" "3721719b-a916-5e20-9f39-1eddc18daa80" "n" 0
 wire "84533a20-68d0-5049-b9a0-6476204e5ff5" "606c7993-a6e4-5181-a1ba-4525950462cb" "n" "3721719b-a916-5e20-9f39-1eddc18daa80" "p" 0
 end_definition
-definition "0d90a35d-3213-5bb0-9ce3-915bb71d0794" "Recorded gate sequence"
+definition "0d90a35d-3213-5bb0-9ce3-915bb71d0794" "Programmable gate sequence"
 public_port "f845fc63-b9b5-5ca5-bf0b-11d830844dce" "A1" "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" "out" 1 2
 public_port "242d36cb-8200-59d6-86b9-5e65815d4c66" "A2" "eaaa301c-0100-590a-aa06-df5d1356cb89" "out" 1 2
 public_port "fb834650-9298-5d5a-9c4d-404d2c186ad9" "B1" "3e036677-5e6d-57d4-a6f5-1a700d15e921" "out" 1 2
@@ -267,27 +277,19 @@ public_port "21fe7816-d9e8-54d3-a5a0-a44222cc44cf" "B2" "313d02a0-2552-54e0-8c6b
 public_port "848300ac-cf10-5706-9d4a-21ef18e45997" "C1" "dbf302ed-93f5-59f9-81d8-20e2f87814a7" "out" 1 2
 public_port "73491239-8550-51b9-a219-66414a473b9b" "C2" "333cd206-78be-502b-bd20-83616b67c5e0" "out" 1 2
 body
-PowerDriveSim 7
-project "0d90a35d-3213-5bb0-9ce3-915bb71d0794" "Recorded gate sequence"
+PowerDriveSim 16
+project "0d90a35d-3213-5bb0-9ce3-915bb71d0794" "Programmable gate sequence"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
+initialization Specified 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
 wiring wires
 scope_enabled 0
 scopeview 0 -1 -1 -1
-pattern "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" "A1" 0 0 1
-event 0.002 "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" 0
-event 0.005 "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" 1
-pattern "eaaa301c-0100-590a-aa06-df5d1356cb89" "A2" 180 0 0
-event 0.002 "eaaa301c-0100-590a-aa06-df5d1356cb89" 1
-event 0.005 "eaaa301c-0100-590a-aa06-df5d1356cb89" 0
-pattern "3e036677-5e6d-57d4-a6f5-1a700d15e921" "B1" 0 130 0
-event 0.001 "3e036677-5e6d-57d4-a6f5-1a700d15e921" 1
-event 0.004 "3e036677-5e6d-57d4-a6f5-1a700d15e921" 0
-pattern "313d02a0-2552-54e0-8c6b-03d902bcaf3c" "B2" 180 130 1
-event 0.001 "313d02a0-2552-54e0-8c6b-03d902bcaf3c" 0
-event 0.004 "313d02a0-2552-54e0-8c6b-03d902bcaf3c" 1
-pattern "dbf302ed-93f5-59f9-81d8-20e2f87814a7" "C1" 0 260 0
-event 0.003 "dbf302ed-93f5-59f9-81d8-20e2f87814a7" 1
-pattern "333cd206-78be-502b-bd20-83616b67c5e0" "C2" 180 260 1
-event 0.003 "333cd206-78be-502b-bd20-83616b67c5e0" 0
+gate_script "8d4f6efc-e15c-5441-8059-8caf0c1b1c8f" "A1" 0 0 1 1e-05 "return phasepwm(166.66666666666667, 0.5, 0.005);"
+gate_script "eaaa301c-0100-590a-aa06-df5d1356cb89" "A2" 180 0 0 1e-05 "return phasepwm(166.66666666666667, 0.5, 0.002);"
+gate_script "3e036677-5e6d-57d4-a6f5-1a700d15e921" "B1" 0 130 0 1e-05 "return phasepwm(166.66666666666667, 0.5, 0.001);"
+gate_script "313d02a0-2552-54e0-8c6b-03d902bcaf3c" "B2" 180 130 1 1e-05 "return phasepwm(166.66666666666667, 0.5, 0.004);"
+gate_script "dbf302ed-93f5-59f9-81d8-20e2f87814a7" "C1" 0 260 0 1e-05 "return phasepwm(166.66666666666667, 0.5, 0.003);"
+gate_script "333cd206-78be-502b-bd20-83616b67c5e0" "C2" 180 260 1 1e-05 "return phasepwm(166.66666666666667, 0.5, 0);"
 end_definition
