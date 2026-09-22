@@ -48,12 +48,12 @@ class Diagram:
             quoted(ident), quoted(name), quoted(terminal[0]), quoted(terminal[1]),
             1 if gate else 0, 2 if output else 1 if gate else 0))
 
-    def instance(self, name, definition, x, y, parameters=None):
-        ident = self.uuid("instance/" + name)
+    def instance(self, name, definition, x, y, parameters=None, key=None):
+        ident = self.uuid("instance/" + (key or name))
         values = parameters or {}
         overrides = "".join(" {} {}".format(quoted(definition.uuid("parameter/" + key)), value)
                             for key, value in values.items())
-        self.lines.append("instance {} {} {} {} {} {}{}".format(
+        self.lines.append("instance {} {} {} {} {} {}{} 0".format(
             quoted(ident), quoted(name), quoted(definition.id), x, y, len(values), overrides))
         return {name: (ident, port) for name, port in definition.port_ids.items()}
 
@@ -64,11 +64,21 @@ class Diagram:
 
     def pattern(self, name, states, x, y):
         ident = self.uuid("pattern/" + name)
-        self.lines.append("pattern {} {} {} {} {}".format(
-            quoted(ident), quoted(name), x, y, int(states[0])))
-        for index in range(1, len(states)):
-            if states[index] != states[index - 1]:
-                self.lines.append("event {} {} {}".format(index * .001, quoted(ident), int(states[index])))
+        if not any(states) or all(states):
+            code = "return {};".format("true" if states[0] else "false")
+        else:
+            starts = [index for index, value in enumerate(states)
+                      if value and not states[index - 1]]
+            if len(starts) != 1:
+                raise ValueError("Gate pattern must contain one cyclic high interval")
+            start = starts[0]
+            width = 0
+            while width < len(states) and states[(start + width) % len(states)]:
+                width += 1
+            code = "return phasepwm({}, {}, {});".format(
+                1 / (len(states) * .001), width / len(states), start * .001)
+        self.lines.append("gate_script {} {} {} {} {} 1e-05 {}".format(
+            quoted(ident), quoted(name), x, y, int(states[0]), quoted(code)))
         return ident, "out"
 
     def recorded(self, name, initial, events, x, y):
@@ -87,9 +97,14 @@ class Diagram:
             self.wire(terminal, (ident, "in" + str(index)), routes[index - 1] if routes else ())
 
     def body(self):
-        return ["PowerDriveSim " + str(self.schema), "project {} {}".format(quoted(self.id), quoted(self.name)),
-                "profile " + self.profile, "nonlinear 64 1e-9 1e-12 1e-9",
-                "wiring wires", "scope_enabled 0", "scopeview 0 -1 -1 -1"] + self.lines
+        header = ["PowerDriveSim " + str(self.schema),
+                  "project {} {}".format(quoted(self.id), quoted(self.name)),
+                  "profile " + self.profile, "nonlinear 64 1e-9 1e-12 1e-9"]
+        if self.schema >= 13:
+            header.append("initialization Specified 0")
+        if self.schema >= 14:
+            header.append("stepping 0 1e-09 0.001 1e-06 1e-09 1e-12")
+        return header + ["wiring wires", "scope_enabled 0", "scopeview 0 -1 -1 -1"] + self.lines
 
     def definition(self):
         return ["definition {} {}".format(quoted(self.id), quoted(self.name))] + self.ports + [
@@ -205,15 +220,15 @@ def example(levels):
     converter, definitions = converter_definition(levels)
     name = converter.name
     count = 2 if levels == 2 else 4
-    gate_bank = Diagram(str(levels) + "l/recorded-gates", "Recorded gate sequence")
+    gate_bank = Diagram(str(levels) + "l/recorded-gates", "Programmable gate sequence")
     for phase, letter in enumerate("ABC"):
         for index in range(count):
             assignments = [gates(levels, state[phase])[index] for state in states]
             pattern = gate_bank.pattern(letter + str(index + 1), assignments, index * 180, phase * 130)
             gate_bank.port(letter + str(index + 1), pattern, gate=True, output=True)
-    root = Diagram(str(levels) + "l/project", name + " with RL load and recorded gates")
+    root = Diagram(str(levels) + "l/project", name + " with RL load and programmable gates")
     block = root.instance(name, converter, 0, 0)
-    external_gates = root.instance("Recorded gates", gate_bank, -420, 60)
+    external_gates = root.instance("Programmable gates", gate_bank, -420, 60, key="Recorded gates")
     ground = root.node("N", -240, 300, ground=True)
     supply_p = root.component("Supply+", "V", 300, -240, -300, turns=1)
     supply_n = root.component("Supply-", "V", 300, -240, 180, turns=1)
@@ -241,6 +256,8 @@ def example(levels):
             root.wire(external_gates[letter + str(index + 1)], block[letter + str(index + 1)])
     root.plot("Phase voltages", voltages, 870, -130)
     root.plot("Phase currents", currents, 870, 120)
+    for body in [root, converter] + definitions + [gate_bank]:
+        body.schema = 16
     lines = root.body()
     for definition in [converter] + definitions + [gate_bank]:
         lines += definition.definition()

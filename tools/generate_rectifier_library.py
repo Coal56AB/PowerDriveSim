@@ -69,29 +69,26 @@ def example(three_phase, controlled=False):
         p.wire(ground, block["B"], [(20, 400)])
     gate_definitions = []
     if controlled and three_phase:
-        # Recorded 120-degree pulses, alpha=30 degrees; initial values include
-        # pulses which began in the preceding period. No controller runtime.
-        bank = Diagram(key + "/gates", "Recorded firing sequence")
-        bank.schema = 12
+        # Periodic 120-degree pulses, alpha=30 degrees. Safe Gate C is compiled
+        # into exact repeating edges and therefore has no finite event table.
+        bank = Diagram(key + "/gates", "Programmable firing sequence")
+        bank.schema = 16
         firing = [("gA+", 60), ("gA-", 240), ("gB+", 180),
                   ("gB-", 0), ("gC+", 300), ("gC-", 120)]
         for index, (name, degrees) in enumerate(firing):
             ident = bank.uuid(name)
             initial = int((-degrees) % 360 < 120)
-            bank.lines.append('pattern {} {} 0 {} {}'.format(quoted(ident), quoted(name), index * 110, initial))
-            events = []
-            for cycle in range(-1, 3):
-                start = (degrees / 360 + cycle) / 50
-                for time, value in [(start, 1), (start + 1 / 150, 0)]:
-                    if 0 < time <= .04:
-                        events.append((time, value))
-            for time, value in sorted(events):
-                bank.lines.append('event {} {} {}'.format(time, quoted(ident), value))
+            delay = degrees / 360 / 50
+            code = "return phasepwm(50, 0.3333333333333333, {});".format(delay)
+            bank.lines.append('gate_script {} {} 0 {} {} 1e-05 {}'.format(
+                quoted(ident), quoted(name), index * 110, initial, quoted(code)))
             bank.port(name, (ident, "out"), gate=True, output=True)
-        pulses = p.instance(bank.name, bank, -200, -400)
+        pulses = p.instance(bank.name, bank, -200, -400, key="Recorded firing sequence")
         for index, (name, _) in enumerate(firing):
             x = -80 + index * 20
             p.wire(pulses[name], block[name], [(x, -465 + index * 26), (x, -26 + index * 26)])
+        p.schema = 16
+        body.schema = 16
         gate_definitions = bank.definition()
     elif controlled:
         for label, delay, y, names in [("Positive firing", .0025, -300, ["gA+", "gB-"]),

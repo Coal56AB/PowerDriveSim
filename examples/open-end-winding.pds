@@ -18,7 +18,7 @@ wire "3d1d937f-1bf5-5dcd-9494-6b7445c2af40" "2349d88d-ebbb-5777-83a5-c39c1410b30
 wire "3ee5aa58-7855-52ff-b9fe-2787d363f844" "c371818a-b69c-514e-9e23-86a5e2c94a32" "node" "3ec9a7f9-9179-534a-b87f-c4336beff1e0" "4e57d100-809e-5964-ae45-1edc25898dfc" 2 -260 280 -260 -104
 wire "218ad40d-6ca5-5151-92b9-a629790a574a" "2349d88d-ebbb-5777-83a5-c39c1410b30e" "node" "3ec9a7f9-9179-534a-b87f-c4336beff1e0" "1efbd5bd-4373-5763-af6b-b25e28fcbba8" 2 240 -300 240 26
 wire "a1c0158d-9501-551b-ab90-ce07561287c2" "c371818a-b69c-514e-9e23-86a5e2c94a32" "node" "3ec9a7f9-9179-534a-b87f-c4336beff1e0" "568a08f0-1d44-5042-a553-e6bbd99761aa" 2 220 280 220 52
-instance "f2add33b-ad86-5926-84e7-02d7951039db" "Recorded dual inverter gates" "af9bd02f-a9a9-56ba-a272-c153361d0f88" -520 65 0 0
+instance "f2add33b-ad86-5926-84e7-02d7951039db" "Programmable dual inverter gates" "af9bd02f-a9a9-56ba-a272-c153361d0f88" -520 65 0 0
 wire "4d882e55-6e82-5cad-a86c-a1b6a8ac2403" "f2add33b-ad86-5926-84e7-02d7951039db" "4b35af72-4fac-5c65-a650-60e1828ced44" "3ec9a7f9-9179-534a-b87f-c4336beff1e0" "f49db267-923b-5d89-8979-c25fbec7e105" 0
 wire "7f7f9a88-3009-581c-9da2-7d92f3c6508e" "f2add33b-ad86-5926-84e7-02d7951039db" "ee79d433-94e6-56c4-92c7-98a95abb65cf" "3ec9a7f9-9179-534a-b87f-c4336beff1e0" "d18559a1-3bd8-56bd-86fe-1c3d778d5773" 0
 wire "c8788be3-746a-56a1-94db-d765d34aafcd" "f2add33b-ad86-5926-84e7-02d7951039db" "7eddb2e9-d253-50f9-8216-59cc5db8acc4" "3ec9a7f9-9179-534a-b87f-c4336beff1e0" "7a742f72-c112-586f-98e2-08b72159b315" 0
@@ -175,7 +175,7 @@ wire "d0da2c6d-b49c-5ed7-9f37-2be7b2a2860e" "de77c4ef-adc3-5d31-ae2b-1e3c0a07160
 wire "52c5e934-cb11-5a93-9a1c-805d6ca3094a" "a153da29-25f5-5f05-ab08-43700fa6d103" "node" "eaf6882f-ef82-51ae-bed6-67f26841ff63" "n" 1 160 0
 wire "0bc07501-042a-568d-bafd-9aadaaff5cbc" "eaf6882f-ef82-51ae-bed6-67f26841ff63" "p" "a4d6679e-95b3-5edf-a404-093ab99f5761" "node" 1 160 260
 end_definition
-definition "af9bd02f-a9a9-56ba-a272-c153361d0f88" "Recorded dual inverter gates"
+definition "af9bd02f-a9a9-56ba-a272-c153361d0f88" "Programmable dual inverter gates"
 public_port "4b35af72-4fac-5c65-a650-60e1828ced44" "g1AH" "a0107bdd-2e37-547c-9191-93e547ca771d" "out" 1 2
 public_port "ee79d433-94e6-56c4-92c7-98a95abb65cf" "g1AL" "d173e998-70f2-51f5-91c3-4fdcc45fc2d3" "out" 1 2
 public_port "7eddb2e9-d253-50f9-8216-59cc5db8acc4" "g1BH" "58ad7110-f6b9-52b5-a73d-9da216869fba" "out" 1 2
@@ -190,7 +190,7 @@ public_port "fb401bfb-ed25-5204-b809-8ec4f935886b" "g2CH" "adc8d98d-5afa-556b-85
 public_port "872a96c6-e0a4-57d1-9895-73ce4ef122ce" "g2CL" "9891fb97-e340-53b6-ad78-6bcc70ddbe50" "out" 1 2
 body
 PowerDriveSim 16
-project "af9bd02f-a9a9-56ba-a272-c153361d0f88" "Recorded dual inverter gates"
+project "af9bd02f-a9a9-56ba-a272-c153361d0f88" "Programmable dual inverter gates"
 profile 0.006 0.00001 BackwardEuler
 nonlinear 64 1e-9 1e-12 1e-9
 initialization Specified 0

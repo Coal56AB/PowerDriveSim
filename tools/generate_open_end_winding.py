@@ -62,8 +62,8 @@ def example(bodies):
     for number, x in [(1, -240), (2, 240)]:
         p.wire(positive, block["DC" + str(number) + "+"], [(x, -300), (x, -130 if number == 1 else 26)])
         p.wire(ground, block["DC" + str(number) + "-"], [(x - 20, 280), (x - 20, -104 if number == 1 else 52)])
-    bank = Diagram("open-end-winding/gates", "Recorded dual inverter gates")
-    bank.schema = 12
+    bank = Diagram("open-end-winding/gates", "Programmable dual inverter gates")
+    bank.schema = 16
     states = switching_states(3)
     for number in [1, 2]:
         for index, phase in enumerate("ABC"):
@@ -76,7 +76,7 @@ def example(bodies):
                 values = upper if level == "H" else [not value for value in upper]
                 terminal = bank.pattern(name, values, (number - 1) * 360 + (level == "L") * 140, index * 140)
                 bank.port(name, terminal, gate=True, output=True)
-    gates = p.instance(bank.name, bank, -520, 65)
+    gates = p.instance(bank.name, bank, -520, 65, key="Recorded dual inverter gates")
     for index, name in enumerate(bank.port_ids):
         p.wire(gates[name], block[name])
     voltage_outputs, current_outputs = [], []
@@ -95,6 +95,7 @@ def example(bodies):
         voltage_outputs.append(voltage["out"]); current_outputs.append(current["out"])
     p.plot("Winding voltages", voltage_outputs, 760, 410)
     p.plot("Winding currents", current_outputs, 760, 750)
+    for body in list(bodies) + [p, bank]: body.schema = 16
     lines = p.body()
     for body in list(bodies) + [bank]: lines += body.definition()
     return "\n".join(lines) + "\n"
