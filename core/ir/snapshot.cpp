@@ -114,6 +114,9 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
             const auto saved=s.signal_tasks.find(task.id);
             if(saved==s.signal_tasks.end()||saved->second.outputs.size()!=task.outputs.size())
                 invalid("Snapshot signal task is missing or has different outputs");
+            const double next_tick=task.phase+static_cast<double>(saved->second.next_tick)*task.period;
+            if(!std::isfinite(next_tick)||next_tick<=s.time)
+                invalid("Snapshot signal tick does not follow its accepted time");
             for(const auto &output:task.outputs) {
                 const auto value=saved->second.outputs.find(output.name);
                 const auto frame=s.signal_outputs.find(signal_endpoint_key({task.id,output.id}));
@@ -148,6 +151,8 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
                (value.type==SignalScalarType::boolean&&value.value!=0&&value.value!=1))
                 invalid("Snapshot accepted signal frame is invalid");
         }
+        if(s.accepted_signal_inputs.size()!=ir.signal_inputs.size())
+            invalid("Snapshot accepted signal frame is incomplete");
     }
     const double next = static_cast<double>(s.next_grid) * ir.profile.step;
     const double previous = static_cast<double>(s.next_grid - 1) * ir.profile.step;

@@ -88,6 +88,7 @@ int main(int argc, char **argv) try {
                 auto with_signal = ir;
                 SignalTaskIR signal_task;
                 signal_task.id = task_id;
+                signal_task.period = .1;
                 signal_task.code = "out = 2.5;";
                 signal_task.outputs = {{derived_uuid("snapshot-signal-output"), "command", "V",
                                         SignalScalarType::real, 0}};

@@ -339,6 +339,12 @@ int main() {
         auto changed_signal = integrated_ir;
         changed_signal.signal.tasks[0].code = "gate = 0;";
         error("invalid_snapshot", [&] { (void)execute(changed_signal,nullptr,nullptr,nullptr,nullptr,{},&continuation); });
+        auto stale_tick = restored;
+        stale_tick.signal_tasks.at(controller.id).next_tick = 0;
+        error("invalid_snapshot", [&] { validate_snapshot(stale_tick, integrated_ir); });
+        auto missing_frame = restored;
+        missing_frame.accepted_signal_inputs.erase(missing_frame.accepted_signal_inputs.begin());
+        error("invalid_snapshot", [&] { validate_snapshot(missing_frame, integrated_ir); });
         std::cout << "PASS typed causal Signal IR and deterministic C scheduler\n";
         return 0;
     } catch (const std::exception &exception) {
