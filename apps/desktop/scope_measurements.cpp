@@ -405,7 +405,8 @@ void Scope::show_measurements() {
     tf->addRow(text("trigger_mode"), mode);
     number(tf, "trigger_holdoff", text("trigger_holdoff"), trigger_holdoff_);
     number(tf, "trigger_position", text("trigger_position"), trigger_position_ * 100);
-    auto *arm = new QPushButton(text("apply"));
+    auto *arm = new QPushButton(text("trigger_arm"));
+    arm->setObjectName("trigger_apply");
     auto *reset = new QPushButton(text("trigger_reset"));
     tf->addRow(arm, reset);
     auto *status = new QLabel;
@@ -425,8 +426,7 @@ void Scope::show_measurements() {
             trigger_mode_ = mode->currentData().toInt();
             trigger_channel_ = result_channel(*result_, trigger_signal->currentData().toInt()).object;
             trigger_edge_ = edge->currentIndex();
-            update_trigger_controls();
-            update();
+            arm_trigger();
         } catch (const std::exception &e) {
             status->setText(QString::fromUtf8(e.what()));
         }

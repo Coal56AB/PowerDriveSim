@@ -2612,9 +2612,7 @@ class InteractionTests : public QObject {
         dialog->findChild<QLineEdit *>("trigger_level")->setText("5");
         auto *tabs = dialog->findChild<QTabWidget *>("measurement_tabs");
         tabs->setCurrentIndex(3);
-        for (auto *button : dialog->findChildren<QPushButton *>())
-            if (button->text() == "Arm")
-                button->click();
+        dialog->findChild<QPushButton *>("trigger_apply")->click();
         QVERIFY(dialog->findChild<QLabel *>("trigger_status")->text().contains("2.5"));
         auto *type = nav->findChild<QComboBox *>("cursor_type");
         type->setCurrentIndex(1);
@@ -2810,10 +2808,7 @@ class InteractionTests : public QObject {
         QCOMPARE(trigger_mode->currentIndex(),0);
         trigger_mode->setCurrentIndex(0);
         auto arm = [&] {
-            for (auto *button : d->findChildren<QPushButton *>())
-                if (button->text() == "Apply")
-                    button->click();
-            arm_toolbar->trigger();
+            d->findChild<QPushButton *>("trigger_apply")->click();
         };
         arm();
         QVERIFY(stop_toolbar->isEnabled());
