@@ -328,8 +328,19 @@ void Scope::show_measurements() {
         tabs->addTab(page, text(name));
     }
     auto *trigger = new QWidget;
+    trigger->setObjectName("trigger_page");
     auto *tf = new QFormLayout(trigger);
     tabs->addTab(trigger, text("trigger"));
+    auto *trigger_signal = new QComboBox;
+    trigger_signal->setObjectName("trigger_channel");
+    if (result_)
+        for (int ch : channels_) {
+            const auto channel = result_channel(*result_, ch);
+            trigger_signal->addItem(QString::fromStdString(channel.name + " [" + channel.unit + "]"), ch);
+            if (channel.object == trigger_channel_)
+                trigger_signal->setCurrentIndex(trigger_signal->count() - 1);
+        }
+    tf->addRow(text("measurement_signal"), trigger_signal);
     number(tf, "trigger_level", text("level"), trigger_level_);
     auto *edge = new QComboBox;
     edge->addItems({text("rising"), text("falling"), text("either_edge")});
@@ -349,9 +360,9 @@ void Scope::show_measurements() {
     auto *status = new QLabel;
     status->setObjectName("trigger_status");
     tf->addRow(status);
-    connect(arm, &QPushButton::clicked, this, [this, signal, edge, mode, dialog, status] {
+    connect(arm, &QPushButton::clicked, this, [this, trigger_signal, edge, mode, dialog, status] {
         try {
-            if (!result_ || signal->currentIndex() < 0)
+            if (!result_ || trigger_signal->currentIndex() < 0)
                 return;
             double level = value(dialog, "trigger_level"), holdoff = value(dialog, "trigger_holdoff", "s"),
                    position = value(dialog, "trigger_position") / 100;
@@ -361,7 +372,7 @@ void Scope::show_measurements() {
             trigger_holdoff_ = holdoff;
             trigger_position_ = position;
             trigger_mode_ = mode->currentIndex();
-            trigger_channel_ = result_channel(*result_, signal->currentData().toInt()).object;
+            trigger_channel_ = result_channel(*result_, trigger_signal->currentData().toInt()).object;
             trigger_edge_ = edge->currentIndex();
             trigger_after_ = live_ ? result_->samples.back().time : -1;
             trigger_time_.reset();

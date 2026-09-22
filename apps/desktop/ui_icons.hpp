@@ -17,6 +17,7 @@ enum class UiIcon {
     follow,
     time_window,
     measurements,
+    trigger,
     spectrum,
     code,
     settings,
@@ -80,6 +81,14 @@ class UiIconEngine final : public QIconEngine {
             line(11, 20, 11, 4);
             line(16, 20, 16, 10);
             line(20, 20, 20, 16);
+            break;
+        case UiIcon::trigger:
+            line(3, 18, 9, 18);
+            line(9, 18, 9, 6);
+            line(9, 6, 21, 6);
+            line(6, 12, 13, 12);
+            line(13, 12, 11, 10);
+            line(13, 12, 11, 14);
             break;
         case UiIcon::zoom_x:
         case UiIcon::zoom_y:

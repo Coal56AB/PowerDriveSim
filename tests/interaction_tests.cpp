@@ -1797,6 +1797,31 @@ class InteractionTests : public QObject {
         ready(w);
         QVERIFY(pin_item("in1")->pos() != pin_item("in2")->pos());
     }
+    void gate_output_pins_move_and_restore() {
+        QTemporaryDir dir;
+        EditorWindow w("en",dir.path());
+        Project project;project.id=new_uuid();project.wired=true;
+        GatePattern gate;gate.id=new_uuid();gate.name="Six-channel Gate";gate.script=true;
+        gate.code="for (int ind=0; ind<6; ++ind) IN[ind]=ind%2;";gate.outputs=6;
+        project.patterns.push_back(gate);w.set_project(project);ready(w);w.select_object(gate.id);
+        auto pin=[&]() -> QGraphicsItem* {
+            auto* block=item(w,gate.id);if(!block)return nullptr;
+            for(auto* child:block->childItems())
+                if(child->data(2).toString()=="out5")return child;
+            return nullptr;
+        };
+        auto* block=item(w,gate.id);QVERIFY(block&&pin());
+        const auto body=block->data(15).toRectF();
+        const auto start=(pin()->pos()+QPointF(body.right(),std::clamp(pin()->pos().y(),body.top(),body.bottom())))/2.0;
+        drag(w,block->mapToScene(start),block->mapToScene({0,body.top()-40}));
+        QCOMPARE(w.project().patterns.front().pin_positions.size(),size_t(1));
+        QCOMPARE(w.project().patterns.front().pin_positions.front().port,std::string("out5"));
+        const auto moved=pin()->pos();QVERIFY(moved.y()<body.top());
+        w.undo();QVERIFY(w.project().patterns.front().pin_positions.empty());
+        w.redo();QCOMPARE(pin()->pos(),moved);
+        const auto file=dir.filePath("gate-pins.pds");QVERIFY(w.save_project(file));QVERIFY(w.open_project(file));
+        QCOMPARE(pin()->pos(),moved);
+    }
     void gate_wire_preview_uses_gate_color() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
@@ -2575,9 +2600,13 @@ class InteractionTests : public QObject {
         QCOMPARE(s.end, b);
         nav->findChild<QAction *>("follow_live")->trigger();
         QCOMPARE(s.end, 11.);
-        s.show_measurements();
+        auto *trigger_action=nav->findChild<QAction *>("trigger");
+        QVERIFY(trigger_action&&!trigger_action->icon().isNull());
+        trigger_action->trigger();
         auto *dialog = s.findChild<QDialog *>("scope_measurements");
         QVERIFY(dialog);
+        QCOMPARE(dialog->findChild<QTabWidget *>("measurement_tabs")->currentWidget()->objectName(),QString("trigger_page"));
+        QCOMPARE(dialog->findChild<QComboBox *>("trigger_channel")->count(),2);
         QVERIFY(dialog->findChild<QTableWidget *>("measurement_statistics")->rowCount() > 5);
         s.set_live(false);
         dialog->findChild<QLineEdit *>("trigger_level")->setText("5");
@@ -3060,7 +3089,6 @@ class InteractionTests : public QObject {
         auto *c_editor=dynamic_cast<CCodeEdit *>(code);
         QVERIFY(code&&compile&&compile->isVisible()&&format&&format->isVisible()&&error);
         QVERIFY(c_editor&&c_editor->code_completer());
-        auto* expand=w.findChild<QPushButton*>("expand_gate_code");QVERIFY(expand&&expand->isVisible());
         bool full_editor_opened=false;
         QTimer::singleShot(0,&w,[&] {
             auto* dialog=w.findChild<QDialog*>("full_gate_code_dialog");QVERIFY(dialog);
@@ -3070,7 +3098,8 @@ class InteractionTests : public QObject {
             QCOMPARE(dialog->findChild<QLabel*>("full_gate_code_status")->text(),QString("Code compiled successfully."));
             full_editor_opened=true;dialog->accept();
         });
-        expand->click();QVERIFY(full_editor_opened);QCOMPARE(code->toPlainText(),QString("return true;"));
+        QTest::mouseClick(c_editor->viewport(),Qt::LeftButton,Qt::NoModifier,{c_editor->viewport()->width()-16,16});
+        QVERIFY(full_editor_opened);QCOMPARE(code->toPlainText(),QString("return true;"));
         code->setPlainText("if (t > 0) {\nreturn true;\n}");
         format->click();
         QVERIFY(code->toPlainText().contains("\n    return true;\n"));

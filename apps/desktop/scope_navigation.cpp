@@ -19,6 +19,7 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QTabWidget>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -299,6 +300,15 @@ QWidget *Scope::navigation() {
     auto *measure = bar->addAction(ui_icon(UiIcon::measurements), text("measurements"));
     measure->setObjectName("measurements");
     connect(measure, &QAction::triggered, this, &Scope::show_measurements);
+    auto *trigger = bar->addAction(ui_icon(UiIcon::trigger), text("trigger"));
+    trigger->setObjectName("trigger");
+    connect(trigger, &QAction::triggered, this, [this] {
+        show_measurements();
+        if (measurements_)
+            if (auto *tabs = measurements_->findChild<QTabWidget *>("measurement_tabs"))
+                if (auto *page = measurements_->findChild<QWidget *>("trigger_page"))
+                    tabs->setCurrentWidget(page);
+    });
     auto *spectrum = bar->addAction(ui_icon(UiIcon::spectrum), text("spectrum"));
     spectrum->setObjectName("spectrum");
     connect(spectrum, &QAction::triggered, this, &Scope::show_spectrum);
