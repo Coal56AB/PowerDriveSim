@@ -52,16 +52,16 @@ void validate_signal_ir(const SignalIR &ir) {
             if (!valid_uuid(candidate.id) || !port_ids.insert(candidate.id).second)
                 throw Diagnostic("invalid_signal_port", task.id, "Signal port UUID must be unique within its block");
             if (!identifier(candidate.name) || !names.insert(candidate.name).second)
-                throw Diagnostic("invalid_signal_port", candidate.id, "Signal port name must be a unique C identifier");
+                throw Diagnostic("invalid_signal_port", task.id, "Signal port '" + candidate.name + "' must be a unique C identifier");
             if (!std::isfinite(candidate.initial))
-                throw Diagnostic("invalid_signal_port", candidate.id, "Signal port initial value must be finite");
+                throw Diagnostic("invalid_signal_port", task.id, "Signal port '" + candidate.name + "' initial value must be finite");
             if (candidate.type == SignalScalarType::boolean && candidate.initial != 0 && candidate.initial != 1)
-                throw Diagnostic("invalid_signal_port", candidate.id, "Boolean initial value must be 0 or 1");
+                throw Diagnostic("invalid_signal_port", task.id, "Boolean port '" + candidate.name + "' initial value must be 0 or 1");
         };
         for (const auto &input : task.inputs) {
             port(input.port);
             if (input.source.object.empty() || input.source.port.empty())
-                throw Diagnostic("missing_signal_source", input.port.id, "Signal input source must be connected");
+                throw Diagnostic("missing_signal_source", task.id, "Signal input '" + input.port.name + "' must be connected");
         }
         for (const auto &output : task.outputs)
             port(output);
@@ -79,10 +79,10 @@ void validate_signal_ir(const SignalIR &ir) {
                                                  return candidate.id == input.source.port;
                                              });
             if (output == source_task->outputs.end())
-                throw Diagnostic("missing_signal_source", input.port.id, "Connected code-block output does not exist");
+                throw Diagnostic("missing_signal_source", task.id, "Connected output for input '" + input.port.name + "' does not exist");
             if (output->type != input.port.type || output->unit != input.port.unit)
-                throw Diagnostic("incompatible_signal_value", input.port.id,
-                                 "Connected code-block ports have incompatible types or units");
+                throw Diagnostic("incompatible_signal_value", task.id,
+                                 "Connected input '" + input.port.name + "' has an incompatible type or unit");
         }
 }
 

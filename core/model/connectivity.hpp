@@ -8,6 +8,9 @@ struct ResolvedGraph {
     // Controlled component UUID -> connected gate-source UUID. Kept as
     // metadata after patterns are removed from the electrical project.
     std::map<std::string,std::string> gate_drivers;
+    // Code-block input endpoint key -> source endpoint. Kept independently so
+    // different ports of one block can each have their own driver.
+    std::map<std::string,Endpoint> signal_drivers;
 };
 std::vector<std::string> plot_channels(const Project& project,const std::string& plot_id);
 std::vector<std::string> plot_source_channels(const Project& project,const std::string& plot_id);

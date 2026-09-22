@@ -581,6 +581,9 @@ SimulationIR compile(const Project& source) {
     auto resolved=resolve_parameter_expressions(active);
     auto expanded=flatten(resolved);
     try {
+        if (!expanded.project.code_blocks.empty())
+            throw Diagnostic("code_block_runtime_unavailable", expanded.project.code_blocks.front().id,
+                             "Code-block execution is not connected to the electrical solver yet");
         if(!active.instances.empty()) {
             for(const auto& [terminal,net]:resolve_connections(expanded.project).nets) {
                 auto origin=expanded.origins.find(terminal.substr(0,terminal.find('/')));

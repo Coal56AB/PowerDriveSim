@@ -1,10 +1,14 @@
 #include "core/solver/reference/signal.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/connectivity.hpp"
+#include "core/compiler/signal.hpp"
+#include "core/ir/ir.hpp"
+#include "formats/project/project.hpp"
 
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <sstream>
 
 using namespace pds;
 
@@ -129,6 +133,89 @@ int main() {
         check(flattened.terminals.at(endpoint_key({second, public_output})) ==
                   Endpoint{expanded_uuid({second}, block.id), block.outputs[0].id},
               "Public code-block port resolves to the expanded instance");
+        CodeBlock nested_consumer;
+        nested_consumer.id = derived_uuid("code-hierarchy-consumer");
+        nested_consumer.code = "echo = input;";
+        nested_consumer.inputs = {{derived_uuid("code-hierarchy-consumer-input"), "input", "",
+                            SignalScalarType::real, 0}};
+        nested_consumer.outputs = {{derived_uuid("code-hierarchy-consumer-output"), "echo", "",
+                             SignalScalarType::real, 0}};
+        nested.code_blocks.push_back(nested_consumer);
+        nested.wires.push_back({derived_uuid("code-hierarchy-link"), {second, public_output},
+                                {nested_consumer.id, nested_consumer.inputs[0].id}});
+        const auto nested_ir = compile_signal_ir(nested);
+        const auto consumer_task = std::find_if(nested_ir.tasks.begin(), nested_ir.tasks.end(),
+                                                [&](const auto &task) { return task.id == nested_consumer.id; });
+        check(consumer_task != nested_ir.tasks.end() &&
+                  consumer_task->inputs[0].source.object == expanded_uuid({second}, block.id),
+              "Nested public output drives the root code block through its expanded endpoint");
+
+        Project wired;
+        wired.id = derived_uuid("code-wired-project");
+        wired.wired = true;
+        Component voltage;
+        voltage.id = derived_uuid("code-voltage-probe");
+        voltage.kind = Kind::voltage_probe;
+        Component current_probe;
+        current_probe.id = derived_uuid("code-current-probe");
+        current_probe.kind = Kind::current_probe;
+        wired.components = {voltage, current_probe};
+        CodeBlock linked = block;
+        linked.inputs = {{derived_uuid("code-voltage-input"), "voltage", "V", SignalScalarType::real, 0},
+                         {derived_uuid("code-current-input"), "current", "A", SignalScalarType::real, 0}};
+        linked.code = "out = voltage + current;";
+        wired.code_blocks.push_back(linked);
+        wired.wires = {{derived_uuid("code-voltage-wire"), {voltage.id, "out"}, {linked.id, linked.inputs[0].id}},
+                       {derived_uuid("code-current-wire"), {current_probe.id, "out"}, {linked.id, linked.inputs[1].id}}};
+        const auto compiled = compile_signal_ir(wired);
+        check(compiled.tasks.size() == 1 && compiled.tasks[0].inputs.size() == 2 &&
+                  compiled.tasks[0].inputs[0].source.object == voltage.id &&
+                  compiled.tasks[0].inputs[1].source.object == current_probe.id,
+              "Each code-block input resolves its own typed probe source");
+        std::ostringstream serialized;
+        write_project(wired, serialized);
+        std::istringstream saved(serialized.str());
+        check(read_project(saved) == wired, "Wired code-block ports survive project round-trip");
+        error("code_block_runtime_unavailable", [&] { (void)compile(wired); });
+        auto tagged = wired;
+        ConnectionTag tag;
+        tag.id = derived_uuid("code-signal-tag");
+        tag.name = "SENSE";
+        tag.domain = Domain::signal;
+        tagged.tags.push_back(tag);
+        tagged.wires[0].to = {tag.id, "io"};
+        tagged.wires.push_back({derived_uuid("code-tag-wire"), {tag.id, "io"},
+                                {linked.id, linked.inputs[0].id}});
+        check(compile_signal_ir(tagged).tasks[0].inputs[0].source.object == voltage.id,
+              "Signal tag resolves the probe driver for a code-block input");
+        Project gate_link;
+        gate_link.id = derived_uuid("code-gate-link-project");
+        gate_link.wired = true;
+        GatePattern pattern;
+        pattern.id = derived_uuid("code-gate-source");
+        gate_link.patterns.push_back(pattern);
+        CodeBlock gate_block;
+        gate_block.id = derived_uuid("code-gate-block");
+        gate_block.code = "gate = control;";
+        gate_block.inputs = {{derived_uuid("code-gate-input"), "control", "",
+                              SignalScalarType::boolean, 0}};
+        gate_block.outputs = {{derived_uuid("code-gate-output"), "gate", "",
+                               SignalScalarType::boolean, 0}};
+        gate_link.code_blocks.push_back(gate_block);
+        gate_link.wires.push_back({derived_uuid("code-gate-wire"), {pattern.id, "out"},
+                                   {gate_block.id, gate_block.inputs[0].id}});
+        check(compile_signal_ir(gate_link).tasks[0].inputs[0].source.object == pattern.id,
+              "Boolean code-block input accepts a Gate source");
+        auto duplicate = wired;
+        duplicate.wires.push_back({derived_uuid("code-duplicate-wire"),
+                                   {current_probe.id, "out"}, {linked.id, linked.inputs[0].id}});
+        error("multiple_signal_drivers", [&] { (void)compile_signal_ir(duplicate); });
+        auto wrong_unit = wired;
+        wrong_unit.code_blocks[0].inputs[0].unit = "A";
+        error("incompatible_signal_value", [&] { (void)compile_signal_ir(wrong_unit); });
+        auto disconnected = wired;
+        disconnected.wires.pop_back();
+        error("missing_signal_source", [&] { (void)compile_signal_ir(disconnected); });
         std::cout << "PASS typed causal Signal IR and deterministic C scheduler\n";
         return 0;
     } catch (const std::exception &exception) {
