@@ -1622,21 +1622,26 @@ class InteractionTests : public QObject {
                 QVERIFY(block);
                 QVERIFY(untouched);
                 const double old_width = block->mapRectToScene(block->shape().boundingRect()).width();
+                const double old_height = block->mapRectToScene(block->shape().boundingRect()).height();
                 w.select_object(instance.id);
                 untouched->setSelected(true);
                 const auto untouched_position = untouched->pos();
                 const auto untouched_transform = untouched->transform();
                 const auto untouched_model = w.project().plots.front();
                 block = item(w, instance.id);
+                const QRectF visible_frame = block->data(14).toRectF();
+                QVERIFY(visible_frame.isValid());
                 const QPointF handle = block->mapToScene(
-                    {block->boundingRect().right(), block->boundingRect().center().y()});
+                    {visible_frame.right(), visible_frame.center().y()});
                 QPointF direction = block->mapToScene(QPointF(1, 0)) - block->mapToScene(QPointF());
                 direction /= std::hypot(direction.x(), direction.y());
                 drag(w, handle, handle + direction * 37.0);
                 block = item(w, instance.id);
                 QVERIFY(block);
                 const double new_width = block->mapRectToScene(block->shape().boundingRect()).width();
+                const double new_height = block->mapRectToScene(block->shape().boundingRect()).height();
                 QVERIFY(!close(new_width, old_width));
+                QVERIFY(close(new_height, old_height));
                 QVERIFY(close(new_width / grid, std::round(new_width / grid)));
                 QVERIFY(QLineF(untouched->pos(), untouched_position).length() < 1e-9);
                 QVERIFY(close(untouched->transform().m11(), untouched_transform.m11()));
@@ -1647,6 +1652,25 @@ class InteractionTests : public QObject {
                 verify(instance.id);
             }
         }
+    }
+    void gate_resize_handles_follow_body_and_resize_one_axis() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        const auto gate_id = w.add_pattern({200, 200});
+        ready(w);
+        w.select_object(gate_id);
+
+        auto *gate = item(w, gate_id);
+        QVERIFY(gate);
+        const QRectF body = gate->data(15).toRectF();
+        QCOMPARE(body, QRectF(-38, -22, 76, 44));
+        const auto before = w.project().patterns.front().orientation;
+        const QPointF handle = gate->mapToScene({body.right(), body.center().y()});
+        drag(w, handle, handle + QPointF(40, 0));
+
+        const auto after = w.project().patterns.front().orientation;
+        QVERIFY(std::abs(after.scale_x - before.scale_x) > 1e-6);
+        QVERIFY(std::abs(after.scale_y - before.scale_y) < 1e-6);
     }
     void plot_pins_move_to_all_edges_without_overlap() {
         QTemporaryDir dir;

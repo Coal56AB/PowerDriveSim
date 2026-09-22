@@ -2295,6 +2295,9 @@ void EditorWindow::rebuild_scene() {
         a->type = type;
         a->setData(10, type == 4);
         a->setData(12, type == 3);
+        // Resize handles follow the visible body, not labels and port leads
+        // included in boundingRect() for painting and hit testing.
+        a->setData(15, type == 2 ? QVariant(QRectF(-38, -22, 76, 44)) : QVariant{});
         return a;
     };
     auto ports = [&](Atom *a, const std::vector<std::pair<QString, QPointF>> &list, const QColor &color) {

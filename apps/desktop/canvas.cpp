@@ -205,11 +205,20 @@ struct ResizeHit {
     QPointF origin;
     bool x = true, y = true;
 };
+static QRectF resize_frame(QGraphicsItem *item) {
+    const auto frame = item ? item->data(14).toRectF() : QRectF{};
+    if (frame.isValid() && !frame.isEmpty())
+        return frame;
+    const auto visual_body = item ? item->data(15).toRectF() : QRectF{};
+    if (visual_body.isValid() && !visual_body.isEmpty())
+        return visual_body;
+    return item ? item->boundingRect() : QRectF{};
+}
 static std::optional<ResizeHit> resize_corner(QGraphicsItem *item, QPoint view_pos, const QGraphicsView *view) {
     if (!item || item->data(1).toString() == "wire" || item->data(1).toString() == "label" ||
         item->data(4).isValid() || !item->isSelected())
         return {};
-    const auto r = item->boundingRect();
+    const auto r = resize_frame(item);
     const std::array<std::pair<QPointF, QPointF>, 4> corners{
         std::pair{r.topLeft(), r.bottomRight()}, std::pair{r.topRight(), r.bottomLeft()},
         std::pair{r.bottomLeft(), r.topRight()}, std::pair{r.bottomRight(), r.topLeft()}};
@@ -1042,9 +1051,11 @@ void Canvas::drawForeground(QPainter *p, const QRectF &) {
         if (!item->isVisible() || item->data(1).toString() != "atom" ||
             item->data(4).isValid() || item->parentItem())
             continue;
-        const auto frame = item->boundingRect();
-        const std::array<QPointF, 4> handles{
-            frame.topLeft(), frame.topRight(), frame.bottomLeft(), frame.bottomRight()};
+        const auto frame = resize_frame(item);
+        const std::array<QPointF, 8> handles{
+            frame.topLeft(), frame.topRight(), frame.bottomLeft(), frame.bottomRight(),
+            QPointF(frame.left(), frame.center().y()), QPointF(frame.right(), frame.center().y()),
+            QPointF(frame.center().x(), frame.top()), QPointF(frame.center().x(), frame.bottom())};
         for (size_t index = 0; index < handles.size(); ++index) {
             const QPointF position = mapFromScene(item->mapToScene(handles[index]));
             const bool hovered = QLineF(QPointF(last_mouse_), position).length() <= 14.0;
