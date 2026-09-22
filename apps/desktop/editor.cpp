@@ -427,10 +427,11 @@ class Atom final : public QGraphicsItem {
             if (child->data(1).toString() != "port")
                 continue;
             QPointF scene = child->scenePos();
-            if (type == 3 || type == 4) {
-                const double h = type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
-                const QRectF body = type == 3 ? QRectF(-46, -h, 104, 2 * h)
-                                              : QRectF(-90, -h, 180, 2 * h);
+            if (type == 2 || type == 3 || type == 4) {
+                const double h = type == 2 ? std::max(22.0,(std::max(1u,input_count)-1)*10.0+14.0)
+                    : type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
+                const QRectF body = type == 2 ? QRectF(-38,-h,76,2*h)
+                    : type == 3 ? QRectF(-46, -h, 104, 2 * h) : QRectF(-90, -h, 180, 2 * h);
                 const QPointF current = child->pos();
                 const std::array<QPointF, 4> edges = {
                     QPointF(body.left(), std::clamp(current.y(), body.top(), body.bottom())),
@@ -449,7 +450,7 @@ class Atom final : public QGraphicsItem {
                 QPointF direction = mapToScene(edge + outward) - edge_scene;
                 const double length = std::hypot(direction.x(), direction.y());
                 if (length > 1e-9)
-                    scene = edge_scene + direction / length * (grid / 2.0);
+                    scene = edge_scene + direction / length * (type == 2 ? grid : grid / 2.0);
             }
             const QPointF local = mapFromScene(snap(scene));
             child->setPos(local);
@@ -459,10 +460,12 @@ class Atom final : public QGraphicsItem {
         }
     }
     void separate_overlapping_ports(double grid) {
-        if (type != 3 && type != 4)
+        if (type != 2 && type != 3 && type != 4)
             return;
-        const double h = type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
-        const QRectF body = type == 3 ? QRectF(-46, -h, 104, 2 * h) : QRectF(-90, -h, 180, 2 * h);
+        const double h = type == 2 ? std::max(22.0,(std::max(1u,input_count)-1)*10.0+14.0)
+            : type == 3 ? std::max(40.0, input_count * 20.0) : body_half_height();
+        const QRectF body = type == 2 ? QRectF(-38,-h,76,2*h)
+            : type == 3 ? QRectF(-46, -h, 104, 2 * h) : QRectF(-90, -h, 180, 2 * h);
         std::vector<QPointF> occupied;
         for (auto *child : childItems()) {
             if (child->data(1).toString() != "port")
@@ -474,7 +477,7 @@ class Atom final : public QGraphicsItem {
                 const double length = std::hypot(direction.x(), direction.y());
                 if (length <= 1e-9)
                     return edge;
-                QPointF target = edge_scene + direction / length * (grid / 2.0);
+                QPointF target = edge_scene + direction / length * (type == 2 ? grid : grid / 2.0);
                 target.setX(std::round(target.x() / grid) * grid);
                 target.setY(std::round(target.y() / grid) * grid);
                 return mapFromScene(target);
@@ -826,10 +829,19 @@ class Atom final : public QGraphicsItem {
             p->setBrush(theme_colors().gate_fill);
             p->drawRoundedRect(QRectF(-38, -h, 76, 2*h), 7, 7);
             label(p, QRectF(-38, -h, 76, 2*h), Qt::AlignCenter, symbol.isEmpty() ? QString("Gate") : symbol);
-            for(unsigned index=0;index<input_count;++index) {
-                const double y=(double(index)-double(input_count-1)/2.0)*20.0;
-                p->drawLine(38,y,60,y);
-                if(input_count>1)label(p,QRectF(39,y-9,18,18),Qt::AlignCenter,QString::number(index));
+            unsigned index=0;
+            for(auto *child:childItems()) {
+                if(child->data(1).toString()!="port")continue;
+                const QPointF pin=child->pos();
+                const QRectF body(-38,-h,76,2*h);
+                const std::array<QPointF,4> edges={QPointF(body.left(),std::clamp(pin.y(),body.top(),body.bottom())),
+                    QPointF(body.right(),std::clamp(pin.y(),body.top(),body.bottom())),
+                    QPointF(std::clamp(pin.x(),body.left(),body.right()),body.top()),
+                    QPointF(std::clamp(pin.x(),body.left(),body.right()),body.bottom())};
+                const auto edge=*std::min_element(edges.begin(),edges.end(),[&](QPointF a,QPointF b){return QLineF(pin,a).length()<QLineF(pin,b).length();});
+                p->drawLine(edge,pin);
+                if(input_count>1)label(p,QRectF(edge.x()-9,edge.y()-9,18,18),Qt::AlignCenter,QString::number(index));
+                ++index;
             }
         } else {
             p->drawLine(-60, 0, -27, 0);
@@ -1929,7 +1941,7 @@ void EditorWindow::build_ui() {
     canvas_->movement = [this] {
         for (auto *item : canvas_->scene()->selectedItems())
             if (item->data(1).toString() == "atom" &&
-                (item->data(10).toBool() || item->data(12).toBool())) {
+                (item->data(10).toBool() || item->data(12).toBool() || item->data(17).toBool())) {
                 auto *atom = static_cast<Atom *>(item);
                 atom->snap_ports_to_grid(canvas_->grid_size());
                 atom->separate_overlapping_ports(canvas_->grid_size());
@@ -2319,6 +2331,7 @@ void EditorWindow::rebuild_scene() {
         a->type = type;
         a->setData(10, type == 4);
         a->setData(12, type == 3);
+        a->setData(17, type == 2);
         // Resize handles follow the visible body, not labels and port leads
         // included in boundingRect() for painting and hit testing.
         a->setData(15, type == 2 ? QVariant(QRectF(-38, -22, 76, 44)) : QVariant{});
@@ -2385,7 +2398,11 @@ void EditorWindow::rebuild_scene() {
         std::vector<std::pair<QString,QPointF>> list;
         for(unsigned index=0;index<g.outputs;++index) {
             const double y=(double(index)-double(g.outputs-1)/2.0)*20.0;
-            list.push_back({index==0?QString("out"):QString("out")+QString::number(index),{60,y}});
+            const QString name=index==0?QString("out"):QString("out")+QString::number(index);
+            QPointF point{45,y};
+            if(auto stored=std::find_if(g.pin_positions.begin(),g.pin_positions.end(),[&](const PinPosition& pin){return pin.port==name.toStdString();});stored!=g.pin_positions.end())
+                point={stored->x,stored->y};
+            list.push_back({name,point});
         }
         ports(a, list, QColor("#17866d"));
     }
@@ -2538,7 +2555,7 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
     }
     else if (e.port == "p" || e.port.rfind("in", 0) == 0)
         delta = {-20, 0};
-    else if (e.port == "n" || (e.port == "out" && atom->type == 2))
+    else if (e.port == "n" || (e.port.rfind("out",0)==0 && atom->type == 2))
         delta = {20, 0};
     return point + atom->mapToScene(delta) - atom->mapToScene(QPointF());
 }
@@ -2880,6 +2897,7 @@ void EditorWindow::commit_positions() {
         std::string definition;
         std::string port;
         double x = 0, y = 0;
+        bool gate = false;
     };
     std::vector<PortMove> port_moves;
     for (const auto &instance : project().instances) {
@@ -2890,7 +2908,7 @@ void EditorWindow::commit_positions() {
             if (child->data(1).toString() != "port" || !child->data(9).toBool())
                 continue;
             const auto point = child->pos();
-            port_moves.push_back({instance.id, instance.definition, child->data(2).toString().toStdString(), point.x(), point.y()});
+            port_moves.push_back({instance.id, instance.definition, child->data(2).toString().toStdString(), point.x(), point.y(), false});
         }
     }
     for (const auto &plot : project().plots) {
@@ -2901,12 +2919,38 @@ void EditorWindow::commit_positions() {
             if (child->data(1).toString() != "port" || !child->data(9).toBool())
                 continue;
             const auto point = child->pos();
-            port_moves.push_back({plot.id, {}, child->data(2).toString().toStdString(), point.x(), point.y()});
+            port_moves.push_back({plot.id, {}, child->data(2).toString().toStdString(), point.x(), point.y(), false});
+        }
+    }
+    for (const auto &gate : project().patterns) {
+        auto atom = atoms_.find(gate.id);
+        if (atom == atoms_.end())
+            continue;
+        for (auto *child : atom->second->childItems()) {
+            if (child->data(1).toString() != "port" || !child->data(9).toBool())
+                continue;
+            const auto point = child->pos();
+            port_moves.push_back({gate.id, {}, child->data(2).toString().toStdString(), point.x(), point.y(), true});
         }
     }
     if (!port_moves.empty()) {
         document_->apply("Move public ports", [&](Project &p) {
             for (const auto &move : port_moves) {
+                if (move.gate) {
+                    auto gate = std::find_if(p.patterns.begin(), p.patterns.end(),
+                                             [&](const GatePattern &candidate) { return candidate.id == move.object; });
+                    if (gate == p.patterns.end())
+                        continue;
+                    auto pin = std::find_if(gate->pin_positions.begin(), gate->pin_positions.end(),
+                                            [&](const PinPosition &candidate) { return candidate.port == move.port; });
+                    if (pin == gate->pin_positions.end())
+                        gate->pin_positions.push_back({move.port, move.x, move.y});
+                    else {
+                        pin->x = move.x;
+                        pin->y = move.y;
+                    }
+                    continue;
+                }
                 if (move.definition.empty()) {
                     auto plot = std::find_if(p.plots.begin(), p.plots.end(),
                                              [&](const PlotBlock &candidate) { return candidate.id == move.object; });

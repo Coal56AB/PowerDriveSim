@@ -395,8 +395,7 @@ class EditorWindow : public QMainWindow {
     QLabel *banner_ = nullptr;
     QProgressBar *simulation_progress_ = nullptr;
     QLabel *inspector_hint_ = nullptr, *inspector_type_ = nullptr, *inspector_description_ = nullptr;
-    QPushButton *apply_button_ = nullptr, *compile_code_button_ = nullptr, *format_code_button_ = nullptr,
-                *expand_code_button_ = nullptr;
+    QPushButton *apply_button_ = nullptr, *compile_code_button_ = nullptr, *format_code_button_ = nullptr;
     QAction *run_ = nullptr, *stop_action_ = nullptr, *undo_ = nullptr, *redo_ = nullptr;
     QFutureWatcher<Outcome> watcher_;
     std::atomic_bool cancel_{false};

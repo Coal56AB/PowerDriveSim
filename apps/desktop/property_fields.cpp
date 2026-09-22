@@ -146,6 +146,9 @@ QWidget *EditorWindow::create_inspector_page() {
     property_imports_.clear();
     active_fields_ = {};
     build_property_editors();
+    if (auto found = property_editors_.find("gate_code"); found != property_editors_.end())
+        if (auto *editor = dynamic_cast<CCodeEdit *>(found->second))
+            editor->enable_expand([this] { open_full_code_editor(); }, text("open_code_editor"));
 
     apply_button_ = new QPushButton(text("apply"));
     apply_button_->setObjectName("apply_properties");
@@ -158,10 +161,6 @@ QWidget *EditorWindow::create_inspector_page() {
     format_code_button_->setObjectName("format_gate_code");
     format_code_button_->hide();
     properties_->addRow(format_code_button_);
-    expand_code_button_ = new QPushButton(text("open_code_editor"));
-    expand_code_button_->setObjectName("expand_gate_code");
-    expand_code_button_->hide();
-    properties_->addRow(expand_code_button_);
     property_error_ = new QLabel;
     property_error_->setObjectName("property_error");
     property_error_->setStyleSheet("color:palette(bright-text)");
@@ -175,7 +174,6 @@ QWidget *EditorWindow::create_inspector_page() {
             if (auto *editor = dynamic_cast<CCodeEdit *>(found->second))
                 editor->format_code();
     });
-    connect(expand_code_button_, &QPushButton::clicked, this, &EditorWindow::open_full_code_editor);
     return page;
 }
 void EditorWindow::update_workspace_variables() {
@@ -794,7 +792,6 @@ void EditorWindow::fill_inspector() {
         }
     compile_code_button_->setVisible(gate_code);
     format_code_button_->setVisible(gate_code);
-    expand_code_button_->setVisible(gate_code);
     update_command_state();
     publish();
 }

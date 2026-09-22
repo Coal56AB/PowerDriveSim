@@ -352,7 +352,8 @@ FlattenedProject flatten(const Project &source) {
                 add(c.id, "out");
         }
         for (const auto &g : s.patterns)
-            add(g.id, "out");
+            for (unsigned index = 0; index < g.outputs; ++index)
+                add(g.id, index == 0 ? "out" : "out" + std::to_string(index));
         for (const auto &t : s.tags)
             add(t.id, "io");
         for (const auto &p : s.plots)

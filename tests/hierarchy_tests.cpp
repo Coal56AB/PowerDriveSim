@@ -331,6 +331,19 @@ int main() try {
     require(std::count_if(gates.events.begin(), gates.events.end(),
                           [](const auto &e) { return e.time == .0005 && e.closed; }) == 3,
             "Public gates preserve simultaneous fanout and pattern observation");
+    auto multi_output=fixture();
+    auto &multi_cell=multi_output.definitions.front();
+    GatePattern multi_gate{id(54),"Six outputs",0,0,false};
+    multi_gate.script=true;multi_gate.code="for (int ind=0; ind<6; ++ind) IN[ind]=ind%2;";multi_gate.outputs=6;
+    multi_cell.patterns.push_back(multi_gate);
+    for(unsigned index=0;index<6;++index) {
+        const auto tag_id=id(55+int(index));
+        multi_cell.tags.push_back({tag_id,"G"+std::to_string(index),double(index)*20,80,Domain::gate});
+        wire(multi_cell,{multi_gate.id,index==0?"out":"out"+std::to_string(index)},{tag_id,"io"});
+    }
+    const auto multi_flat=flatten(multi_output).project;
+    require(multi_flat.wires.size()>=12,
+            "Every output of a multi-output Gate survives hierarchy flattening");
     gated.plots.push_back({id(53), "Output", 0, 0, 1});
     wire(gated, {id(20), id(16)}, {id(53), "in1"});
     require(plot_channels(gated, id(53)) == std::vector<std::string>{expanded_uuid({id(20)}, id(11))},

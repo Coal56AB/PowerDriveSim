@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <tuple>
 namespace pds::desktop {
 static QPointF snap_to(QPointF p, double grid) {
@@ -161,20 +162,23 @@ QGraphicsItem *Canvas::object_at(QPoint p) const {
 }
 QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
     const auto scene_point = mapToScene(point);
+    QGraphicsItem *closest_pin = nullptr;
+    double closest_distance = std::numeric_limits<double>::infinity();
     for (auto *root : scene()->selectedItems()) {
         if (!root || root->data(1).toString() != "atom" ||
-            (!root->data(10).toBool() && !root->data(12).toBool()))
+            (!root->data(10).toBool() && !root->data(12).toBool() && !root->data(17).toBool()))
             continue;
-        const QRectF body = root->shape().boundingRect();
+        const QRectF body = root->data(15).isValid() ? root->data(15).toRectF() : root->shape().boundingRect();
         const bool plot = root->data(12).toBool();
+        const bool gate = root->data(17).toBool();
         for (auto *child : root->childItems()) {
             if (child->data(1).toString() != "port")
                 continue;
             const QPointF local = child->pos();
-            const double left_x = plot ? -60.0 : body.left() - 10.0;
-            const double right_x = plot ? 60.0 : body.right() + 10.0;
-            const double top_y = plot ? body.top() - 20.0 : body.top() - 10.0;
-            const double bottom_y = plot ? body.bottom() + 20.0 : body.bottom() + 10.0;
+            const double left_x = plot ? -60.0 : gate ? body.left()+3.0 : body.left() - 10.0;
+            const double right_x = plot ? 60.0 : gate ? body.right()-3.0 : body.right() + 10.0;
+            const double top_y = plot ? body.top() - 20.0 : gate ? body.top()+3.0 : body.top() - 10.0;
+            const double bottom_y = plot ? body.bottom() + 20.0 : gate ? body.bottom()-3.0 : body.bottom() + 10.0;
             const double vertical_edge_distance = std::min(std::abs(local.x() - left_x), std::abs(local.x() - right_x));
             const double horizontal_edge_distance = std::min(std::abs(local.y() - top_y), std::abs(local.y() - bottom_y));
             QPointF local_edge;
@@ -195,11 +199,14 @@ QGraphicsItem *Canvas::public_pin_at(QPoint point) const {
             const QPointF closest = edge + v * t;
             // The outer end remains a normal connection target. Drag the inner
             // part of the short lead to relocate the public pin.
-            if (t <= .7 && QLineF(scene_point, closest).length() <= 8.0 / transform().m11())
-                return child;
+            const double distance=QLineF(scene_point,closest).length();
+            if (t <= .7 && distance <= 8.0 / transform().m11() && distance < closest_distance) {
+                closest_pin=child;
+                closest_distance=distance;
+            }
         }
     }
-    return nullptr;
+    return closest_pin;
 }
 struct ResizeHit {
     QPointF origin;
@@ -708,7 +715,7 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
         QPointF local = parent->mapFromScene(pos);
         if (!free)
             local = parent->mapFromScene(snap_point(parent->mapToScene(local)));
-        const QRectF body = parent->shape().boundingRect();
+        const QRectF body = parent->data(15).isValid() ? parent->data(15).toRectF() : parent->shape().boundingRect();
         const bool plot = parent->data(12).toBool();
         const std::array<QPointF, 4> candidates = {
             QPointF(plot ? -60.0 : body.left() - 10.0, std::clamp(local.y(), body.top(), body.bottom())),
@@ -719,7 +726,7 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
             return QLineF(local, a).length() < QLineF(local, b).length();
         });
         QPointF target = *closest;
-        if (parent->data(10).toBool() || plot) {
+        if (parent->data(10).toBool() || plot || parent->data(17).toBool()) {
             const std::array<QPointF, 4> edges = {
                 QPointF(body.left(), std::clamp(local.y(), body.top(), body.bottom())),
                 QPointF(body.right(), std::clamp(local.y(), body.top(), body.bottom())),
@@ -737,7 +744,8 @@ void Canvas::move_gesture(QPoint point, Qt::KeyboardModifiers modifiers) {
             QPointF direction = parent->mapToScene(edge + outward) - edge_scene;
             const double length = std::hypot(direction.x(), direction.y());
             if (length > 1e-9)
-                target = parent->mapFromScene(snap_point(edge_scene + direction / length * (grid_size_ / 2.0)));
+                target = parent->mapFromScene(snap_point(edge_scene + direction / length *
+                    (parent->data(17).toBool() ? grid_size_ : grid_size_ / 2.0)));
         }
         const bool vertical_side = target.x() < body.left() || target.x() > body.right();
         const QPointF tangent = vertical_side ? QPointF(0, 1) : QPointF(1, 0);

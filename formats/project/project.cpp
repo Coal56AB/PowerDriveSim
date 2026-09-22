@@ -229,6 +229,22 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 throw Diagnostic("parse_error",std::to_string(number),"Invalid plot pin layout");
             plot->pin_positions.push_back(std::move(pin));continue;
         }
+        if(tag=="x-gate-pin" && p.schema>=25) {
+            std::string gate_id;PinPosition pin;
+            row>>std::quoted(gate_id)>>std::quoted(pin.port)>>pin.x>>pin.y;
+            const bool parsed=!row.fail();row>>std::ws;
+            auto gate=std::find_if(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& candidate){return candidate.id==gate_id;});
+            auto valid_port=[&] {
+                if(gate==p.patterns.end())return false;
+                if(pin.port=="out")return gate->outputs>0;
+                if(pin.port.rfind("out",0)!=0)return false;
+                try{return std::stoul(pin.port.substr(3))<gate->outputs;}catch(...){return false;}
+            };
+            if(!parsed||!row.eof()||!valid_port()||!std::isfinite(pin.x)||!std::isfinite(pin.y)||
+               std::any_of(gate->pin_positions.begin(),gate->pin_positions.end(),[&](const PinPosition& prior){return prior.port==pin.port;}))
+                throw Diagnostic("parse_error",std::to_string(number),"Invalid Gate pin layout");
+            gate->pin_positions.push_back(std::move(pin));continue;
+        }
         if(tag=="x-code-pin" && p.schema>=23) {
             std::string block_id;PinPosition pin;
             row>>std::quoted(block_id)>>std::quoted(pin.port)>>pin.x>>pin.y;
@@ -551,7 +567,17 @@ void write_project(const Project& p, std::ostream& out) {
         check_text(wire.color, wire.id);
     }
     for(const auto& tag:p.tags) { check_text(tag.id,tag.id); check_text(tag.name,tag.id); }
-    for(const auto& pattern:p.patterns) { check_text(pattern.id,pattern.id); check_text(pattern.name,pattern.id); }
+    for(const auto& pattern:p.patterns) {
+        check_text(pattern.id,pattern.id);check_text(pattern.name,pattern.id);std::set<std::string> pins;
+        for(const auto& pin:pattern.pin_positions) {
+            check_text(pin.port,pattern.id);
+            bool valid=pin.port=="out";
+            if(!valid&&pin.port.rfind("out",0)==0)
+                try{valid=std::stoul(pin.port.substr(3))<pattern.outputs;}catch(...){valid=false;}
+            if(!valid||!std::isfinite(pin.x)||!std::isfinite(pin.y)||!pins.insert(pin.port).second)
+                throw Diagnostic("invalid_gate_pin",pattern.id,"Gate pin layout is invalid");
+        }
+    }
     for(const auto& channel:p.scope_points) check_text(channel,p.id);
     for(const auto& channel:p.scope_channels) check_text(channel,p.id);
     for(const auto& plot:p.plots){
@@ -636,6 +662,7 @@ void write_project(const Project& p, std::ostream& out) {
     }
     for(const auto& tag:p.tags)out<<"tag "<<std::quoted(tag.id)<<' '<<std::quoted(tag.name)<<' '<<tag.x<<' '<<tag.y<<' '<<unsigned(tag.domain)<<' '<<unsigned(tag.scope)<<' '<<tag.listed<<'\n';
     for(const auto& g:p.patterns) if(g.script)out<<"gate_script "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.initial<<' '<<g.script_step<<' '<<std::quoted(hex_text(g.code))<<' '<<g.outputs<<'\n';else if(g.pwm)out<<"pwm "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.frequency<<' '<<g.duty<<' '<<g.delay<<'\n';else out << "pattern " << std::quoted(g.id) << ' ' << std::quoted(g.name) << ' ' << g.x << ' ' << g.y << ' ' << g.initial << '\n';
+    for(const auto& g:p.patterns)for(const auto& pin:g.pin_positions)out<<"x-gate-pin "<<std::quoted(g.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
     for(const auto& g:p.plots)out<<"plot "<<std::quoted(g.id)<<' '<<std::quoted(g.name)<<' '<<g.x<<' '<<g.y<<' '<<g.inputs<<' '<<g.begin<<' '<<g.end<<' '<<g.cursor_a<<' '<<g.cursor_b<<' '<<g.differential<<'\n';
     for(const auto& g:p.plots)for(const auto& pin:g.pin_positions)out<<"x-plot-pin "<<std::quoted(g.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
     for(const auto& block:p.code_blocks) {

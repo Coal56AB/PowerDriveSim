@@ -259,6 +259,10 @@ static void serialization() {
     auto a=execute(compile(p)),b=execute(compile(q));
     require(a.samples.back().values==b.samples.back().values,"Semantics round trip");
     auto code_project=p;
+    GatePattern layout_gate{id(29),"Layout Gate",40,20,false};
+    layout_gate.script=true;layout_gate.code="for (int ind=0; ind<6; ++ind) IN[ind]=ind%2;";layout_gate.outputs=6;
+    layout_gate.pin_positions={{"out",45,-50},{"out5",0,45}};
+    code_project.patterns.push_back(layout_gate);
     CodeBlock block;
     block.id=id(30);block.name="PI code";block.x=120;block.y=-40;block.period=1e-4;block.phase=2e-5;
     block.code="static double integral = 0;\nintegral += error * dt;\ncommand = 2 * error + integral;";
@@ -269,6 +273,8 @@ static void serialization() {
     code_project.code_blocks.push_back(block);
     std::istringstream code_input(saved(code_project));
     const auto code_loaded=read_project(code_input);
+    require(code_loaded.patterns==code_project.patterns,
+            "Multi-output Gate pin layout round trip");
     require(code_loaded.code_blocks==code_project.code_blocks,
             "Typed code-block ports, schedule, layout and multiline C source round trip");
     auto invalid_code=code_project;invalid_code.code_blocks.front().outputs.back().initial=2;

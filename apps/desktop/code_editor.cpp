@@ -5,10 +5,14 @@
 #include <QCompleter>
 #include <QFontDatabase>
 #include <QKeyEvent>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QStringListModel>
 #include <QSyntaxHighlighter>
+#include <QStyle>
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <array>
@@ -105,6 +109,35 @@ CCodeEdit::CCodeEdit(bool gate_functions, QWidget *parent) : QPlainTextEdit(pare
     format->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     addAction(format);
     connect(format, &QAction::triggered, this, &CCodeEdit::format_code);
+}
+
+void CCodeEdit::enable_expand(std::function<void()> callback, const QString &tooltip) {
+    expand_callback_=std::move(callback);
+    expand_tooltip_=tooltip;
+    setToolTip(tooltip);
+    viewport()->update(expand_rect());
+}
+
+QRect CCodeEdit::expand_rect() const {
+    return {std::max(2,viewport()->width()-28),4,24,24};
+}
+
+void CCodeEdit::paintEvent(QPaintEvent *event) {
+    QPlainTextEdit::paintEvent(event);
+    if(!expand_callback_)return;
+    QPainter painter(viewport());
+    const auto area=expand_rect();
+    painter.fillRect(area.adjusted(-2,-2,2,2),palette().color(QPalette::Base));
+    style()->standardIcon(QStyle::SP_TitleBarMaxButton).paint(&painter,area.adjusted(3,3,-3,-3));
+}
+
+void CCodeEdit::mousePressEvent(QMouseEvent *event) {
+    if(expand_callback_&&event->button()==Qt::LeftButton&&expand_rect().contains(event->pos())) {
+        event->accept();
+        expand_callback_();
+        return;
+    }
+    QPlainTextEdit::mousePressEvent(event);
 }
 
 QString CCodeEdit::completion_prefix() const {

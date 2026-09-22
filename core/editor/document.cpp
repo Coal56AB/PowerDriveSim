@@ -296,6 +296,7 @@ bool same_simulation(const Project& a,const Project& b) {
         auto schematic=[&](Schematic& s){
             strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.instances);
             for(auto& w:s.wires){w.bends.clear();w.color.clear();w.width=2;w.line=WireLine::automatic;}
+            for(auto& g:s.patterns)g.pin_positions.clear();
             for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;g.pin_positions.clear();}
             s.labels.clear();s.view_options.clear();
         };

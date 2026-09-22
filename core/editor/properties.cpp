@@ -505,6 +505,11 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 const auto outputs=std::get<unsigned>(value);
                 if(outputs<1||outputs>16)throw Diagnostic("invalid_gate_outputs",id,"Gate requires 1..16 outputs");
                 g.outputs=outputs;
+                std::erase_if(g.pin_positions,[&](const PinPosition& pin) {
+                    if(pin.port=="out")return false;
+                    if(pin.port.rfind("out",0)!=0)return true;
+                    try{return std::stoul(pin.port.substr(3))>=outputs;}catch(...){return true;}
+                });
                 std::erase_if(p.wires,[&](const Wire& wire) {
                     auto removed=[&](const Endpoint& endpoint) {
                         if(endpoint.object!=id||endpoint.port=="out")return false;
