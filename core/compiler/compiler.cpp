@@ -190,15 +190,6 @@ bool gate_script_value(const GatePattern &g, double t, const ScriptProgram *prep
     }
     return script_number(expression, t, variables) != 0;
 }
-bool legacy_gate_script(const std::string &code) {
-    return code.find(';')==std::string::npos&&code.find("return")==std::string::npos&&
-           code.find('{')==std::string::npos&&code.find('}')==std::string::npos&&
-           code.find("if") == std::string::npos&&code.find("for") == std::string::npos&&
-           code.find("while") == std::string::npos&&code.find("++") == std::string::npos&&
-           code.find("--") == std::string::npos&&code.find("+=") == std::string::npos&&
-           code.find("-=") == std::string::npos&&code.find("*=") == std::string::npos&&
-           code.find("/=") == std::string::npos;
-}
 std::optional<std::string> simple_return_expression(const std::string &code) {
     const auto first = code.find_first_not_of(" \t\r\n");
     if (first == std::string::npos || code.compare(first, 6, "return") != 0)
@@ -360,13 +351,18 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         CProgramOptions c_options;c_options.diagnostic_code="invalid_gate_script";c_options.object=g.id;
         c_options.allow_time=true;c_options.allow_gate_functions=true;c_options.require_return=true;
         const auto c_program=compile_c_program(g.code,c_options);
-        const auto simple_expression = legacy_gate_script(g.code)
-            ? std::optional<std::string>{g.code}
-            : simple_return_expression(g.code);
-        if(simple_expression) {
-            auto optimized = g;
-            optimized.code = *simple_expression;
-            const auto program=script_program(optimized.code);
+        auto optimized = g;
+        std::optional<ScriptProgram> optimization_program;
+        try {
+            if (const auto simple_expression = simple_return_expression(g.code))
+                optimized.code = *simple_expression;
+            optimization_program = script_program(optimized.code);
+        } catch (const Diagnostic &) {
+            // Full safe C remains valid even when it is intentionally outside
+            // the much smaller, side-effect-free expression optimizer.
+        }
+        if(optimization_program) {
+            const auto &program=*optimization_program;
             {
                 std::vector<GateEvent> candidate_events;
                 const auto remaining = generated < max_optimized_script_edges

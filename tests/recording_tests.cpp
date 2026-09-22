@@ -219,6 +219,14 @@ int main(int argc, char **argv) {
         bool ramp_pulse=false;
         for(const auto& sample:ramp_result.samples)ramp_pulse|=sample.gates[0];
         check(ramp_pulse,"Gate C evaluates a local ramp variable on the simulation step using stime");
+        doc.apply("Pure ramped PWM",[&](Project& p){auto& g=p.patterns.back();
+            g.code="double delay = ramp(0, 10, 0.008333333, 0.001111111);\n"
+                   "return phasepwm(50, 0.02, delay);";
+            p.profile.stop=10;p.profile.step=1e-5;});
+        const auto pure_ramp_ir=compile(doc.project());
+        check(pure_ramp_ir.gate_programs.empty()&&!pure_ramp_ir.events.empty()&&
+                  pure_ramp_ir.events.back().time>9.95,
+              "Side-effect-free ramped PWM is scheduled exactly instead of interpreted on every step");
         for (const auto *name : {"bidirectional-charge", "bidirectional-discharge", "half-bridge",
                                  "full-bridge", "vsi-2l", "npc-3l", "open-end-winding",
                                  "thyristor-bridge-3p"}) {
