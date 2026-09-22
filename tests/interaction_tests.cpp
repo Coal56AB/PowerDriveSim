@@ -1623,6 +1623,10 @@ class InteractionTests : public QObject {
                 QVERIFY(untouched);
                 const double old_width = block->mapRectToScene(block->shape().boundingRect()).width();
                 const double old_height = block->mapRectToScene(block->shape().boundingRect()).height();
+                std::map<QString, QPointF> original_ports;
+                for (auto *pin : block->childItems())
+                    if (pin->data(1).toString() == "port")
+                        original_ports[pin->data(2).toString()] = pin->pos();
                 w.select_object(instance.id);
                 untouched->setSelected(true);
                 const auto untouched_position = untouched->pos();
@@ -1650,6 +1654,12 @@ class InteractionTests : public QObject {
                 QCOMPARE(w.project().plots.front().y, untouched_model.y);
                 QCOMPARE(w.project().plots.front().orientation, untouched_model.orientation);
                 verify(instance.id);
+                w.undo();
+                block = item(w, instance.id);
+                QVERIFY(block);
+                for (auto *pin : block->childItems())
+                    if (pin->data(1).toString() == "port")
+                        QCOMPARE(pin->pos(), original_ports.at(pin->data(2).toString()));
             }
         }
     }

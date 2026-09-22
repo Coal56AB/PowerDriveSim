@@ -259,8 +259,19 @@ class Atom final : public QGraphicsItem {
             else if (lower.contains("buck"))
                 library_icon_id = 220;
         }
-        if (definition_ports == definition.ports)
+        if (definition_ports == definition.ports) {
+            int index = 0;
+            for (auto *child : childItems()) {
+                if (child->data(1).toString() != "port")
+                    continue;
+                const QPointF model_position = child->data(16).toPointF();
+                child->setPos(model_position);
+                if (index < int(public_ports.size()))
+                    public_ports[size_t(index)].second = model_position;
+                ++index;
+            }
             return;
+        }
         const bool interface_changed = definition_ports.size() != definition.ports.size() ||
             !std::equal(definition_ports.begin(), definition_ports.end(), definition.ports.begin(),
                         [](const PublicPort &left, const PublicPort &right) {
@@ -398,6 +409,7 @@ class Atom final : public QGraphicsItem {
         item->setData(2, port_name);
         item->setData(8, label.isEmpty() ? port_name : label);
         item->setData(11, color.name(QColor::HexRgb));
+        item->setData(16, location);
         item->setToolTip(label.isEmpty() ? port_name : label);
     }
     void snap_ports_to_grid(double grid) {
