@@ -1,0 +1,46 @@
+PowerDriveSim 23
+project "91f976ee-486a-4ca8-8be0-19b2783aa7ac" "Hysteretic capacitor discharge"
+profile 0.03 0.00001 Trapezoidal
+nonlinear 64 1e-09 1e-12 1e-09
+initialization Zero 0
+stepping 0 1e-09 0.001 1e-06 1e-09 1e-12
+wiring wires
+orientation "43167ddc-61af-452a-80a5-63ef774fd412" 1 0 1 1 1
+orientation "199caed1-916d-4a9c-880f-5831db52254e" 1 0 1 1 1
+orientation "602aee57-d48a-405a-a56d-07f451b28029" 1 0 1 1 1
+wire "985123c7-23e1-434e-8649-afda51fd5906" "dd117949-cafe-4f7a-9b5d-cb9c0dd7e88e" "node" "43167ddc-61af-452a-80a5-63ef774fd412" "p" 0 "" 2 0
+wire "2f51103b-139f-4b6c-9d49-03297365245d" "43167ddc-61af-452a-80a5-63ef774fd412" "n" "31eff967-802d-4b11-9363-eb05de83777c" "node" 1 -300 240 "" 2 0
+wire "e010fa55-918b-4703-9071-470ed3d2784a" "dd117949-cafe-4f7a-9b5d-cb9c0dd7e88e" "node" "6f4c04a8-c6fa-4ca2-a8e8-b7e91a0b5eb5" "p" 0 "" 2 0
+wire "93ae3732-daef-4936-9780-13fb6c1598a5" "6f4c04a8-c6fa-4ca2-a8e8-b7e91a0b5eb5" "n" "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8" "node" 0 "" 2 0
+wire "76bd01e0-ceb0-4de6-9171-0ec6af905f54" "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8" "node" "199caed1-916d-4a9c-880f-5831db52254e" "p" 0 "" 2 0
+wire "ca69dddf-ab5e-4f01-9cc6-46917bc54bbc" "199caed1-916d-4a9c-880f-5831db52254e" "n" "31eff967-802d-4b11-9363-eb05de83777c" "node" 1 0 240 "" 2 0
+wire "1b6d64ce-ce1e-41b3-b8a6-e1e023bbda2d" "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8" "node" "75c9c1fd-2888-4a9d-bf20-e09c2b912725" "p" 0 "" 2 0
+wire "2a0282b5-6df5-4a04-b16f-cb399987de50" "31eff967-802d-4b11-9363-eb05de83777c" "node" "75c9c1fd-2888-4a9d-bf20-e09c2b912725" "n" 2 120 240 120 60 "" 2 0
+wire "8ca5e26c-2fa5-4481-9281-6209096d8188" "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8" "node" "7c73991e-c231-47fe-8edc-cc174790a789" "p" 0 "" 2 0
+wire "9152ed3d-2ff8-470c-8904-985e77737b80" "7c73991e-c231-47fe-8edc-cc174790a789" "n" "fb33254d-4396-4afc-8101-70c24c566c37" "node" 0 "" 2 0
+wire "c014cd9f-02bb-4f84-b359-cfbc65fc8478" "fb33254d-4396-4afc-8101-70c24c566c37" "node" "602aee57-d48a-405a-a56d-07f451b28029" "p" 0 "" 2 0
+wire "89c9e402-2426-4692-89bf-0e4826796180" "602aee57-d48a-405a-a56d-07f451b28029" "n" "31eff967-802d-4b11-9363-eb05de83777c" "node" 1 300 240 "" 2 0
+wire "b4fe57e1-5914-46fc-871c-5eab30e26899" "75c9c1fd-2888-4a9d-bf20-e09c2b912725" "out" "bc2e28cc-0b8d-4737-a50d-c53274855278" "53eb2b36-2d54-418f-ab69-82c49f0d730e" 3 120 -100 -20 -100 -20 -137 "#2e86de" 2 0
+wire "e6b5831c-cf8f-424e-98b1-219243494001" "bc2e28cc-0b8d-4737-a50d-c53274855278" "ff6906de-47a9-45d1-a37a-ce98c5fd4255" "7c73991e-c231-47fe-8edc-cc174790a789" "gate" 3 280 -137 280 -100 180 -100 "#f3b73f" 2 0
+wire "9eed188c-516c-409d-86a0-dc7cc0abfa80" "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8" "node" "a40497f1-3c23-4ef0-a7cb-ce9999ab9a94" "in1" 3 0 -70 380 -70 380 -32 "#2e86de" 2 0
+wire "b16ff528-6170-4ca7-bfef-a3e1217c6948" "bc2e28cc-0b8d-4737-a50d-c53274855278" "ff6906de-47a9-45d1-a37a-ce98c5fd4255" "a40497f1-3c23-4ef0-a7cb-ce9999ab9a94" "in2" 3 340 -137 400 -137 400 -8 "#f3b73f" 2 0
+code_block "bc2e28cc-0b8d-4737-a50d-c53274855278" "Hysteresis 3–7 V" 80 -170 0.0001 0 "73746174696320646f75626c6520646973636861726765203d20303b2069662028755f636170203e3d20372920646973636861726765203d20313b2069662028755f636170203c3d20332920646973636861726765203d20303b2067617465203d20646973636861726765203e20302e353b"
+code_input "bc2e28cc-0b8d-4737-a50d-c53274855278" "53eb2b36-2d54-418f-ab69-82c49f0d730e" "u_cap" "V" 0 0
+code_output "bc2e28cc-0b8d-4737-a50d-c53274855278" "ff6906de-47a9-45d1-a37a-ce98c5fd4255" "gate" "" 1 0
+plot "a40497f1-3c23-4ef0-a7cb-ce9999ab9a94" "Capacitor voltage and discharge gate" 450 -20 2 0 -1 -1 -1 0
+scope_enabled 1
+scopeview 0 0.03 -1 -1
+scope_point "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8"
+scope_point "gate/bc2e28cc-0b8d-4737-a50d-c53274855278/ff6906de-47a9-45d1-a37a-ce98c5fd4255"
+scope "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8"
+scope "gate/bc2e28cc-0b8d-4737-a50d-c53274855278/ff6906de-47a9-45d1-a37a-ce98c5fd4255"
+node "31eff967-802d-4b11-9363-eb05de83777c" "COM" 1 0 240
+node "dd117949-cafe-4f7a-9b5d-cb9c0dd7e88e" "+12 V" 0 -300 -20
+node "eecbcf47-d24e-42a6-ac47-5ad6acf07dc8" "uC" 0 0 -20
+node "fb33254d-4396-4afc-8101-70c24c566c37" "Discharge" 0 300 -20
+component "43167ddc-61af-452a-80a5-63ef774fd412" "12 V supply" V "" "" 12 0 -300 100 0
+component "6f4c04a8-c6fa-4ca2-a8e8-b7e91a0b5eb5" "Charge 100 Ω" R "" "" 100 0 -150 -20 0
+component "199caed1-916d-4a9c-880f-5831db52254e" "Storage 100 µF" C "" "" 0.0001 0 0 100 0
+component "75c9c1fd-2888-4a9d-bf20-e09c2b912725" "uC sensor" VP "" "" 0 0 120 60 0
+component "7c73991e-c231-47fe-8edc-cc174790a789" "Discharge switch" S "" "" 0 0 180 -20 0
+component "602aee57-d48a-405a-a56d-07f451b28029" "Discharge 10 Ω" R "" "" 10 0 300 100 0

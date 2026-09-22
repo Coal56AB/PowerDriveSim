@@ -221,6 +221,40 @@ class InteractionTests : public QObject {
         QTest::mouseClick(back, Qt::LeftButton, Qt::NoModifier, QPoint(3, back->height()/2));
         QVERIFY(w.hierarchy_path().empty());
     }
+    void code_block_example_menu_and_roundtrip() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        ready(w);
+        auto *example = w.findChild<QAction *>("example_code-block-hysteresis");
+        QVERIFY(example);
+        QVERIFY(example->text().contains("hysteretic", Qt::CaseInsensitive));
+        example->trigger();
+        QCOMPARE(w.project().code_blocks.size(), size_t(1));
+        QCOMPARE(w.project().code_blocks.front().inputs.size(), size_t(1));
+        QCOMPARE(w.project().code_blocks.front().outputs.size(), size_t(1));
+        QCOMPARE(w.project().plots.size(), size_t(1));
+        QCOMPARE(w.project().scope_channels.size(), size_t(2));
+        const auto before = encoded(w.project());
+        const auto copy = dir.filePath("code-block-hysteresis-copy.pds");
+        QVERIFY(w.save_project(copy));
+        QVERIFY(w.open_project(copy));
+        QCOMPARE(encoded(w.project()), before);
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
+        QVERIFY(w.has_result());
+        QCOMPARE(w.result().last_time, .03);
+        const auto gate_key = w.project().code_blocks.front().id + "/" +
+                              w.project().code_blocks.front().outputs.front().id;
+        const auto gate = std::find(w.result().gate_objects.begin(),
+                                    w.result().gate_objects.end(), gate_key);
+        QVERIFY(gate != w.result().gate_objects.end());
+        const auto gate_index = size_t(std::distance(w.result().gate_objects.begin(), gate));
+        size_t edges = 0;
+        for (size_t i = 1; i < w.result().samples.size(); ++i)
+            edges += w.result().samples[i].gates[gate_index] !=
+                     w.result().samples[i - 1].gates[gate_index];
+        QCOMPARE(edges, size_t(6));
+    }
     void incremental_extrema_and_scope_history() {
         std::vector<double> values;
         ExtremaIndex index;

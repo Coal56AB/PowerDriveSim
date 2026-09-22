@@ -42,6 +42,7 @@ void EditorWindow::build_examples_menu(QMenu *menu) {
                                                 {"rc-sweep", "examples_experiments"},
                                                 {"diode-freewheel", "examples_devices"},
                                                 {"diode-recovery", "examples_devices"},
+                                                {"code-block-hysteresis", "examples_devices"},
                                                 {"gate-script-pwm", "examples_devices"},
                                                 {"thyristor-halfwave", "examples_devices"},
                                                 {"diode-bridge-1p", "converters/rectifiers"},
