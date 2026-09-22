@@ -339,6 +339,16 @@ class InteractionTests : public QObject {
         QTest::mouseClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
                           w.canvas()->mapFromScene(QPointF(0, 0)));
         QCOMPARE(w.project().instances.size(), size_t(1));
+        auto stale = w.root_project();
+        Definition stale_delta = stale.definitions.front();
+        stale_delta.id = "eb613164-faf4-5b03-9014-806885fef344";
+        stale_delta.name = "Three-phase voltage source Delta";
+        stale_delta.parameters.clear();
+        stale.definitions.push_back(std::move(stale_delta));
+        const auto source_id = stale.instances.front().id;
+        w.set_project(stale);
+        ready(w);
+        w.select_object(source_id);
         auto *connection = w.findChild<QComboBox *>("property_three_phase_connection");
         QVERIFY(connection && connection->isVisible());
         connection->setCurrentIndex(connection->findData(1u));
@@ -348,6 +358,9 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().instances.front().definition, std::string(delta));
         QVERIFY(std::any_of(w.project().definitions.begin(), w.project().definitions.end(),
                             [](const Definition &definition) { return definition.id == delta; }));
+        const auto &updated_delta = definition(w.project(), delta);
+        QCOMPARE(updated_delta.parameters.size(), size_t(4));
+        QCOMPARE(updated_delta.components.size(), size_t(2));
         QCOMPARE(w.findChild<QLabel *>("property_error")->text(), QString());
         w.undo();
         QCOMPARE(w.project().instances.front().definition, std::string(star));

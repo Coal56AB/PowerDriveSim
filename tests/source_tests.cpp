@@ -7,6 +7,7 @@
 #include "formats/samples/table.hpp"
 #include "results/csv.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -60,6 +61,27 @@ static void roundtrip(const Project &p) {
 }
 int main(int argc, char **argv) try {
     check(argc == 2, "Pass repository root");
+    {
+        std::ifstream input(std::string(argv[1]) + "/library/sources/three-phase-source-delta.pds");
+        auto delta = read_project(input);
+        check(delta.definitions.size() == 1 && delta.definitions.front().components.size() == 2,
+              "Delta source uses two independent line-voltage constraints");
+        Document loaded(delta);
+        std::array<std::string, 4> port_ids;
+        for (size_t phase = 0; phase < port_ids.size(); ++phase)
+            port_ids[phase] = loaded.root_project().definitions.front().ports[phase].id;
+        const auto instance_id = loaded.root_project().instances.front().id;
+        const auto ground = loaded.add_node(true, 400, 200);
+        loaded.connect({instance_id, port_ids[3]}, {ground, "node"});
+        for (size_t phase = 0; phase < 3; ++phase) {
+            const auto resistor = loaded.add_component(Kind::resistor, 200, double(phase) * 100);
+            loaded.connect({instance_id, port_ids[phase]}, {resistor, "p"});
+            loaded.connect({resistor, "n"}, {ground, "node"});
+        }
+        const auto result = execute(compile(loaded.root_project()));
+        check(!result.cancelled && result.last_time == delta.profile.stop,
+              "Loaded Delta source has a unique solvable operating topology");
+    }
     auto parse_table = [](const std::string &text, const std::string &unit = "V") {
         std::istringstream in(text);
         return read_sample_table(in, unit);

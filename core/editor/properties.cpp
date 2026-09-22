@@ -80,6 +80,15 @@ void set_instance_parameter(Instance &i, const std::string &parameter, double va
     else
         found->second = value;
 }
+const PublicParameter *variant_parameter(const Definition &definition, const std::string &id,
+                                         const std::string &field) {
+    auto found = std::find_if(definition.parameters.begin(), definition.parameters.end(),
+                              [&](const auto &parameter) { return parameter.id == id; });
+    if (found == definition.parameters.end())
+        found = std::find_if(definition.parameters.begin(), definition.parameters.end(),
+                             [&](const auto &parameter) { return parameter.field == field; });
+    return found == definition.parameters.end() ? nullptr : &*found;
+}
 double three_phase_display_voltage(const Project &p, const Instance &i) {
     const bool delta = three_phase_delta_definition(p, i.definition);
     const auto kind = unsigned(instance_parameter_value_or(p, i, kThreePhaseVoltageKindParameter, 2.0));
@@ -325,9 +334,14 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                     return std::none_of(next_parameters.begin(), next_parameters.end(),
                                         [&](const auto &parameter) { return parameter.id == id; });
                 });
-                set_instance_parameter(i, kThreePhaseVoltageKindParameter, kind);
-                set_instance_parameter(i, kThreePhaseVoltageParameter,
-                                       three_phase_internal_voltage(kind, delta, display));
+                if (const auto *parameter = variant_parameter(definition(p, i.definition),
+                                                              kThreePhaseVoltageKindParameter,
+                                                              "source_voltage_kind"))
+                    set_instance_parameter(i, parameter->id, kind);
+                if (const auto *parameter = variant_parameter(definition(p, i.definition),
+                                                              kThreePhaseVoltageParameter, "value"))
+                    set_instance_parameter(i, parameter->id,
+                                           three_phase_internal_voltage(kind, delta, display));
                 return;
             }
             if (key == "three_phase_voltage_kind") {

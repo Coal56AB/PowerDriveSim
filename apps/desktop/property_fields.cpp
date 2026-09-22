@@ -79,9 +79,6 @@ void ensure_three_phase_source_variant(Project &project, unsigned connection) {
     constexpr const char *ids[]{"1a963f2c-ceb8-5cce-b927-44d735ec9e80",
                                 "eb613164-faf4-5b03-9014-806885fef344"};
     const auto desired = std::string(ids[connection != 0]);
-    if (std::any_of(project.definitions.begin(), project.definitions.end(),
-                    [&](const Definition &definition) { return definition.id == desired; }))
-        return;
     const QString file_name = connection ? ":/library/sources/three-phase-source-delta.pds"
                                          : ":/library/sources/three-phase-source-y.pds";
     QFile file(file_name);
@@ -89,10 +86,18 @@ void ensure_three_phase_source_variant(Project &project, unsigned connection) {
         throw std::runtime_error(file.errorString().toStdString());
     std::istringstream input(file.readAll().toStdString());
     const auto library = read_project(input);
-    for (const auto &definition : library.definitions)
-        if (std::none_of(project.definitions.begin(), project.definitions.end(),
-                         [&](const Definition &existing) { return existing.id == definition.id; }))
+    for (const auto &definition : library.definitions) {
+        if (definition.id != desired)
+            continue;
+        auto existing = std::find_if(project.definitions.begin(), project.definitions.end(),
+                                     [&](const Definition &candidate) {
+                                         return candidate.id == definition.id;
+                                     });
+        if (existing == project.definitions.end())
             project.definitions.push_back(definition);
+        else
+            *existing = definition;
+    }
     if (std::none_of(project.definitions.begin(), project.definitions.end(),
                      [&](const Definition &definition) { return definition.id == desired; }))
         throw std::runtime_error("Three-phase source variant is missing from the library");

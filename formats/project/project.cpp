@@ -14,6 +14,10 @@
 #include <algorithm>
 namespace pds {
 namespace {
+constexpr const char *builtin_three_phase_y = "1a963f2c-ceb8-5cce-b927-44d735ec9e80";
+constexpr const char *builtin_three_phase_delta = "eb613164-faf4-5b03-9014-806885fef344";
+constexpr const char *builtin_three_phase_kind = "9e07a7ea-8295-5fd0-92c6-6e82c8f1c21b";
+constexpr const char *builtin_delta_redundant_source = "158cf373-a245-59e4-89cd-2941c3558c15";
 std::string hex_text(const std::string &value) {
     static constexpr char digits[]="0123456789abcdef";
     std::string result;result.reserve(value.size()*2);
@@ -33,6 +37,25 @@ bool parse_complete_quoted_text(const std::string &source,std::string &value) {
     if(input.fail())return false;
     input>>std::ws;
     return input.eof();
+}
+void migrate_builtin_three_phase_source(Definition &definition) {
+    if (definition.id != builtin_three_phase_y && definition.id != builtin_three_phase_delta)
+        return;
+    if (std::none_of(definition.parameters.begin(), definition.parameters.end(), [](const auto &parameter) {
+            return parameter.id == builtin_three_phase_kind || parameter.field == "source_voltage_kind";
+        }))
+        definition.parameters.push_back({builtin_three_phase_kind, "Voltage kind", "", "*",
+                                         "source_voltage_kind",
+                                         definition.id == builtin_three_phase_delta ? 1.0 : 0.0});
+    if (definition.id != builtin_three_phase_delta)
+        return;
+    std::erase_if(definition.components, [](const Component &component) {
+        return component.id == builtin_delta_redundant_source;
+    });
+    std::erase_if(definition.wires, [](const Wire &wire) {
+        return wire.from.object == builtin_delta_redundant_source ||
+               wire.to.object == builtin_delta_redundant_source;
+    });
 }
 } // namespace
 static Project read_project_impl(std::istream& in,bool definitions_allowed) {
@@ -122,6 +145,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             std::istringstream input(content.str());auto nested=read_project_impl(input,false);
             if(nested.id!=d.id||nested.name!=d.name)throw Diagnostic("parse_error",d.id,"Definition body identity mismatch");
             static_cast<Schematic&>(d)=std::move(static_cast<Schematic&>(nested));
+            migrate_builtin_three_phase_source(d);
             p.definitions.push_back(std::move(d));continue;
         }
         if(tag=="x-view") {

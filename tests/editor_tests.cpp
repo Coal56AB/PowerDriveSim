@@ -142,8 +142,11 @@ int main(int argc,char** argv) {
             check(legacy.instances.front().definition==delta.id&&
                       std::none_of(legacy.instances.front().parameters.begin(),legacy.instances.front().parameters.end(),
                                    [](const auto &entry){return entry.first=="removed-legacy-parameter";})&&
+                      std::all_of(legacy.instances.front().parameters.begin(),legacy.instances.front().parameters.end(),
+                                  [&](const auto &entry){return std::any_of(delta.parameters.begin(),delta.parameters.end(),
+                                      [&](const auto &parameter){return parameter.id==entry.first;});})&&
                       legacy.parameter_expressions.empty(),
-                  "Switching three-phase source variants drops stale parameter overrides safely");
+                  "Switching legacy three-phase variants keeps only declared parameter overrides");
         }
         {
             Project masked; masked.id=new_uuid(); masked.wired=true;
