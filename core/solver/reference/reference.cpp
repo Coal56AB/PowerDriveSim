@@ -100,9 +100,6 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     (void)method_name(ir.profile.method);
     (void)initial_state_name(ir.profile.initial_state);
     validate_step_control(ir.profile,ir.project_id);
-    if(!ir.signal.tasks.empty()&&options&&(options->resume||options->capture_snapshot))
-        throw Diagnostic("signal_snapshot_unavailable",ir.signal.tasks.front().id,
-                         "Snapshot capture and resume are unavailable while Signal IR is active");
     if(!std::isfinite(ir.profile.warmup)||ir.profile.warmup<0||ir.profile.warmup>=ir.profile.stop)
         throw Diagnostic("invalid_profile",ir.project_id,"Warm-up must be shorter than stop time");
     Result result; result.project_id=ir.project_id; result.profile=ir.profile;
@@ -173,6 +170,14 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         states=resume->states;history=resume->history;gates=resume->gates;
         diode_states=resume->diodes;latched=resume->latched;signal_values=resume->signal_values;
         gate_program_states=resume->gate_program_states;
+        for(auto &[id,task]:signal_runtime.tasks)if(const auto saved=resume->signal_tasks.find(id);
+            saved!=resume->signal_tasks.end()) {
+            task.next_tick=saved->second.next_tick;
+            task.program_state=saved->second.program_state;
+            task.outputs=saved->second.outputs;
+        }
+        signal_runtime.outputs=resume->signal_outputs;
+        accepted_signal_inputs=resume->accepted_signal_inputs;
         next_event=static_cast<size_t>(std::upper_bound(ir.events.begin(),ir.events.end(),resume->time,
             [](double time,const GateEvent& event){return time<event.time;})-ir.events.begin());
     }
@@ -542,6 +547,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     }
     if(options&&options->capture_snapshot) {
         SimulationSnapshot checkpoint;
+        checkpoint.version=ir.signal.tasks.empty()?3:4;
         checkpoint.project_id=ir.project_id;checkpoint.contract=snapshot_contract(ir,time);
         checkpoint.time=time;checkpoint.next_grid=grid;
         checkpoint.next_step=adaptive?proposed_step:0;
@@ -549,6 +555,10 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         checkpoint.gates=std::move(gates);checkpoint.diodes=std::move(diode_states);
         checkpoint.latched=std::move(latched);checkpoint.signal_values=std::move(signal_values);
         checkpoint.gate_program_states=std::move(gate_program_states);
+        for(const auto &[id,task]:signal_runtime.tasks)
+            checkpoint.signal_tasks.emplace(id,SignalTaskSnapshot{task.next_tick,task.program_state,task.outputs});
+        checkpoint.signal_outputs=std::move(signal_runtime.outputs);
+        checkpoint.accepted_signal_inputs=std::move(accepted_signal_inputs);
         checkpoint.values=*final_values;
         result.snapshot=std::move(checkpoint);
     }

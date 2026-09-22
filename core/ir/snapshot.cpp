@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <numeric>
 #include <sstream>
 namespace pds {
 std::string snapshot_contract(const SimulationIR &ir, double time) {
@@ -46,6 +47,28 @@ std::string snapshot_contract(const SimulationIR &ir, double time) {
         }
         text << '\n';
     }
+    for(const auto &task:ir.signal.tasks) {
+        text<<"signal-task "<<task.id<<' '<<task.period<<' '<<task.phase<<' '
+            <<task.code.size()<<' '<<task.code<<' '<<task.inputs.size()<<' '<<task.outputs.size()<<'\n';
+        for(const auto &input:task.inputs)
+            text<<"signal-input "<<input.port.id<<' '<<input.port.name<<' '
+                <<static_cast<unsigned>(input.port.type)<<' '<<input.port.unit.size()<<' '
+                <<input.port.unit<<' '<<input.port.initial<<' '
+                <<input.source.object<<' '<<input.source.port<<'\n';
+        for(const auto &output:task.outputs)
+            text<<"signal-output "<<output.id<<' '<<output.name<<' '
+                <<static_cast<unsigned>(output.type)<<' '<<output.unit.size()<<' '
+                <<output.unit<<' '<<output.initial<<'\n';
+    }
+    for(const auto &binding:ir.signal_inputs)
+        text<<"signal-binding "<<binding.endpoint.object<<' '<<binding.endpoint.port<<' '
+            <<static_cast<unsigned>(binding.type)<<' '<<binding.unit.size()<<' '
+            <<binding.unit<<' '<<static_cast<unsigned>(binding.source)<<' '<<binding.index<<'\n';
+    for(const auto &binding:ir.signal_gates) {
+        text<<"signal-gate "<<binding.endpoint.object<<' '<<binding.endpoint.port;
+        for(const auto target:binding.targets)text<<' '<<target;
+        text<<'\n';
+    }
     for (const auto &event : ir.events) {
         if (event.time > time)
             break;
@@ -57,7 +80,7 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
     const auto invalid = [&](const char *message) {
         throw Diagnostic("invalid_snapshot", ir.project_id, message);
     };
-    if ((s.version < 1 || s.version > 3) || !std::isfinite(s.time) || s.time < 0 || s.time > ir.profile.stop ||
+    if ((s.version < 1 || s.version > 4) || !std::isfinite(s.time) || s.time < 0 || s.time > ir.profile.stop ||
         s.next_grid == 0)
         invalid("Snapshot version or time is invalid for this run");
     if (s.project_id != ir.project_id || s.contract != snapshot_contract(ir, s.time))
@@ -81,6 +104,51 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
             (void)key;
             if(!std::isfinite(value))invalid("Snapshot contains a nonfinite Gate C state");
         }
+    if(ir.signal.tasks.empty()) {
+        if(!s.signal_tasks.empty()||!s.signal_outputs.empty()||!s.accepted_signal_inputs.empty())
+            invalid("Snapshot contains unexpected signal state");
+    } else {
+        if(s.version<4||s.signal_tasks.size()!=ir.signal.tasks.size())
+            invalid("Snapshot signal tasks do not match the model");
+        for(const auto &task:ir.signal.tasks) {
+            const auto saved=s.signal_tasks.find(task.id);
+            if(saved==s.signal_tasks.end()||saved->second.outputs.size()!=task.outputs.size())
+                invalid("Snapshot signal task is missing or has different outputs");
+            for(const auto &output:task.outputs) {
+                const auto value=saved->second.outputs.find(output.name);
+                const auto frame=s.signal_outputs.find(signal_endpoint_key({task.id,output.id}));
+                if(value==saved->second.outputs.end()||!std::isfinite(value->second)||
+                   (output.type==SignalScalarType::boolean&&value->second!=0&&value->second!=1)||
+                   frame==s.signal_outputs.end()||frame->second.type!=output.type||
+                   frame->second.unit!=output.unit||frame->second.value!=value->second)
+                    invalid("Snapshot signal output does not match the task");
+            }
+            for(const auto &[key,value]:saved->second.program_state.static_values) {
+                (void)key;
+                if(!std::isfinite(value))invalid("Snapshot contains a nonfinite code-block state");
+            }
+        }
+        const auto output_count=std::accumulate(ir.signal.tasks.begin(),ir.signal.tasks.end(),size_t{},
+            [](size_t count,const SignalTaskIR &task){return count+task.outputs.size();});
+        if(s.signal_outputs.size()!=output_count)
+            invalid("Snapshot signal frame has unexpected outputs");
+        for(const auto &[key,value]:s.signal_outputs) {
+            (void)key;
+            if(!std::isfinite(value.value)||!std::isfinite(value.time)||value.time<0||
+               value.time>s.time+std::max(1.0,std::abs(s.time))*1e-13||
+               (value.type==SignalScalarType::boolean&&value.value!=0&&value.value!=1))
+                invalid("Snapshot signal frame is invalid");
+        }
+        for(const auto &[key,value]:s.accepted_signal_inputs) {
+            const auto binding=std::find_if(ir.signal_inputs.begin(),ir.signal_inputs.end(),
+                [&](const SignalInputBinding &candidate){return signal_endpoint_key(candidate.endpoint)==key;});
+            if(binding==ir.signal_inputs.end()||value.type!=binding->type||value.unit!=binding->unit||
+               !std::isfinite(value.value)||!std::isfinite(value.time)||value.time<0||
+               value.time>s.time+std::max(1.0,std::abs(s.time))*1e-13||
+               (value.type==SignalScalarType::boolean&&value.value!=0&&value.value!=1))
+                invalid("Snapshot accepted signal frame is invalid");
+        }
+    }
     const double next = static_cast<double>(s.next_grid) * ir.profile.step;
     const double previous = static_cast<double>(s.next_grid - 1) * ir.profile.step;
     if (!std::isfinite(next) || next <= s.time || previous > s.time)

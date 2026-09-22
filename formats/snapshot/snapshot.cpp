@@ -31,7 +31,7 @@ struct StreamFormat {
     throw Diagnostic("snapshot_format", "", "Invalid or unsupported state file");
 }
 void check_header(const SimulationSnapshot &s) {
-    if ((s.version < 1 || s.version > 3) || !valid_uuid(s.project_id) || !valid_uuid(s.contract) || !std::isfinite(s.time) ||
+    if ((s.version < 1 || s.version > 4) || !valid_uuid(s.project_id) || !valid_uuid(s.contract) || !std::isfinite(s.time) ||
         s.time < 0 || s.next_grid == 0 || !std::isfinite(s.next_step) || s.next_step < 0 || (s.version == 1 && s.next_step != 0))
         invalid();
 }
@@ -76,6 +76,43 @@ void write_snapshot(const SimulationSnapshot &s, std::ostream &stream) {
             stream<<'\n';
         }
     }
+    if(s.version>=4) {
+        if(s.signal_tasks.size()>maximum_values)invalid();
+        stream<<"signal_tasks "<<s.signal_tasks.size()<<'\n';
+        for(const auto &[id,task]:s.signal_tasks) {
+            if(!valid_uuid(id)||task.outputs.size()>maximum_values||
+               task.program_state.static_values.size()>maximum_values||
+               task.program_state.initialized.size()>maximum_values)invalid();
+            stream<<"signal_task "<<std::quoted(id)<<' '<<task.next_tick<<' '<<task.outputs.size();
+            for(const auto &[name,value]:task.outputs) {
+                if(name.empty()||!std::isfinite(value))invalid();
+                stream<<' '<<std::quoted(name)<<' '<<value;
+            }
+            stream<<' '<<task.program_state.static_values.size();
+            for(const auto &[key,value]:task.program_state.static_values) {
+                if(!std::isfinite(value))invalid();
+                stream<<' '<<key<<' '<<value;
+            }
+            stream<<' '<<task.program_state.initialized.size();
+            for(const auto &[key,value]:task.program_state.initialized)
+                stream<<' '<<key<<' '<<value;
+            stream<<'\n';
+        }
+        const auto frame=[&](const char *key,const SignalFrame &values) {
+            if(values.size()>maximum_values)invalid();
+            stream<<key<<' '<<values.size()<<'\n';
+            for(const auto &[endpoint,value]:values) {
+                if(endpoint.empty()||!std::isfinite(value.value)||!std::isfinite(value.time)||value.time<0||
+                   (value.type!=SignalScalarType::real&&value.type!=SignalScalarType::boolean)||
+                   (value.type==SignalScalarType::boolean&&value.value!=0&&value.value!=1))invalid();
+                stream<<"signal_value "<<std::quoted(endpoint)<<' '<<unsigned(value.type)<<' '
+                      <<std::quoted(value.unit)<<' '<<value.value<<' '<<value.time<<' '
+                      <<value.valid<<'\n';
+            }
+        };
+        frame("signal_outputs",s.signal_outputs);
+        frame("accepted_signal_inputs",s.accepted_signal_inputs);
+    } else if(!s.signal_tasks.empty()||!s.signal_outputs.empty()||!s.accepted_signal_inputs.empty())invalid();
     stream << "end\n";
     if (!stream)
         throw Diagnostic("snapshot_write", "", "Could not write state file");
@@ -89,7 +126,7 @@ SimulationSnapshot read_snapshot(std::istream &stream) {
     };
     SimulationSnapshot s;
     token("PowerDriveSimSnapshot");
-    if (!(stream >> s.version) || s.version < 1 || s.version > 3)
+    if (!(stream >> s.version) || s.version < 1 || s.version > 4)
         invalid();
     token("project");
     stream >> std::quoted(s.project_id);
@@ -153,6 +190,52 @@ SimulationSnapshot read_snapshot(std::istream &stream) {
                 if(!(stream>>key>>value)||value>1||!state.initialized.emplace(key,value!=0).second)invalid();
             }
         }
+    }
+    if(s.version>=4) {
+        const auto tasks=count("signal_tasks");
+        for(size_t i=0;i<tasks;++i) {
+            token("signal_task");
+            std::string id; SignalTaskSnapshot task;
+            size_t outputs=0;
+            if(!(stream>>std::quoted(id)>>task.next_tick>>outputs)||!valid_uuid(id)||outputs>maximum_values)
+                invalid();
+            for(size_t j=0;j<outputs;++j) {
+                std::string name;double value=0;
+                if(!(stream>>std::quoted(name)>>value)||name.empty()||!std::isfinite(value)||
+                   !task.outputs.emplace(name,value).second)invalid();
+            }
+            size_t static_count=0;
+            if(!(stream>>static_count)||static_count>maximum_values)invalid();
+            for(size_t j=0;j<static_count;++j) {
+                size_t key=0;double value=0;
+                if(!(stream>>key>>value)||!std::isfinite(value)||
+                   !task.program_state.static_values.emplace(key,value).second)invalid();
+            }
+            size_t initialized_count=0;
+            if(!(stream>>initialized_count)||initialized_count>maximum_values)invalid();
+            for(size_t j=0;j<initialized_count;++j) {
+                size_t key=0;unsigned value=0;
+                if(!(stream>>key>>value)||value>1||
+                   !task.program_state.initialized.emplace(key,value!=0).second)invalid();
+            }
+            if(!s.signal_tasks.emplace(id,std::move(task)).second)invalid();
+        }
+        const auto frame=[&](const char *key,SignalFrame &values) {
+            const auto size=count(key);
+            for(size_t i=0;i<size;++i) {
+                token("signal_value");
+                std::string endpoint,unit;unsigned type=0,valid=0;
+                double value=0,time=0;
+                if(!(stream>>std::quoted(endpoint)>>type>>std::quoted(unit)>>value>>time>>valid)||
+                   endpoint.empty()||type>unsigned(SignalScalarType::boolean)||valid>1||
+                   !std::isfinite(value)||!std::isfinite(time)||time<0||
+                   (type==unsigned(SignalScalarType::boolean)&&value!=0&&value!=1)||
+                   !values.emplace(endpoint,SignalValue{SignalScalarType(type),unit,value,time,valid!=0}).second)
+                    invalid();
+            }
+        };
+        frame("signal_outputs",s.signal_outputs);
+        frame("accepted_signal_inputs",s.accepted_signal_inputs);
     }
     token("end");
     stream >> std::ws;

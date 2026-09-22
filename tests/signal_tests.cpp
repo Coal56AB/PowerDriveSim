@@ -5,6 +5,7 @@
 #include "core/compiler/signal.hpp"
 #include "core/ir/ir.hpp"
 #include "formats/project/project.hpp"
+#include "formats/snapshot/snapshot.hpp"
 
 #include <cmath>
 #include <functional>
@@ -260,7 +261,7 @@ int main() {
         controller.id = derived_uuid("integrated-controller");
         controller.name = "Controller";
         controller.period = .15;
-        controller.code = "gate = enable && sensed > 0.5 && current > -1;";
+        controller.code = "static double count = 0; count += 1; gate = count >= 2 && enable && sensed > 0.5 && current > -1;";
         controller.inputs = {{derived_uuid("integrated-controller-input"), "sensed", "V",
                               SignalScalarType::real, 0},
                              {derived_uuid("integrated-current-input"), "current", "A",
@@ -313,7 +314,31 @@ int main() {
               "Code-block Gate output controls the generic switch path on the following interval");
         ExecutionOptions snapshot_options;
         snapshot_options.capture_snapshot = true;
-        error("signal_snapshot_unavailable", [&] { (void)execute(integrated_ir,nullptr,nullptr,nullptr,nullptr,{},&snapshot_options); });
+        snapshot_options.max_steps = 2;
+        const auto partial_run = execute(integrated_ir,nullptr,nullptr,nullptr,nullptr,{},&snapshot_options);
+        check(partial_run.snapshot && partial_run.snapshot->version == 4 &&
+                  partial_run.snapshot->signal_tasks.at(controller.id).next_tick == 2 &&
+                  !partial_run.snapshot->signal_tasks.at(controller.id).program_state.static_values.empty() &&
+                  partial_run.snapshot->accepted_signal_inputs.size() == 3,
+              "Code-block snapshot preserves scheduler progress, static state and sensor frame");
+        std::ostringstream snapshot_text;
+        write_snapshot(*partial_run.snapshot,snapshot_text);
+        std::istringstream snapshot_stream(snapshot_text.str());
+        const auto restored = read_snapshot(snapshot_stream);
+        check(restored == *partial_run.snapshot,"Code-block snapshot survives state-file roundtrip");
+        ExecutionOptions continuation;
+        continuation.resume = &restored;
+        const auto resumed = execute(integrated_ir,nullptr,nullptr,nullptr,nullptr,{},&continuation);
+        check(resumed.samples.size() == simulation.samples.size() - partial_run.accepted_steps,
+              "Code-block continuation retains the full result timeline");
+        for(size_t index=0;index<resumed.samples.size();++index)
+            check(resumed.samples[index].time == simulation.samples[partial_run.accepted_steps + index].time &&
+                      resumed.samples[index].values == simulation.samples[partial_run.accepted_steps + index].values &&
+                      resumed.samples[index].gates == simulation.samples[partial_run.accepted_steps + index].gates,
+                  "Code-block continuation is bit-identical across Gate edges");
+        auto changed_signal = integrated_ir;
+        changed_signal.signal.tasks[0].code = "gate = 0;";
+        error("invalid_snapshot", [&] { (void)execute(changed_signal,nullptr,nullptr,nullptr,nullptr,{},&continuation); });
         std::cout << "PASS typed causal Signal IR and deterministic C scheduler\n";
         return 0;
     } catch (const std::exception &exception) {

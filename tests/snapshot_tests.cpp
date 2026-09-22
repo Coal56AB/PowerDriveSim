@@ -66,6 +66,54 @@ int main(int argc, char **argv) try {
                 check(checkpoint == part.snapshot, "State file preserves every bit of numeric state");
             } while (checkpoint->time < ir.profile.stop);
             check(offset == expected.accepted_steps, "Resume preserves the global step grid");
+            if (std::string_view(name) == "rc" && method == Method::backward_euler) {
+                auto signal_state = *checkpoint;
+                signal_state.version = 4;
+                const auto task_id = derived_uuid("snapshot-signal-task");
+                SignalTaskSnapshot task;
+                task.next_tick = 123;
+                task.outputs["command"] = 2.5;
+                task.program_state.static_values[1] = 1.25;
+                task.program_state.initialized[1] = true;
+                signal_state.signal_tasks[task_id] = task;
+                signal_state.signal_outputs[task_id + "/out"] =
+                    {SignalScalarType::real, "V", 2.5, signal_state.time, true};
+                signal_state.accepted_signal_inputs[derived_uuid("snapshot-sensor") + "/out"] =
+                    {SignalScalarType::boolean, "", 1, signal_state.time, true};
+                std::ostringstream encoded;
+                write_snapshot(signal_state, encoded);
+                std::istringstream decoded(encoded.str());
+                check(read_snapshot(decoded) == signal_state,
+                      "Version 4 preserves signal ticks, C state, outputs and accepted frame");
+                auto with_signal = ir;
+                SignalTaskIR signal_task;
+                signal_task.id = task_id;
+                signal_task.code = "out = 2.5;";
+                signal_task.outputs = {{derived_uuid("snapshot-signal-output"), "command", "V",
+                                        SignalScalarType::real, 0}};
+                with_signal.signal.tasks.push_back(signal_task);
+                signal_state.signal_outputs.clear();
+                signal_state.signal_outputs[task_id + "/" + signal_task.outputs[0].id] =
+                    {SignalScalarType::real, "V", 2.5, signal_state.time, true};
+                signal_state.accepted_signal_inputs.clear();
+                signal_state.contract = snapshot_contract(with_signal, signal_state.time);
+                validate_snapshot(signal_state, with_signal);
+                const auto invalid_signal_state = [](const SimulationSnapshot &state,
+                                                     const SimulationIR &model) {
+                    try { validate_snapshot(state, model); }
+                    catch (const Diagnostic &error) {
+                        check(error.code == "invalid_snapshot", "Wrong signal snapshot diagnostic");
+                        return;
+                    }
+                    throw std::runtime_error("Invalid signal snapshot was accepted");
+                };
+                auto edited_code = with_signal;
+                edited_code.signal.tasks[0].code = "out = 3;";
+                invalid_signal_state(signal_state, edited_code);
+                auto damaged_signal = signal_state;
+                damaged_signal.signal_tasks.at(task_id).outputs["command"] = 3;
+                invalid_signal_state(damaged_signal, with_signal);
+            }
             if (!ir.events.empty()) {
                 auto changed = ir;
                 changed.events.front().closed = !changed.events.front().closed;
