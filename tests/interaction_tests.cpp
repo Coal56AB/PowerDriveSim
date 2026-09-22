@@ -1207,7 +1207,7 @@ class InteractionTests : public QObject {
         w.canvas()->centerOn(item(w, grouped)->pos());
         QTest::mouseDClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
                            w.canvas()->mapFromScene(item(w, grouped)->pos()));
-        QCOMPARE(w.hierarchy_path(), std::vector<std::string>{grouped});
+        QTRY_COMPARE(w.hierarchy_path(), std::vector<std::string>{grouped});
         QCOMPARE(w.project().components.size(), size_t(2));
         w.select_object(resistor);
         auto *value = w.findChild<QLineEdit *>("property_value");
