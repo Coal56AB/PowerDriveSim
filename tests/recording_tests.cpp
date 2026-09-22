@@ -227,6 +227,16 @@ int main(int argc, char **argv) {
         check(pure_ramp_ir.gate_programs.empty()&&!pure_ramp_ir.events.empty()&&
                   pure_ramp_ir.events.back().time>9.95,
               "Side-effect-free ramped PWM is scheduled exactly instead of interpreted on every step");
+        doc.apply("Six-output Gate C",[&](Project& p){auto& g=p.patterns.back();
+            g.outputs=6;g.code="for (int ind = 0; ind < 6; ++ind) IN[ind] = ind % 2;";
+            p.profile.stop=.01;p.profile.step=1e-5;});
+        const auto output1=derived_uuid("gate-output:"+script+":1");
+        Recording six;six.all=false;six.channels={"gate/"+script,"gate/"+output1};
+        const auto six_result=execute(compile(doc.project()),nullptr,nullptr,&six);
+        check(six_result.gate_objects.size()==2&&!six_result.samples.back().gates[0]&&six_result.samples.back().gates[1],
+              "One Gate C program drives independently indexed outputs");
+        std::ostringstream six_saved;write_project(doc.project(),six_saved);std::istringstream six_input(six_saved.str());
+        check(read_project(six_input).patterns.back().outputs==6,"Multi-output Gate count roundtrips");
         for (const auto *name : {"bidirectional-charge", "bidirectional-discharge", "half-bridge",
                                  "full-bridge", "vsi-2l", "npc-3l", "open-end-winding",
                                  "thyristor-bridge-3p"}) {
@@ -244,7 +254,7 @@ int main(int argc, char **argv) {
                       "Long programmable PWM runs from Gate code without a huge event table");
             }
         }
-        doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().code=
+        doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().outputs=1;p.patterns.back().code=
             "double a = b; double b = a; return a;";});
         bool addressed_script_error=false;
         try {

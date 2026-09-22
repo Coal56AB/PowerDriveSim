@@ -40,7 +40,10 @@ std::string snapshot_contract(const SimulationIR &ir, double time) {
         text << signal.id << ' ' << signal.initial << '\n';
     for (const auto &program : ir.gate_programs) {
         text << "gate-program " << program.id << ' ' << program.source.size() << ' ' << program.source;
-        for (const auto target : program.targets) text << ' ' << target;
+        for (const auto &output : program.outputs) {
+            text << " output " << output.signal;
+            for (const auto target : output.targets) text << ' ' << target;
+        }
         text << '\n';
     }
     for (const auto &event : ir.events) {

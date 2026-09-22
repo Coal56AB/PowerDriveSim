@@ -214,6 +214,10 @@ bool gate_c_value(const CProgram &program,CProgramState &state,double time) {
     const auto result=execute_c_program(program,time,&state);
     return result.return_value.value_or(0)!=0;
 }
+std::string gate_port(unsigned index) { return index==0?"out":"out"+std::to_string(index); }
+std::string gate_signal_id(const GatePattern& gate,unsigned index) {
+    return index==0?gate.id:derived_uuid("gate-output:"+gate.id+":"+std::to_string(index));
+}
 } // namespace
 
 static SimulationIR compile_flat(const Project& p) {
@@ -349,11 +353,13 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     for(auto& g:project.patterns)if(g.script){
       try {
         CProgramOptions c_options;c_options.diagnostic_code="invalid_gate_script";c_options.object=g.id;
-        c_options.allow_time=true;c_options.allow_gate_functions=true;c_options.require_return=true;
+        c_options.allow_time=true;c_options.allow_gate_functions=true;c_options.require_return=g.outputs==1;
+        if(g.outputs>1){c_options.external_arrays["IN"]=g.outputs;c_options.writable_arrays.insert("IN");}
         const auto c_program=compile_c_program(g.code,c_options);
         auto optimized = g;
         std::optional<ScriptProgram> optimization_program;
         try {
+            if(g.outputs>1)throw Diagnostic("not_scalar_gate_optimizer",g.id,"Multiple outputs use the safe C runtime");
             if (const auto simple_expression = simple_return_expression(g.code))
                 optimized.code = *simple_expression;
             optimization_program = script_program(optimized.code);
@@ -400,8 +406,10 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
                 }
             }
         }
-        CProgramState c_state;
-        g.initial=gate_c_value(c_program,c_state,0);
+        if(g.outputs==1) {
+            CProgramState c_state;
+            g.initial=gate_c_value(c_program,c_state,0);
+        }
         runtime_gate_scripts.insert(g.id);
       } catch(const Diagnostic& diagnostic) {
         if(diagnostic.code=="invalid_gate_script"&&diagnostic.object.empty())
@@ -429,12 +437,20 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     auto resolved=resolve_connections(project,origins);
     auto ir=compile_flat(resolved.project);
     auto patterns=project.patterns;std::sort(patterns.begin(),patterns.end(),[](const GatePattern& a,const GatePattern& b){return a.id<b.id;});
-    for(const auto& pattern:patterns)ir.gate_signals.push_back({pattern.id,pattern.name,pattern.initial});
+    for(const auto& pattern:patterns)for(unsigned index=0;index<pattern.outputs;++index)
+        ir.gate_signals.push_back({gate_signal_id(pattern,index),pattern.name+(pattern.outputs>1?"["+std::to_string(index)+"]":""),pattern.initial});
     for(const auto& pattern:patterns)if(runtime_gate_scripts.count(pattern.id)) {
         GateProgram program{pattern.id,pattern.code,{}};
-        for(const auto& [target,driver]:resolved.gate_drivers)if(driver==pattern.id) {
-            const auto stamp=std::find_if(ir.stamps.begin(),ir.stamps.end(),[&](const Stamp& candidate){return candidate.component.id==target;});
-            if(stamp!=ir.stamps.end())program.targets.push_back(static_cast<size_t>(stamp-ir.stamps.begin()));
+        for(unsigned index=0;index<pattern.outputs;++index) {
+            const auto signal_id=gate_signal_id(pattern,index);
+            const auto signal=std::find_if(ir.gate_signals.begin(),ir.gate_signals.end(),[&](const GateSignal& candidate){return candidate.id==signal_id;});
+            GateProgramOutput output{static_cast<size_t>(signal-ir.gate_signals.begin()),{}};
+            const auto driver=endpoint_key({pattern.id,gate_port(index)});
+            for(const auto& [target,connected]:resolved.gate_drivers)if(connected==driver) {
+                const auto stamp=std::find_if(ir.stamps.begin(),ir.stamps.end(),[&](const Stamp& candidate){return candidate.component.id==target;});
+                if(stamp!=ir.stamps.end())output.targets.push_back(static_cast<size_t>(stamp-ir.stamps.begin()));
+            }
+            program.outputs.push_back(std::move(output));
         }
         ir.gate_programs.push_back(std::move(program));
     }

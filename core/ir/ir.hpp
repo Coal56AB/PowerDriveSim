@@ -8,9 +8,13 @@ struct Stamp { Component component; int positive=-1, negative=-1, branch=-1; };
 struct Channel { std::string object, name, unit; };
 struct Observation { Channel channel; int positive=-1,negative=-1; double gain=1,offset=0; int source_stamp=-1; };
 struct GateSignal { std::string id,name; bool initial=false; };
+struct GateProgramOutput {
+    std::size_t signal=0;
+    std::vector<std::size_t> targets;
+};
 struct GateProgram {
     std::string id, source;
-    std::vector<std::size_t> targets;
+    std::vector<GateProgramOutput> outputs;
 };
 struct SimulationIR {
     std::map<std::string,ObjectPath> origins;

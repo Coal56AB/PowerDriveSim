@@ -32,6 +32,10 @@ bool compatible_tags(const ConnectionTag& a,const ConnectionTag& b) {
 }
 }
 std::string endpoint_key(const Endpoint& e) { return e.object+"/"+e.port; }
+namespace {
+std::string gate_port(unsigned index) { return index==0?"out":"out"+std::to_string(index); }
+std::string endpoint_object(const std::string& key) { const auto slash=key.find('/');return key.substr(0,slash); }
+}
 PortType port_type(const Project& p,const Endpoint& e) {
     for(const auto& i:p.instances)if(i.id==e.object) {
         for(const auto& port:definition(p,i.definition).ports)if(port.id==e.port)return {port.domain,port.direction};
@@ -42,7 +46,8 @@ PortType port_type(const Project& p,const Endpoint& e) {
         if(gate_controlled(c.kind) && e.port=="gate") return {Domain::gate,Direction::input};
         if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && e.port=="out") return {Domain::signal,Direction::output};
     }
-    for(const auto& g:p.patterns) if(g.id==e.object && e.port=="out") return {Domain::gate,Direction::output};
+    for(const auto& g:p.patterns) if(g.id==e.object)
+        for(unsigned index=0;index<g.outputs;++index)if(e.port==gate_port(index))return {Domain::gate,Direction::output};
     for(const auto& t:p.tags) if(t.id==e.object && e.port=="io") return {t.domain,Direction::conserving};
     for(const auto& plot:p.plots)if(plot.id==e.object)
         for(unsigned i=1;i<=plot.inputs;++i)
@@ -101,6 +106,8 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     }
     for(const auto& g:p.patterns) {
         uuid(g.id);
+        if(g.outputs<1||g.outputs>16)throw Diagnostic("invalid_gate_outputs",g.id,"Gate requires 1..16 outputs");
+        if(g.outputs>1&&!g.script)throw Diagnostic("invalid_gate_outputs",g.id,"Multiple Gate outputs require C code mode");
         if(g.pwm&&(!std::isfinite(g.frequency)||g.frequency<=0||!std::isfinite(g.duty)||g.duty<0||g.duty>1||!std::isfinite(g.delay)||g.delay<0))throw Diagnostic("invalid_pwm",g.id,"PWM frequency must be positive, duty must be 0..1 and delay non-negative");
         if(g.script&&g.code.empty())throw Diagnostic("invalid_gate_script",g.id,"Gate script requires code");
         if(g.pwm&&g.script)throw Diagnostic("invalid_gate_script",g.id,"Gate script and PWM modes are mutually exclusive");
@@ -155,7 +162,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
                 const auto type=port_type(p,other);
                 const auto key=root(endpoint_key({tag->id,"io"}));
                 if(type.direction==Direction::output) {
-                    if(!tag_drivers.emplace(key,other.object).second)
+                    if(!tag_drivers.emplace(key,endpoint_key(other)).second)
                         throw Diagnostic("multiple_gate_drivers",tag->id,"A tag group accepts exactly one driver");
                 } else if(type.direction==Direction::input) tag_inputs[key].push_back(other.object);
                 else throw Diagnostic("incompatible_port",w.id,"Non-electrical tags connect outputs to inputs");
@@ -168,7 +175,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
                 if(!plot_inputs.insert(endpoint_key(input)).second)throw Diagnostic("multiple_plot_drivers",input.object,"Each plot input accepts one signal");
                 continue;
             }
-            if(!drivers.emplace(input.object,output.object).second)
+            if(!drivers.emplace(input.object,endpoint_key(output)).second)
                 throw Diagnostic("multiple_gate_drivers",input.object,"A gate input accepts exactly one driver");
         }
     }
@@ -210,7 +217,8 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         c.negative=result.nets.at(endpoint_key({c.id,"n"}));
         auto driver=drivers.find(c.id);
         if(driver!=drivers.end()) {
-            const auto g=std::find_if(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& pattern){return pattern.id==driver->second;});
+            const auto object=endpoint_object(driver->second);
+            const auto g=std::find_if(p.patterns.begin(),p.patterns.end(),[&](const GatePattern& pattern){return pattern.id==object;});
             c.closed=g->initial;
         }
     }
@@ -226,7 +234,7 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
                 throw Diagnostic("invalid_event",event.target,"Pattern edge is outside the simulation interval");
             if(!pattern_times.insert({event.target,event.time}).second)
                 throw Diagnostic("conflicting_gate_events",event.target,"Only one assignment per pattern and timestamp is allowed");
-            for(const auto& [target,driver]:drivers) if(driver==event.target) events.push_back({event.time,target,event.closed});
+            for(const auto& [target,driver]:drivers) if(driver==endpoint_key({event.target,"out"})) events.push_back({event.time,target,event.closed});
         }
     }
     p.events=std::move(events); p.wired=false; p.wires.clear(); p.tags.clear(); p.patterns.clear(); p.plots.clear();

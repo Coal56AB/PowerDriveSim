@@ -119,17 +119,16 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     std::vector<bool> signal_values;for(const auto& signal:ir.gate_signals)signal_values.push_back(signal.initial);
     std::vector<CProgram> gate_programs;
     std::vector<CProgramState> gate_program_states(ir.gate_programs.size());
-    std::vector<size_t> gate_program_signals;
     gate_programs.reserve(ir.gate_programs.size());
-    gate_program_signals.reserve(ir.gate_programs.size());
     for(const auto& source:ir.gate_programs) {
         CProgramOptions program_options;program_options.diagnostic_code="invalid_gate_script";
         program_options.object=source.id;program_options.allow_time=true;
-        program_options.allow_gate_functions=true;program_options.require_return=true;
+        program_options.allow_gate_functions=true;program_options.require_return=source.outputs.size()==1;
+        if(source.outputs.size()>1){program_options.external_arrays["IN"]=source.outputs.size();program_options.writable_arrays.insert("IN");}
         gate_programs.push_back(compile_c_program(source.source,program_options));
-        const auto signal=std::find_if(ir.gate_signals.begin(),ir.gate_signals.end(),[&](const GateSignal& candidate){return candidate.id==source.id;});
-        if(signal==ir.gate_signals.end())throw Diagnostic("invalid_gate_script",source.id,"Gate runtime signal is missing");
-        gate_program_signals.push_back(static_cast<size_t>(signal-ir.gate_signals.begin()));
+        if(source.outputs.empty())throw Diagnostic("invalid_gate_script",source.id,"Gate runtime output is missing");
+        for(const auto& output:source.outputs)if(output.signal>=ir.gate_signals.size())
+            throw Diagnostic("invalid_gate_script",source.id,"Gate runtime signal is missing");
     }
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size()), latched(ir.stamps.size()), released(ir.stamps.size());
@@ -174,14 +173,22 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     auto apply_gate_programs=[&](double t) {
         bool changed=false;
         for(size_t i=0;i<gate_programs.size();++i) {
-            const bool value=execute_c_program(gate_programs[i],t,&gate_program_states[i]).return_value.value_or(0)!=0;
-            const auto signal=gate_program_signals[i];
-            changed|=signal_values[signal]!=value;
-            signal_values[signal]=value;
-            for(const auto target:ir.gate_programs[i].targets) {
-                if(target>=gates.size())throw Diagnostic("invalid_gate_script",ir.gate_programs[i].id,"Gate runtime target is missing",t);
-                changed|=gates[target]!=value;
-                gates[target]=value;
+            std::map<std::string,double> inputs;
+            if(ir.gate_programs[i].outputs.size()>1)for(size_t output=0;output<ir.gate_programs[i].outputs.size();++output)
+                inputs["IN["+std::to_string(output)+"]"]=signal_values[ir.gate_programs[i].outputs[output].signal];
+            const auto result=execute_c_program(gate_programs[i],t,&gate_program_states[i],inputs);
+            for(size_t output_index=0;output_index<ir.gate_programs[i].outputs.size();++output_index) {
+                const auto& output=ir.gate_programs[i].outputs[output_index];
+                const bool value=ir.gate_programs[i].outputs.size()==1
+                    ? result.return_value.value_or(0)!=0
+                    : result.variables.at("IN["+std::to_string(output_index)+"]")!=0;
+                changed|=signal_values[output.signal]!=value;
+                signal_values[output.signal]=value;
+                for(const auto target:output.targets) {
+                    if(target>=gates.size())throw Diagnostic("invalid_gate_script",ir.gate_programs[i].id,"Gate runtime target is missing",t);
+                    changed|=gates[target]!=value;
+                    gates[target]=value;
+                }
             }
         }
         return changed;
