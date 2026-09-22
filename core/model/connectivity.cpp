@@ -283,6 +283,12 @@ std::vector<std::string> plot_channels(const Project& p,const std::string& id){
     }return result;
 }
 namespace {
+std::string code_output_channel(const Project& p,const Endpoint& endpoint) {
+    for(const auto& block:p.code_blocks)if(block.id==endpoint.object)
+        for(const auto& output:block.outputs)if(output.id==endpoint.port)
+            return (output.type==SignalScalarType::boolean?"gate/":std::string{})+endpoint_key(endpoint);
+    return {};
+}
 std::string tagged_source(const Project& p,const ConnectionTag& source) {
     for(const auto& tag:p.tags) {
         if(!compatible_tags(source,tag))continue;
@@ -294,8 +300,11 @@ std::string tagged_source(const Project& p,const ConnectionTag& source) {
                    return candidate.id==other->object&&other->port=="io";
                }))continue;
             const auto type=port_type(p,*other);
-            if(type.direction==Direction::output)
+            if(type.direction==Direction::output) {
+                const auto code_channel=code_output_channel(p,*other);
+                if(!code_channel.empty())return code_channel;
                 return type.domain==Domain::gate?"gate/"+other->object:other->object;
+            }
         }
     }
     return {};
@@ -311,6 +320,8 @@ std::string plot_source(const Project& p,const Endpoint& input) {
             if(domain==Domain::electrical)return resolve_connections(p).nets.at(endpoint_key(*source));
             return tagged_source(p,*tag);
         }
+        const auto code_channel=code_output_channel(p,*source);
+        if(!code_channel.empty())return code_channel;
         if(domain==Domain::gate)return "gate/"+source->object;
         if(domain==Domain::electrical)return resolve_connections(p).nets.at(endpoint_key(*source));
         return source->object;

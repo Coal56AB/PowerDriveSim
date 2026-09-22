@@ -57,8 +57,14 @@ std::vector<double> StampSystem::solve(const SimulationIR& ir,double time) const
 }
 std::vector<Channel> available_channels(const SimulationIR& ir){
     auto channels=ir.unknowns;for(const auto& o:ir.observations)channels.push_back(o.channel);
+    for(const auto& task:ir.signal.tasks)for(const auto& output:task.outputs)
+        if(output.type==SignalScalarType::real)
+            channels.push_back({signal_endpoint_key({task.id,output.id}),output.name,output.unit});
     for(const auto& s:ir.stamps)if(gate_controlled(s.component.kind))channels.push_back({"gate/"+s.component.id,"gate:"+s.component.name,"bool"});
     for(const auto& signal:ir.gate_signals)channels.push_back({"gate/"+signal.id,signal.name,"bool"});
+    for(const auto& task:ir.signal.tasks)for(const auto& output:task.outputs)
+        if(output.type==SignalScalarType::boolean)
+            channels.push_back({"gate/"+signal_endpoint_key({task.id,output.id}),output.name,"bool"});
     return channels;
 }
 static double observation_value(const SimulationIR& ir,const Observation& observation,double time,
@@ -109,7 +115,12 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     auto catalog=available_channels(ir);
     if(recording&&!recording->all)for(const auto& key:requested)
         if(std::none_of(catalog.begin(),catalog.end(),[&](const Channel& c){return c.object==key;}))throw Diagnostic("missing_recording_channel",key,"Recording channel does not exist");
-    const size_t analog_count=ir.unknowns.size()+ir.observations.size();
+    std::vector<std::string> real_signal_outputs,bool_signal_outputs;
+    for(const auto& task:ir.signal.tasks)for(const auto& output:task.outputs) {
+        const auto key=signal_endpoint_key({task.id,output.id});
+        (output.type==SignalScalarType::real?real_signal_outputs:bool_signal_outputs).push_back(key);
+    }
+    const size_t analog_count=ir.unknowns.size()+ir.observations.size()+real_signal_outputs.size();
     for(size_t i=0;i<analog_count;++i)if(selected(catalog[i].object)){analog_indices.push_back(i);result.channels.push_back(catalog[i]);}
     for(size_t i=analog_count;i<catalog.size();++i)if(selected(catalog[i].object)){gate_indices.push_back(i-analog_count);result.gate_objects.push_back(catalog[i].object.substr(5));result.gate_names.push_back(catalog[i].name);}
     const size_t stream_preview_samples=options?options->stream_preview_samples:0;
@@ -402,9 +413,18 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         Sample sample;sample.time=t;sample.values.reserve(analog_indices.size());sample.gates.reserve(gate_indices.size());
         for(size_t index:analog_indices){
             if(index<ir.unknowns.size())sample.values.push_back(values[index]);
-            else sample.values.push_back(observation_value(ir,ir.observations[index-ir.unknowns.size()],t,values));
+            else if(index<ir.unknowns.size()+ir.observations.size())
+                sample.values.push_back(observation_value(ir,ir.observations[index-ir.unknowns.size()],t,values));
+            else sample.values.push_back(signal_runtime.outputs.at(
+                real_signal_outputs[index-ir.unknowns.size()-ir.observations.size()]).value);
         }
-        for(size_t index:gate_indices)sample.gates.push_back(index<switch_indices.size()?gates[switch_indices[index]]:signal_values[index-switch_indices.size()]);
+        for(size_t index:gate_indices) {
+            if(index<switch_indices.size())sample.gates.push_back(gates[switch_indices[index]]);
+            else if(index<switch_indices.size()+signal_values.size())
+                sample.gates.push_back(signal_values[index-switch_indices.size()]);
+            else sample.gates.push_back(signal_runtime.outputs.at(
+                bool_signal_outputs[index-switch_indices.size()-signal_values.size()]).value!=0);
+        }
         result.samples.push_back(std::move(sample));
     };
     double time=resume?resume->time:0;

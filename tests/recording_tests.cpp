@@ -53,6 +53,52 @@ int main(int argc, char **argv) {
         check(empty.accepted_steps == full.accepted_steps && empty.last_time == full.last_time &&
                   empty.max_scaled_residual == full.max_scaled_residual,
               "Recording must not change physical execution");
+        Project signal_project=base;
+        signal_project.profile.step=.001;
+        signal_project.profile.stop=.004;
+        CodeBlock signal_block;
+        signal_block.id=derived_uuid("recording-code-block");
+        signal_block.name="Recorder";
+        signal_block.period=.001;
+        signal_block.code="first = t; second = 2 * t; low = t < 0.002; high = t >= 0.002;";
+        signal_block.outputs={{derived_uuid("recording-first"),"first","V",SignalScalarType::real,0},
+                              {derived_uuid("recording-second"),"second","A",SignalScalarType::real,0},
+                              {derived_uuid("recording-low"),"low","",SignalScalarType::boolean,1},
+                              {derived_uuid("recording-high"),"high","",SignalScalarType::boolean,0}};
+        const auto signal_plot=derived_uuid("recording-signal-plot");
+        signal_project.code_blocks.push_back(signal_block);
+        signal_project.plots.push_back({signal_plot,"Code outputs",0,0,4});
+        for(size_t index=0;index<signal_block.outputs.size();++index)
+            signal_project.wires.push_back({derived_uuid("recording-output-wire-"+std::to_string(index)),
+                {signal_block.id,signal_block.outputs[index].id},{signal_plot,"in"+std::to_string(index+1)},{}});
+        const std::vector<std::string> output_keys={
+            signal_endpoint_key({signal_block.id,signal_block.outputs[0].id}),
+            signal_endpoint_key({signal_block.id,signal_block.outputs[1].id}),
+            "gate/"+signal_endpoint_key({signal_block.id,signal_block.outputs[2].id}),
+            "gate/"+signal_endpoint_key({signal_block.id,signal_block.outputs[3].id})};
+        check(plot_channels(signal_project,signal_plot)==output_keys,
+              "Plot resolves every code-block output by its endpoint key");
+        Recording signal_recording;
+        signal_recording.all=false;
+        signal_recording.channels=output_keys;
+        const auto signal_result=execute(compile(signal_project),nullptr,nullptr,&signal_recording);
+        check(signal_result.channels.size()==2&&signal_result.gate_objects.size()==2&&
+                  signal_result.channels[0].object==output_keys[0]&&
+                  signal_result.channels[1].object==output_keys[1]&&
+                  "gate/"+signal_result.gate_objects[0]==output_keys[2]&&
+                  "gate/"+signal_result.gate_objects[1]==output_keys[3],
+              "Scope recording keeps distinct real and Boolean code-block outputs");
+        check(signal_result.channels[0].name=="first"&&signal_result.channels[0].unit=="V"&&
+                  result_channel(signal_result,2).name=="low"&&result_channel(signal_result,2).unit=="bool",
+              "Code-block output metadata reaches recorded channels");
+        check(std::abs(signal_result.samples.back().values[0]-.004)<1e-15&&
+                  std::abs(signal_result.samples.back().values[1]-.008)<1e-15&&
+                  !signal_result.samples.back().gates[0]&&signal_result.samples.back().gates[1],
+              "Recorded code-block outputs contain the accepted runtime frame");
+        const auto signal_empty=execute(compile(signal_project),nullptr,nullptr,&off);
+        check(signal_empty.samples.empty()&&signal_empty.samples.capacity()==0&&
+                  signal_empty.channels.empty()&&signal_empty.gate_objects.empty(),
+              "Unsubscribed code-block outputs allocate no sample history");
         std::ostringstream v5;
         write_project(base, v5);
         std::istringstream lines(v5.str());
