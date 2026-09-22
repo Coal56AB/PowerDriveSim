@@ -283,6 +283,47 @@ QWidget *Scope::navigation() {
             time_span_edit_->setToolTip(QString::fromUtf8(e.what()));
         }
     });
+    bar->addSeparator();
+    trigger_arm_action_=bar->addAction(ui_icon(UiIcon::trigger),text("trigger_arm"));
+    trigger_arm_action_->setObjectName("trigger_arm_toolbar");
+    trigger_arm_action_->setToolTip(text("trigger_arm"));
+    connect(trigger_arm_action_,&QAction::triggered,this,&Scope::arm_trigger);
+    trigger_stop_action_=bar->addAction(ui_icon(UiIcon::stop),text("trigger_stop"));
+    trigger_stop_action_->setObjectName("trigger_stop_toolbar");
+    trigger_stop_action_->setToolTip(text("trigger_stop"));
+    connect(trigger_stop_action_,&QAction::triggered,this,&Scope::stop_trigger);
+    auto *level_label=new QLabel("T:");
+    level_label->setToolTip(text("trigger_level_hint"));
+    bar->addWidget(level_label);
+    trigger_level_edit_=new QLineEdit(QString::number(trigger_level_,'g',8));
+    normalize_decimal_point(trigger_level_edit_);
+    trigger_level_edit_->setObjectName("trigger_level_toolbar");
+    trigger_level_edit_->setFixedWidth(72);
+    trigger_level_edit_->setToolTip(text("trigger_level_hint"));
+    bar->addWidget(trigger_level_edit_);
+    connect(trigger_level_edit_,&QLineEdit::editingFinished,this,[this] {
+        try {
+            const double level=parse_si(trigger_level_edit_->text().toStdString(),"");
+            if(!std::isfinite(level))throw std::runtime_error("level");
+            trigger_level_=level;trigger_level_edit_->setStyleSheet({});update();
+        } catch(...) { trigger_level_edit_->setStyleSheet("border:1px solid palette(bright-text);"); }
+        update_trigger_controls();
+    });
+    trigger_position_edit_=new QLineEdit(QString::number(trigger_position_*100,'g',5)+" %");
+    normalize_decimal_point(trigger_position_edit_);
+    trigger_position_edit_->setObjectName("trigger_position_toolbar");
+    trigger_position_edit_->setFixedWidth(64);
+    trigger_position_edit_->setToolTip(text("trigger_position_hint"));
+    bar->addWidget(trigger_position_edit_);
+    connect(trigger_position_edit_,&QLineEdit::editingFinished,this,[this] {
+        QString source=trigger_position_edit_->text();source.remove('%');
+        bool ok=false;const double position=source.trimmed().toDouble(&ok)/100.0;
+        if(ok&&std::isfinite(position)&&position>=0&&position<=1) {
+            trigger_position_=position;trigger_position_edit_->setStyleSheet({});update();
+        } else trigger_position_edit_->setStyleSheet("border:1px solid palette(bright-text);");
+        update_trigger_controls();
+    });
+    update_trigger_controls();
     auto *more = new QToolButton;
     more->setIcon(ui_icon(UiIcon::settings));
     more->setIconSize({22, 22});
@@ -526,6 +567,7 @@ void Scope::cancel_drag() {
         legend_drag_lane_ = -1;
     }
     selecting_zoom_ = false;
+    trigger_drag_=TriggerDrag::none;
     drag_button_ = Qt::NoButton;
     setCursor(navigation_tool_ == NavigationTool::pan ? Qt::OpenHandCursor : Qt::CrossCursor);
     update();
@@ -547,6 +589,32 @@ void Scope::mousePressEvent(QMouseEvent *e) {
     }
     if (e->button() != Qt::LeftButton && e->button() != Qt::MiddleButton && e->button() != Qt::RightButton)
         return;
+    if(e->button()==Qt::LeftButton) {
+        int lane_under=-1;
+        for(int lane=0;lane<display_count();++lane)if(lane_rect(lane).contains(e->position())){lane_under=lane;break;}
+        if(lane_under>=0) {
+            int trigger_channel=-1;
+            for(int channel:channels_)if(result_channel(*result_,channel).object==trigger_channel_){trigger_channel=channel;break;}
+            const int trigger_lane=trigger_channel>=0?channel_display(trigger_channel):active_lane_;
+            const auto area=lane_rect(lane_under);
+            const double position_x=area.left()+trigger_position_*area.width();
+            double low=y_low,high=y_high;
+            if(separate_axes_&&lane_under<int(display_ranges_.size())){low=display_ranges_[lane_under].first;high=display_ranges_[lane_under].second;}
+            const double level_y=area.bottom()-(trigger_level_-low)/(high-low)*area.height();
+            const bool level_handle=lane_under==trigger_lane&&e->position().x()>=area.right()-14;
+            const bool position_handle=e->position().y()<=area.top()+18&&std::abs(e->position().x()-position_x)<=7;
+            if(level_handle||position_handle) {
+                active_lane_=lane_under;y_low=low;y_high=high;
+                trigger_drag_=level_handle?TriggerDrag::level:TriggerDrag::position;
+                drag_trigger_level_=trigger_level_;drag_trigger_position_=trigger_position_;
+                if(trigger_level_edit_)trigger_level_edit_->clearFocus();
+                if(trigger_position_edit_)trigger_position_edit_->clearFocus();
+                drag_button_=e->button();setFocus(Qt::MouseFocusReason);
+                setCursor(trigger_drag_==TriggerDrag::level?Qt::SizeVerCursor:Qt::SizeHorCursor);
+                e->accept();return;
+            }
+        }
+    }
     if (e->button() == Qt::LeftButton && (legend_drag_lane_ = legend_at(e->position())) >= 0) {
         legend_drag_box_ = legend_layout(legend_drag_lane_).box;
         legend_drag_original_.reset();
@@ -614,6 +682,17 @@ void Scope::mouseMoveEvent(QMouseEvent *e) {
         e->accept();
         return;
     }
+    if(trigger_drag_!=TriggerDrag::none&&drag_button_!=Qt::NoButton) {
+        const auto area=lane_rect(active_lane_);
+        if(trigger_drag_==TriggerDrag::level) {
+            trigger_level_=y_high-(std::clamp(e->position().y(),area.top(),area.bottom())-area.top())/area.height()*(y_high-y_low);
+            if(trigger_level_edit_)trigger_level_edit_->setText(QString::number(trigger_level_,'g',8));
+        } else {
+            trigger_position_=std::clamp((e->position().x()-area.left())/area.width(),0.0,1.0);
+            if(trigger_position_edit_)trigger_position_edit_->setText(QString::number(trigger_position_*100,'g',5)+" %");
+        }
+        update_trigger_controls();update();e->accept();return;
+    }
     if (drag_button_ == Qt::NoButton)
         setCursor(legend_at(e->position()) >= 0 || navigation_tool_ == NavigationTool::pan
                       ? Qt::OpenHandCursor
@@ -645,6 +724,10 @@ void Scope::mouseMoveEvent(QMouseEvent *e) {
 void Scope::mouseReleaseEvent(QMouseEvent *e) {
     if (drag_button_ != e->button())
         return;
+    if(trigger_drag_!=TriggerDrag::none) {
+        mouseMoveEvent(e);trigger_drag_=TriggerDrag::none;drag_button_=Qt::NoButton;setCursor(Qt::CrossCursor);
+        update_trigger_controls();e->accept();return;
+    }
     mouseMoveEvent(e);
     if (legend_drag_lane_ >= 0) {
         legend_drag_lane_ = -1;
@@ -716,6 +799,10 @@ void Scope::wheelEvent(QWheelEvent *e) {
 }
 void Scope::keyPressEvent(QKeyEvent *e) {
     if (e->key() == Qt::Key_Escape) {
+        if(trigger_drag_!=TriggerDrag::none) {
+            trigger_level_=drag_trigger_level_;trigger_position_=drag_trigger_position_;
+            cancel_drag();update_trigger_controls();e->accept();return;
+        }
         if (legend_drag_lane_ >= 0) {
             cancel_drag();
             e->accept();

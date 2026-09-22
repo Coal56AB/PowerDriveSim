@@ -251,12 +251,16 @@ class Scope : public QWidget {
     QPointer<QDialog> measurements_;
     QPointer<QDialog> spectrum_;
     QPointer<QAction> follow_action_;
-    QPointer<QLineEdit> time_span_edit_;
+    QPointer<QAction> trigger_arm_action_, trigger_stop_action_;
+    QPointer<QLineEdit> time_span_edit_, trigger_level_edit_, trigger_position_edit_;
     std::string trigger_channel_;
     bool trigger_armed_ = false;
     int trigger_edge_ = 0, trigger_mode_ = 0;
     double trigger_level_ = 0, trigger_after_ = 0, trigger_holdoff_ = 0, trigger_position_ = .2;
     std::optional<double> trigger_time_;
+    enum class TriggerDrag { none, level, position };
+    TriggerDrag trigger_drag_ = TriggerDrag::none;
+    double drag_trigger_level_ = 0, drag_trigger_position_ = .2;
     struct ViewRange {
         double begin, end, low, high;
         std::vector<std::pair<double, double>> lanes;
@@ -267,6 +271,9 @@ class Scope : public QWidget {
     void restore_view(int direction);
     void update_measurements();
     void update_live_view(bool force = false);
+    void arm_trigger();
+    void stop_trigger();
+    void update_trigger_controls();
     std::optional<CursorValue> cursor_reading(int index) const;
     QRectF lane_rect(int lane) const;
     bool activate_lane(QPointF point);

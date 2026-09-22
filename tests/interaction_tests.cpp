@@ -2784,6 +2784,12 @@ class InteractionTests : public QObject {
         s.resize(800, 400);
         s.set_result(&r, {0}, p);
         s.show();
+        auto *navigation=s.navigation();navigation->show();
+        auto *arm_toolbar=navigation->findChild<QAction *>("trigger_arm_toolbar");
+        auto *stop_toolbar=navigation->findChild<QAction *>("trigger_stop_toolbar");
+        auto *level_toolbar=navigation->findChild<QLineEdit *>("trigger_level_toolbar");
+        auto *position_toolbar=navigation->findChild<QLineEdit *>("trigger_position_toolbar");
+        QVERIFY(arm_toolbar&&stop_toolbar&&level_toolbar&&position_toolbar);
         s.set_live(true);
         s.changed = [&](double a, double b, double ca, double cb) {
             p.scope_begin = a;
@@ -2804,6 +2810,7 @@ class InteractionTests : public QObject {
                     button->click();
         };
         arm();
+        QVERIFY(stop_toolbar->isEnabled());
         r.samples.push_back({3, {1}, {}});
         s.set_result(&r, {0}, p);
         QVERIFY(std::abs(s.begin - 2.1) < 1e-10);
@@ -2816,6 +2823,23 @@ class InteractionTests : public QObject {
         r.samples.push_back({7, {1}, {}});
         s.set_result(&r, {0}, p);
         QVERIFY(std::abs(s.begin - 6.1) < 1e-10);
+        const QRectF trigger_area(58,12,s.width()-84,s.height()-64);
+        const double level_y=std::clamp(trigger_area.bottom()-(.5-s.y_low)/(s.y_high-s.y_low)*trigger_area.height(),
+                                        trigger_area.top(),trigger_area.bottom());
+        QTest::mousePress(&s,Qt::LeftButton,Qt::NoModifier,{int(trigger_area.right()-2),int(level_y)});
+        QTest::mouseMove(&s,{int(trigger_area.right()-2),int(trigger_area.top()+trigger_area.height()*.25)});
+        QTest::mouseRelease(&s,Qt::LeftButton,Qt::NoModifier,{int(trigger_area.right()-2),int(trigger_area.top()+trigger_area.height()*.25)});
+        const double dragged_level=level_toolbar->text().toDouble(),expected_level=s.y_high-(s.y_high-s.y_low)*.25;
+        QVERIFY2(std::abs(dragged_level-expected_level)<.05,
+                 qPrintable(QString("dragged=%1 expected=%2").arg(dragged_level).arg(expected_level)));
+        const int position_start=int(trigger_area.left()+trigger_area.width()*.2);
+        const int position_end=int(trigger_area.left()+trigger_area.width()*.65);
+        QTest::mousePress(&s,Qt::LeftButton,Qt::NoModifier,{position_start,int(trigger_area.top()+4)});
+        QTest::mouseMove(&s,{position_end,int(trigger_area.top()+4)});
+        QTest::mouseRelease(&s,Qt::LeftButton,Qt::NoModifier,{position_end,int(trigger_area.top()+4)});
+        QString position_text=position_toolbar->text();position_text.remove('%');
+        QVERIFY(std::abs(position_text.trimmed().toDouble()-65)<1);
+        stop_toolbar->trigger();QVERIFY(!stop_toolbar->isEnabled()&&arm_toolbar->isEnabled());
         d->findChild<QComboBox *>("trigger_mode")->setCurrentIndex(2);
         arm();
         for (int i = 8; i <= 12; ++i)

@@ -113,6 +113,39 @@ void Scope::set_live(bool live) {
     if (follow_action_)
         follow_action_->setChecked(follow_live_);
 }
+void Scope::update_trigger_controls() {
+    if(trigger_level_edit_&&!trigger_level_edit_->hasFocus())
+        trigger_level_edit_->setText(QString::number(trigger_level_,'g',8));
+    if(trigger_position_edit_&&!trigger_position_edit_->hasFocus())
+        trigger_position_edit_->setText(QString::number(trigger_position_*100,'g',5)+" %");
+    if(trigger_arm_action_)trigger_arm_action_->setEnabled(result_&&!channels_.empty()&&!trigger_armed_);
+    if(trigger_stop_action_)trigger_stop_action_->setEnabled(trigger_armed_);
+}
+void Scope::arm_trigger() {
+    if(!result_||channels_.empty())return;
+    const bool available=std::any_of(channels_.begin(),channels_.end(),[&](int channel){
+        return result_channel(*result_,channel).object==trigger_channel_;
+    });
+    if(!available)trigger_channel_=result_channel(*result_,channels_.front()).object;
+    trigger_after_=live_&&!result_->samples.empty()?result_->samples.back().time:-1;
+    trigger_time_.reset();
+    trigger_armed_=true;
+    if(trigger_mode_==1) {
+        follow_live_=false;
+        if(follow_action_)follow_action_->setChecked(false);
+    }
+    update_live_view();
+    update_measurements();
+    update_trigger_controls();
+    update();
+}
+void Scope::stop_trigger() {
+    trigger_armed_=false;
+    trigger_time_.reset();
+    update_measurements();
+    update_trigger_controls();
+    update();
+}
 void Scope::set_time_span(double seconds) {
     if (!std::isfinite(seconds) || seconds < 0)
         return;
@@ -132,8 +165,10 @@ void Scope::set_time_span(double seconds) {
     update();
 }
 void Scope::update_live_view(bool force) {
-    if (!result_)
+    if (!result_) {
+        update_trigger_controls();
         return;
+    }
     if (trigger_armed_) {
         for (int ch : channels_)
             if (result_channel(*result_, ch).object == trigger_channel_) {
@@ -175,6 +210,7 @@ void Scope::update_live_view(bool force) {
     }
     if (follow_action_)
         follow_action_->setChecked(follow_live_);
+    update_trigger_controls();
 }
 void Scope::remember_view() {
     if (separate_axes_ && !display_ranges_.empty())
@@ -374,26 +410,13 @@ void Scope::show_measurements() {
             trigger_mode_ = mode->currentIndex();
             trigger_channel_ = result_channel(*result_, trigger_signal->currentData().toInt()).object;
             trigger_edge_ = edge->currentIndex();
-            trigger_after_ = live_ ? result_->samples.back().time : -1;
-            trigger_time_.reset();
-            trigger_armed_ = true;
-            if (trigger_mode_ == 1) {
-                follow_live_ = false;
-                if (follow_action_)
-                    follow_action_->setChecked(false);
-            }
-            update_live_view();
-            update_measurements();
-            update();
+            arm_trigger();
         } catch (const std::exception &e) {
             status->setText(QString::fromUtf8(e.what()));
         }
     });
     connect(reset, &QPushButton::clicked, this, [this] {
-        trigger_armed_ = false;
-        trigger_time_.reset();
-        update_measurements();
-        update();
+        stop_trigger();
     });
     auto *energy = new QWidget;
     auto *energy_box = new QVBoxLayout(energy);
