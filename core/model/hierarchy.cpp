@@ -131,9 +131,13 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
     for (auto &i : s.instances)
         if (i.id == p.object) {
             const auto &d = definition(catalog, i.definition);
-            if (std::none_of(d.parameters.begin(), d.parameters.end(),
-                             [&](const auto &v) { return v.id == p.field; }))
+            const auto target = std::find_if(d.parameters.begin(), d.parameters.end(),
+                                             [&](const auto &v) { return v.id == p.field; });
+            if (target == d.parameters.end())
                 break;
+            if (!public_parameter_accepts(*target, value))
+                throw Diagnostic("invalid_public_parameter_value", p.id,
+                                 "Public parameter value is outside the nested parameter range");
             auto v = std::find_if(i.parameters.begin(), i.parameters.end(),
                                   [&](const auto &v) { return v.first == p.field; });
             if (v == i.parameters.end())

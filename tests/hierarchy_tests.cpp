@@ -223,6 +223,33 @@ int main() try {
     bad = p;
     bad.definitions[0].parameters[0].minimum = 2000;
     error("invalid_public_parameter", [&] { compile(bad); });
+    {
+        auto invalid_nested_default = nested();
+        auto &inner_parameter = invalid_nested_default.definitions[0].parameters[0];
+        inner_parameter.has_minimum = true;
+        inner_parameter.minimum = 100;
+        inner_parameter.has_maximum = true;
+        inner_parameter.maximum = 5000;
+        invalid_nested_default.definitions[1].parameters[0].value = 6000;
+        for (auto &instance : invalid_nested_default.instances)
+            instance.definition = invalid_nested_default.definitions[0].id;
+        error("invalid_public_parameter_value",
+              [&] { validate_hierarchy(invalid_nested_default); });
+
+        auto valid_nested_binding = nested();
+        auto &valid_inner_parameter = valid_nested_binding.definitions[0].parameters[0];
+        valid_inner_parameter.has_minimum = true;
+        valid_inner_parameter.minimum = 100;
+        valid_inner_parameter.has_maximum = true;
+        valid_inner_parameter.maximum = 5000;
+        valid_nested_binding.definitions[1].parameters[0].value = 3000;
+        validate_hierarchy(valid_nested_binding);
+        const auto nested_result = execute(compile(valid_nested_binding));
+        const auto first_output = expanded_uuid({id(20), id(31)}, id(11));
+        const auto expected = 10 - 8 * std::exp(-valid_nested_binding.profile.stop / .003);
+        require(std::abs(output(nested_result, first_output) - expected) < 1e-5,
+                "Valid nested public parameter binding preserves the numerical value");
+    }
     bad = p;
     bad.definitions[0].parameters[0].has_minimum = false;
     bad.definitions[0].parameters[0].has_maximum = false;
