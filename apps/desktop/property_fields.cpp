@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFormLayout>
+#include <QFrame>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
@@ -21,10 +22,12 @@
 #include <QPushButton>
 #include <QPixmap>
 #include <QScopedValueRollback>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QVBoxLayout>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -105,12 +108,28 @@ void ensure_three_phase_source_variant(Project &project, unsigned connection) {
 } // namespace
 QWidget *EditorWindow::create_inspector_page() {
     auto *page = new QWidget;
-    properties_ = new QFormLayout(page);
+    auto *page_layout = new QVBoxLayout(page);
+    page_layout->setContentsMargins(0, 0, 0, 0);
+    auto *scroll = new QScrollArea;
+    scroll->setObjectName("property_scroll_area");
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto *contents = new QWidget;
+    properties_ = new QFormLayout(contents);
     properties_->setContentsMargins(16, 18, 16, 18);
     properties_->setVerticalSpacing(14);
     properties_->setRowWrapPolicy(QFormLayout::DontWrapRows);
     properties_->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    properties_->setSizeConstraint(QLayout::SetMinAndMaxSize);
+    scroll->setWidget(contents);
+    page_layout->addWidget(scroll);
 
+    inspector_description_ = new QLabel;
+    inspector_description_->setObjectName("property_description");
+    inspector_description_->setWordWrap(true);
+    inspector_description_->setStyleSheet("color:palette(text);padding:4px 0 10px 0;");
+    properties_->addRow(inspector_description_);
     inspector_hint_ = new QLabel(text("inspector_empty"));
     inspector_hint_->setWordWrap(true);
     inspector_hint_->setStyleSheet("color:palette(placeholder-text);padding:18px 0;");
@@ -119,11 +138,6 @@ QWidget *EditorWindow::create_inspector_page() {
     inspector_type_->setObjectName("property_native_type");
     inspector_type_->setStyleSheet("color:palette(placeholder-text);");
     properties_->addRow(text("native_type"), inspector_type_);
-    inspector_description_ = new QLabel;
-    inspector_description_->setObjectName("property_description");
-    inspector_description_->setWordWrap(true);
-    inspector_description_->setStyleSheet("color:palette(text);padding:4px 0 10px 0;");
-    properties_->addRow(inspector_description_);
 
     property_editors_.clear();
     property_imports_.clear();
@@ -600,7 +614,7 @@ void EditorWindow::fill_inspector() {
         model_variables.sort(Qt::CaseInsensitive);
     } catch (const std::exception &) {
     }
-    int row = 2;
+    int row = 3;
     QString current_group;
     for (const auto &ordered_key : field_order) {
         const auto found = common.find(ordered_key);

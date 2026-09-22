@@ -36,6 +36,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSettings>
+#include <QScrollArea>
 #include <QSpinBox>
 #include <QStyleOptionGraphicsItem>
 #include <QTabWidget>
@@ -3013,6 +3014,11 @@ class InteractionTests : public QObject {
         QCOMPARE(right_tabs->count(),2);
         QCOMPARE(right_tabs->tabText(0),QString("Переменные"));
         QCOMPARE(right_tabs->tabText(1),QString("Свойства"));
+        auto *property_scroll=w.findChild<QScrollArea *>("property_scroll_area");
+        auto *description=w.findChild<QLabel *>("property_description");
+        auto *native_type=w.findChild<QLabel *>("property_native_type");
+        QVERIFY(property_scroll&&property_scroll->widgetResizable());
+        QVERIFY(description&&native_type&&description->geometry().top()<native_type->geometry().top());
         auto *value=w.findChild<QLineEdit *>("property_value");QVERIFY(value);
         QVERIFY(value->completer());
         value->clear();QTest::keyClicks(value,"b");
@@ -3020,6 +3026,8 @@ class InteractionTests : public QObject {
         value->setText("base * factor");
         auto *calculated=value->findChild<QLabel *>("calculated_value");
         QVERIFY(calculated&&calculated->isVisible()&&!calculated->text().isEmpty());
+        QCOMPARE(value->height(),34);
+        QVERIFY(value->textMargins().right()>=calculated->width());
         QTest::mouseClick(w.findChild<QPushButton *>("apply_properties"),Qt::LeftButton);
         QCOMPARE(w.project().components[1].value,4000.0);
         QCOMPARE(w.project().parameter_expressions.size(),size_t(1));

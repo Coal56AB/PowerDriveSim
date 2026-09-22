@@ -14,8 +14,11 @@ namespace pds::desktop {
 class ExpressionLineEdit final : public QLineEdit {
   public:
     explicit ExpressionLineEdit(QWidget *parent = nullptr) : QLineEdit(parent) {
+        setFixedHeight(34);
+        setMinimumWidth(150);
         value_ = new QLabel(this);
         value_->setObjectName("calculated_value");
+        value_->setTextFormat(Qt::PlainText);
         value_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         value_->setStyleSheet("QLabel{background:palette(alternate-base);color:palette(placeholder-text);"
                               "border-left:1px solid palette(mid);padding:0 7px;}");
