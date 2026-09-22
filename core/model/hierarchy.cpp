@@ -172,6 +172,7 @@ void validate_schematic(const Project &p) {
     objects(p.tags);
     objects(p.patterns);
     objects(p.plots);
+    objects(p.code_blocks);
     objects(p.instances);
     for (const auto &i : p.instances) {
         const auto &d = definition(p, i.definition);
@@ -284,6 +285,7 @@ FlattenedProject flatten(const Project &source) {
         remember(source.tags);
         remember(source.patterns);
         remember(source.plots);
+        remember(source.code_blocks);
         remember(source.wires);
         return result;
     }
@@ -338,6 +340,7 @@ FlattenedProject flatten(const Project &source) {
         }
         objects(s.patterns, flat.patterns);
         objects(s.plots, flat.plots);
+        objects(s.code_blocks, flat.code_blocks);
         auto add = [&](const std::string &object, const std::string &port) {
             endpoints[endpoint_key({object, port})] = {id(object), port};
         };
@@ -359,6 +362,12 @@ FlattenedProject flatten(const Project &source) {
         for (const auto &p : s.plots)
             for (unsigned n = 1; n <= p.inputs; ++n)
                 add(p.id, "in" + std::to_string(n));
+        for (const auto &block : s.code_blocks) {
+            for (const auto &port : block.inputs)
+                add(block.id, port.id);
+            for (const auto &port : block.outputs)
+                add(block.id, port.id);
+        }
         for (const auto &i : s.instances) {
             const auto &d = definition(source, i.definition);
             Schematic body = d;

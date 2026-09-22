@@ -53,6 +53,12 @@ PortType port_type(const Project& p,const Endpoint& e) {
         for(unsigned i=1;i<=plot.inputs;++i)
             if(e.port==(plot.differential?"p":"in")+std::to_string(i)||
                (plot.differential&&e.port=="n"+std::to_string(i)))return {Domain::signal,Direction::input};
+    for(const auto& block:p.code_blocks)if(block.id==e.object) {
+        for(const auto& input:block.inputs)if(input.id==e.port)
+            return {input.type==SignalScalarType::boolean?Domain::gate:Domain::signal,Direction::input};
+        for(const auto& output:block.outputs)if(output.id==e.port)
+            return {output.type==SignalScalarType::boolean?Domain::gate:Domain::signal,Direction::output};
+    }
     throw Diagnostic("missing_port",e.object,"Port does not exist: "+e.port);
 }
 void validate_wire(const Project& p,const Wire& w) {

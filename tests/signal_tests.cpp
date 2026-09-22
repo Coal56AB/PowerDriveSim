@@ -1,4 +1,6 @@
 #include "core/solver/reference/signal.hpp"
+#include "core/model/hierarchy.hpp"
+#include "core/model/connectivity.hpp"
 
 #include <cmath>
 #include <functional>
@@ -94,6 +96,39 @@ int main() {
         SignalFrame future{{signal_endpoint_key({sensor, "out"}),
                             {SignalScalarType::real, "V", 1, .2, true}}};
         error("invalid_signal_frame", [&] { (void)run_signal_tasks(ir, future_state, 0, future); });
+
+        Project nested;
+        nested.id = derived_uuid("code-hierarchy-root");
+        nested.wired = true;
+        Definition body;
+        body.id = derived_uuid("code-hierarchy-definition");
+        body.wired = true;
+        CodeBlock block;
+        block.id = derived_uuid("code-hierarchy-block");
+        block.name = "Logic";
+        block.x = 10;
+        block.code = "out = 1;";
+        block.outputs = {{derived_uuid("code-hierarchy-output"), "out", "", SignalScalarType::real, 0}};
+        body.code_blocks.push_back(block);
+        const auto public_output = derived_uuid("code-hierarchy-public-output");
+        body.ports.push_back({public_output, "out", {block.id, block.outputs[0].id},
+                              Domain::signal, Direction::output});
+        nested.definitions.push_back(body);
+        const auto first = derived_uuid("code-hierarchy-first");
+        const auto second = derived_uuid("code-hierarchy-second");
+        nested.instances = {{first, "First", body.id, 100, 0}, {second, "Second", body.id, 200, 0}};
+        const auto flattened = flatten(nested);
+        check(flattened.project.code_blocks.size() == 2, "Code blocks survive hierarchy expansion");
+        check(flattened.project.code_blocks[0].id == expanded_uuid({first}, block.id) &&
+                  flattened.project.code_blocks[1].id == expanded_uuid({second}, block.id),
+              "Code blocks have independent instance identities");
+        check(flattened.project.code_blocks[0].x == 110 && flattened.project.code_blocks[1].x == 210 &&
+                  flattened.origins.at(flattened.project.code_blocks[1].id).instances ==
+                      std::vector<std::string>{second},
+              "Code block geometry and origin follow the instance");
+        check(flattened.terminals.at(endpoint_key({second, public_output})) ==
+                  Endpoint{expanded_uuid({second}, block.id), block.outputs[0].id},
+              "Public code-block port resolves to the expanded instance");
         std::cout << "PASS typed causal Signal IR and deterministic C scheduler\n";
         return 0;
     } catch (const std::exception &exception) {
