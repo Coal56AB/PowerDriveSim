@@ -101,6 +101,9 @@ int main(int argc, char **argv) try {
         for (size_t k = 0; k < a.samples.size(); ++k)
             check(a.samples[k].values == b.samples[k].values, "Stable six-leg commutation");
     }
+    p.profile.stop = .06;
+    p.profile.method = Method::trapezoidal;
+    verify(p);
     std::cout << "PASS open-end winding levels, RL response, power, energy and expansion\n";
     return 0;
 } catch (const std::exception &e) {

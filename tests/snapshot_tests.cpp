@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <string_view>
 using namespace pds;
 static void check(bool ok, const char *message) {
     if (!ok)
@@ -130,6 +131,18 @@ int main(int argc, char **argv) try {
             check(cancelled.cancelled && cancelled.snapshot && cancelled.snapshot->time == 0,
                   "Stop before first step still captures initialized state");
             check(run(ir, &*cancelled.snapshot, 1).accepted_steps == 1, "Initialized checkpoint resumes");
+        }
+        if (std::string_view(name) == "open-end-winding") {
+            project.profile.method = Method::trapezoidal;
+            project.profile.stop = .06;
+            const auto ir = compile(project);
+            const auto expected = execute(ir);
+            const auto first = run(ir, nullptr, 19000);
+            check(first.snapshot && first.snapshot->time > .037 && first.snapshot->time < .039,
+                  "Long periodic run pauses before later Gate edges");
+            const auto resumed = run(ir, &*first.snapshot, 0);
+            for (size_t k = 0; k < resumed.samples.size(); ++k)
+                compare(resumed.samples[k], expected.samples.at(first.accepted_steps + k));
         }
         std::cout << "PASS checkpoint " << name << '\n';
     }

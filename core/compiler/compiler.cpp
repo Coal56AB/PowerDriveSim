@@ -379,12 +379,28 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         std::erase_if(project.events,[&](const GateEvent& event){return event.target==g.id;});
     (void)resolve_connections(project); // Validate active parameters before generating scheduled edges.
     if(!std::isfinite(project.profile.stop)||project.profile.stop<=0)throw Diagnostic("invalid_profile",project.id,"Stop time must be positive and finite");
+    // A computed periodic edge may differ from the same fixed-grid instant by
+    // one rounding bit. Use the exact grid timestamp to avoid a spurious tiny
+    // step that records the old gate state at that instant.
+    auto generated_time = [&](double time) {
+        if (!std::isfinite(project.profile.step) || project.profile.step <= 0)
+            return time;
+        const double grid = std::round(time / project.profile.step);
+        if (!std::isfinite(grid) || grid > std::ldexp(1.0, 53))
+            return time;
+        const double aligned = grid * project.profile.step;
+        const double tolerance = 64 * std::numeric_limits<double>::epsilon() *
+                                 std::max({1.0, std::abs(time), std::abs(aligned)});
+        return std::abs(time - aligned) <= tolerance ? aligned : time;
+    };
     size_t generated=0;
     auto generated_edge = [&](const GatePattern &g, double time, bool state, size_t &generated) {
         const double tolerance = 64 * std::numeric_limits<double>::epsilon() *
                                  std::max({1.0, std::abs(time), std::abs(project.profile.stop)});
         if(time>0&&time<=project.profile.stop+tolerance){
             if(time>project.profile.stop)time=project.profile.stop;
+            time=std::min(generated_time(time),project.profile.stop);
+            if(time<=0)return;
             if(++generated>1000000)throw Diagnostic("pwm_event_limit",g.id,"Generated gate signal exceeds one million edges; reduce frequency, script step or duration");
             project.events.push_back({time,g.id,state});
         }
@@ -429,6 +445,8 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
                             std::max({1.0,std::abs(time),std::abs(project.profile.stop)});
                         if(time>0&&time<=project.profile.stop+tolerance) {
                             if(time>project.profile.stop)time=project.profile.stop;
+                            time=std::min(generated_time(time),project.profile.stop);
+                            if(time<=0)return;
                             candidate_events.push_back({time,output.id,state});
                         }
                     };
@@ -466,6 +484,8 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
                                              std::max({1.0, std::abs(time), std::abs(project.profile.stop)});
                     if(time>0&&time<=project.profile.stop+tolerance) {
                         if(time>project.profile.stop)time=project.profile.stop;
+                        time=std::min(generated_time(time),project.profile.stop);
+                        if(time<=0)return;
                         candidate_events.push_back({time,g.id,state});
                     }
                 };

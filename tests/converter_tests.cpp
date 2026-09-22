@@ -194,6 +194,10 @@ int main(int argc, char **argv) try {
             project.profile.method = method;
             verify_response(project, npc);
         }
+        auto extended = project;
+        extended.profile.method = Method::backward_euler;
+        extended.profile.stop = .06;
+        verify_response(extended, npc);
         verify_editing(project, npc);
         auto shorted = project;
         for (auto &body : shorted.definitions)
