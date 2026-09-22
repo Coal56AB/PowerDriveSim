@@ -971,8 +971,15 @@ void Canvas::mouseDoubleClickEvent(QMouseEvent *e) {
     if (auto *object = object_at(e->pos()); object && object->data(10).toBool()) {
         cancel_wire();
         gesture_ = Gesture::idle;
-        if (open_object)
-            open_object(object->data(0).toString().toStdString());
+        const auto id = object->data(0).toString().toStdString();
+        // Rebuilding a hierarchy scene deletes the clicked graphics item.
+        // Defer that rebuild until Qt has completely unwound the current
+        // double-click dispatch; deleting it from inside dispatch can hang the
+        // native Windows graphics scene, especially for read-only instances.
+        QTimer::singleShot(0, this, [this, id] {
+            if (open_object)
+                open_object(id);
+        });
         e->accept();
         return;
     }

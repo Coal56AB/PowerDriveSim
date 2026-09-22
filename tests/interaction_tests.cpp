@@ -210,6 +210,7 @@ class InteractionTests : public QObject {
         if (!qEnvironmentVariableIsEmpty("PDS_CATALOG_SCREENSHOT")) QVERIFY(w.grab().save(qEnvironmentVariable("PDS_CATALOG_SCREENSHOT")));
         QTest::mouseDClick(viewport, Qt::LeftButton, Qt::NoModifier,
                           w.canvas()->mapFromScene(item(w, id)->sceneBoundingRect().center()));
+        QVERIFY(w.hierarchy_path().empty());
         QTRY_COMPARE(w.hierarchy_path().size(), size_t(1));
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QTest::qWait(30);
