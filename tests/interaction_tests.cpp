@@ -3071,6 +3071,8 @@ class InteractionTests : public QObject {
         code->setPlainText("double curr_ramp = ramp(0, 10, 0.008333333, 0.001111111); "
                            "return phasepwm(50, 0.02, curr_ramp) && stime == t;");
         compile->click();QCOMPARE(error->text(),QString("Code compiled successfully."));
+        code->setPlainText("while (true) {} return false;");
+        compile->click();QVERIFY2(error->text().contains("budget"),qPrintable(error->text()));
         auto* outputs=w.findChild<QSpinBox*>("property_gate_outputs");
         QVERIFY(outputs);outputs->setValue(6);
         code->setPlainText("for (int ind = 0; ind < 6; ++ind) IN[ind] = phasepwm(50, 0.02, ind / 300.0);");
@@ -3079,13 +3081,13 @@ class InteractionTests : public QObject {
         QCOMPARE(w.project().patterns.front().outputs,6u);
         w.select_object(w.project().patterns.front().id);
         code=w.findChild<QPlainTextEdit*>("property_gate_code");
+        compile=w.findChild<QPushButton*>("compile_gate_code");
+        error=w.findChild<QLabel*>("property_error");
         auto* updated_editor=dynamic_cast<CCodeEdit*>(code);QVERIFY(updated_editor);
         code->setPlainText("I");code->moveCursor(QTextCursor::End);
         QTest::keyClick(code,Qt::Key_Space,Qt::ControlModifier);
         QVERIFY(updated_editor->code_completer()->completionCount()>0);
         QVERIFY(!w.findChild<QLineEdit *>("property_script_step"));
-        code->setPlainText("while (true) {} return false;");
-        compile->click();QVERIFY(error->text().contains("budget"));
     }
     void simulation_snapshots_and_step() {
         QTemporaryDir dir;

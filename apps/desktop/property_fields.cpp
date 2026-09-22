@@ -801,7 +801,7 @@ void EditorWindow::compile_inspector_code() {
         if(outputs>1){options.external_arrays["IN"]=outputs;options.writable_arrays.insert("IN");}
         const auto source=field_text(property_editors_.at("gate_code")).toStdString();
         std::map<std::string,double> values;
-        for(unsigned index=0;index<outputs;++index)values["IN["+std::to_string(index)+"]"]=0;
+        if(outputs>1)for(unsigned index=0;index<outputs;++index)values["IN["+std::to_string(index)+"]"]=0;
         (void)execute_c_program(compile_c_program(source,options),0,nullptr,values);
         property_error_->setText(text("code_valid"));
     } catch(const std::exception &error) { property_error_->setText(QString::fromUtf8(error.what())); }
