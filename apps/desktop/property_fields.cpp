@@ -11,10 +11,13 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QCompleter>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QFrame>
+#include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
@@ -155,6 +158,10 @@ QWidget *EditorWindow::create_inspector_page() {
     format_code_button_->setObjectName("format_gate_code");
     format_code_button_->hide();
     properties_->addRow(format_code_button_);
+    expand_code_button_ = new QPushButton(text("open_code_editor"));
+    expand_code_button_->setObjectName("expand_gate_code");
+    expand_code_button_->hide();
+    properties_->addRow(expand_code_button_);
     property_error_ = new QLabel;
     property_error_->setObjectName("property_error");
     property_error_->setStyleSheet("color:palette(bright-text)");
@@ -168,6 +175,7 @@ QWidget *EditorWindow::create_inspector_page() {
             if (auto *editor = dynamic_cast<CCodeEdit *>(found->second))
                 editor->format_code();
     });
+    connect(expand_code_button_, &QPushButton::clicked, this, &EditorWindow::open_full_code_editor);
     return page;
 }
 void EditorWindow::update_workspace_variables() {
@@ -786,8 +794,48 @@ void EditorWindow::fill_inspector() {
         }
     compile_code_button_->setVisible(gate_code);
     format_code_button_->setVisible(gate_code);
+    expand_code_button_->setVisible(gate_code);
     update_command_state();
     publish();
+}
+void EditorWindow::open_full_code_editor() {
+    if(!editing_allowed()||selected_.empty()||!property_editors_.contains("gate_code"))return;
+    auto* compact=dynamic_cast<CCodeEdit*>(property_editors_.at("gate_code"));
+    if(!compact)return;
+    unsigned outputs=1;
+    if(auto found=property_editors_.find("gate_outputs");found!=property_editors_.end())
+        if(auto* spin=qobject_cast<QSpinBox*>(found->second))outputs=unsigned(spin->value());
+    QDialog dialog(this);dialog.setObjectName("full_gate_code_dialog");
+    dialog.setWindowTitle(text("gate_code_editor"));
+    auto* layout=new QVBoxLayout(&dialog);
+    auto* editor=new CCodeEdit(true,&dialog);editor->setObjectName("full_gate_code");
+    editor->set_gate_outputs(outputs);editor->setPlainText(compact->toPlainText());
+    layout->addWidget(editor,1);
+    auto* status=new QLabel(&dialog);status->setObjectName("full_gate_code_status");status->setWordWrap(true);
+    layout->addWidget(status);
+    auto* row=new QHBoxLayout;
+    auto* format=new QPushButton(text("format_code"),&dialog);
+    auto* compile=new QPushButton(text("compile_code"),&dialog);
+    format->setObjectName("full_gate_code_format");compile->setObjectName("full_gate_code_compile");
+    row->addWidget(format);row->addWidget(compile);row->addStretch();
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel,&dialog);
+    row->addWidget(buttons);layout->addLayout(row);
+    connect(format,&QPushButton::clicked,editor,&CCodeEdit::format_code);
+    connect(compile,&QPushButton::clicked,&dialog,[=] {
+        try {
+            CProgramOptions options;options.diagnostic_code="invalid_gate_script";options.object=selected_;
+            options.allow_time=true;options.allow_gate_functions=true;options.require_return=outputs==1;
+            std::map<std::string,double> values;
+            if(outputs>1){options.external_arrays["IN"]=outputs;options.writable_arrays.insert("IN");
+                for(unsigned index=0;index<outputs;++index)values["IN["+std::to_string(index)+"]"]=0;}
+            (void)execute_c_program(compile_c_program(editor->toPlainText().toStdString(),options),0,nullptr,values);
+            status->setText(text("code_valid"));
+        } catch(const std::exception& error) { status->setText(QString::fromUtf8(error.what())); }
+    });
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    dialog.setWindowState(dialog.windowState()|Qt::WindowMaximized);
+    if(dialog.exec()==QDialog::Accepted)compact->setPlainText(editor->toPlainText());
 }
 void EditorWindow::compile_inspector_code() {
     if(!editing_allowed()||selected_.empty()||!property_editors_.contains("gate_code"))return;

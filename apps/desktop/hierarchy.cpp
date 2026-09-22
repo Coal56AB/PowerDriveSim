@@ -150,7 +150,11 @@ void EditorWindow::navigate_hierarchy(const std::vector<std::string> &path) {
         cancel_inline_edit();
         canvas_->cancel_gesture();
         document_->navigate(path);
-        refresh(false);
+        // The root model did not change. Rebuilding the channel catalog here
+        // recompiles and flattens the whole project while the native double
+        // click is still settling, which can make large locked libraries look
+        // like a modal-window loop. Navigation only needs a new scene.
+        refresh(false, true);
         canvas_->fitInView(canvas_->scene()->itemsBoundingRect().adjusted(-70, -70, 70, 70),
                            Qt::KeepAspectRatio);
     } catch (const std::exception &e) {

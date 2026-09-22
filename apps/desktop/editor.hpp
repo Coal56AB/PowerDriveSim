@@ -395,7 +395,8 @@ class EditorWindow : public QMainWindow {
     QLabel *banner_ = nullptr;
     QProgressBar *simulation_progress_ = nullptr;
     QLabel *inspector_hint_ = nullptr, *inspector_type_ = nullptr, *inspector_description_ = nullptr;
-    QPushButton *apply_button_ = nullptr, *compile_code_button_ = nullptr, *format_code_button_ = nullptr;
+    QPushButton *apply_button_ = nullptr, *compile_code_button_ = nullptr, *format_code_button_ = nullptr,
+                *expand_code_button_ = nullptr;
     QAction *run_ = nullptr, *stop_action_ = nullptr, *undo_ = nullptr, *redo_ = nullptr;
     QFutureWatcher<Outcome> watcher_;
     std::atomic_bool cancel_{false};
@@ -448,6 +449,7 @@ class EditorWindow : public QMainWindow {
     void edit_workspace_variable(int row, int column);
     void update_properties_tab(bool visible);
     void compile_inspector_code();
+    void open_full_code_editor();
     bool edit_text_at(QPoint position);
     void cancel_inline_edit();
     bool commit_inline_edit();
@@ -484,7 +486,7 @@ class EditorWindow : public QMainWindow {
     void configure_autosave();
     void update_autosave_timer();
     void configure_grid();
-    void refresh(bool invalidate = true);
+    void refresh(bool invalidate = true, bool navigation_only = false);
     void refresh_canvas(bool invalidate = true, bool topology = true);
     void rebuild_scene();
     void update_wires();

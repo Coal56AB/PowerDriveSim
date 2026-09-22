@@ -144,6 +144,8 @@
   "gate_mode_script": "Код",
   "gate_code": "Код gate",
   "gate_outputs": "Количество выходов",
+  "open_code_editor": "Открыть редактор на весь экран",
+  "gate_code_editor": "Редактор C-кода Gate",
   "script_step": "Шаг проверки кода, с",
   "tag": "Tag · Метка соединения",
   "tag_domain": "Тип метки",

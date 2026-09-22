@@ -2176,7 +2176,7 @@ bool EditorWindow::recover(const QString &path) {
     banner_->setText(text("recovered"));
     return true;
 }
-void EditorWindow::refresh(bool invalidate) {
+void EditorWindow::refresh(bool invalidate, bool navigation_only) {
     rebuilding_ = true;
     if (scene_path_ != hierarchy_path()) {
         canvas_->cancel_gesture();
@@ -2196,7 +2196,7 @@ void EditorWindow::refresh(bool invalidate) {
         hierarchy_edit_enabled_ = false;
         topology_dirty_ = true;
     }
-    update_instance_specs();
+    if(!navigation_only)update_instance_specs();
     const bool model_changed = !scene_project_ || !same_simulation(*scene_project_, project());
     auto labels = [](const Project &p) {
         std::map<std::string, std::string> result;
@@ -2250,8 +2250,8 @@ void EditorWindow::refresh(bool invalidate) {
     method_->setCurrentIndex(project().profile.method == Method::trapezoidal ? 1 : 0);
     undo_->setEnabled(document_->can_undo() && !running());
     redo_->setEnabled(document_->can_redo() && !running());
-    sync_scope();
-    if (model_changed || labels_changed || recording_changed)
+    if(!navigation_only)sync_scope();
+    if (!navigation_only && (model_changed || labels_changed || recording_changed))
         refresh_channel_catalog();
     if (labels_changed && result_) {
         try {
@@ -2268,8 +2268,10 @@ void EditorWindow::refresh(bool invalidate) {
     if (scope_)
         scope_->set_result(result_ ? &*result_ : nullptr, result_indices(project().scope_channels),
                            project());
-    update_graphs();
-    update_workspace_variables();
+    if(!navigation_only) {
+        update_graphs();
+        update_workspace_variables();
+    }
     scene_project_ = project();
     rebuilding_ = false;
     fill_inspector();

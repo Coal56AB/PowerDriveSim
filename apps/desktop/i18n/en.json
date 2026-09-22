@@ -144,6 +144,8 @@
   "gate_mode_script": "Code",
   "gate_code": "Gate code",
   "gate_outputs": "Output count",
+  "open_code_editor": "Open full-screen editor",
+  "gate_code_editor": "Gate C code editor",
   "script_step": "Code probe step, s",
   "tag": "Tag · Connection label",
   "tag_domain": "Tag type",

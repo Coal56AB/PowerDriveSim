@@ -3060,6 +3060,17 @@ class InteractionTests : public QObject {
         auto *c_editor=dynamic_cast<CCodeEdit *>(code);
         QVERIFY(code&&compile&&compile->isVisible()&&format&&format->isVisible()&&error);
         QVERIFY(c_editor&&c_editor->code_completer());
+        auto* expand=w.findChild<QPushButton*>("expand_gate_code");QVERIFY(expand&&expand->isVisible());
+        bool full_editor_opened=false;
+        QTimer::singleShot(0,&w,[&] {
+            auto* dialog=w.findChild<QDialog*>("full_gate_code_dialog");QVERIFY(dialog);
+            auto* full=dialog->findChild<QPlainTextEdit*>("full_gate_code");QVERIFY(full);
+            full->setPlainText("return true;");
+            dialog->findChild<QPushButton*>("full_gate_code_compile")->click();
+            QCOMPARE(dialog->findChild<QLabel*>("full_gate_code_status")->text(),QString("Code compiled successfully."));
+            full_editor_opened=true;dialog->accept();
+        });
+        expand->click();QVERIFY(full_editor_opened);QCOMPARE(code->toPlainText(),QString("return true;"));
         code->setPlainText("if (t > 0) {\nreturn true;\n}");
         format->click();
         QVERIFY(code->toPlainText().contains("\n    return true;\n"));
