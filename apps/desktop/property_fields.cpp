@@ -777,6 +777,13 @@ void EditorWindow::fill_inspector() {
         active_fields_.append(field);
     }
     const bool gate_code = targets.size()==1&&common.contains("gate_code");
+    if(gate_code)if(auto found=property_editors_.find("gate_code");found!=property_editors_.end())
+        if(auto* editor=dynamic_cast<CCodeEdit*>(found->second)) {
+            unsigned outputs=1;
+            try { outputs=std::get<unsigned>(read_property(project(),targets.front(),"gate_outputs")); }
+            catch(const std::exception&) {}
+            editor->set_gate_outputs(outputs);
+        }
     compile_code_button_->setVisible(gate_code);
     format_code_button_->setVisible(gate_code);
     update_command_state();
@@ -786,9 +793,16 @@ void EditorWindow::compile_inspector_code() {
     if(!editing_allowed()||selected_.empty()||!property_editors_.contains("gate_code"))return;
     try {
         CProgramOptions options;options.diagnostic_code="invalid_gate_script";options.object=selected_;
-        options.allow_time=true;options.allow_gate_functions=true;options.require_return=true;
+        options.allow_time=true;options.allow_gate_functions=true;
+        unsigned outputs=1;
+        if(auto found=property_editors_.find("gate_outputs");found!=property_editors_.end())
+            if(auto* spin=qobject_cast<QSpinBox*>(found->second))outputs=unsigned(spin->value());
+        options.require_return=outputs==1;
+        if(outputs>1){options.external_arrays["IN"]=outputs;options.writable_arrays.insert("IN");}
         const auto source=field_text(property_editors_.at("gate_code")).toStdString();
-        (void)execute_c_program(compile_c_program(source,options),0);
+        std::map<std::string,double> values;
+        for(unsigned index=0;index<outputs;++index)values["IN["+std::to_string(index)+"]"]=0;
+        (void)execute_c_program(compile_c_program(source,options),0,nullptr,values);
         property_error_->setText(text("code_valid"));
     } catch(const std::exception &error) { property_error_->setText(QString::fromUtf8(error.what())); }
 }

@@ -37,7 +37,7 @@ class CCodeHighlighter final : public QSyntaxHighlighter {
         apply(source, R"(\b(abs|fabs|sqrt|sin|cos|tan|asin|acos|atan|atan2|exp|log|log10|floor|ceil|round|pow|fmod|min|fmin|max|fmax|clamp|pwm|phasepwm|square|ramp)\s*(?=\())", function_);
         apply(source, R"((?<![A-Za-z_])(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?)", number_);
         apply(source, R"(\b[A-Za-z_][A-Za-z0-9_]*(?=\s*(?:=|\()))", declaration_);
-        apply(source, R"([{}=;,()])", punctuation_);
+        apply(source, R"([{}=;,()\[\]])", punctuation_);
         apply(source, R"("(?:\\.|[^"\\])*")", string_);
 
         int start = 0;
@@ -115,6 +115,7 @@ QString CCodeEdit::completion_prefix() const {
 
 void CCodeEdit::update_completions() {
     QStringList completions = base_completions_;
+    if(gate_outputs_>1)completions << "IN[ind]";
     const auto cursor = textCursor();
     const auto prefix = completion_prefix();
     const auto source = toPlainText().left(cursor.position() - prefix.size());

@@ -368,6 +368,10 @@ class Atom final : public QGraphicsItem {
         }
         if (type == 5)
             return {-34, -18, 108, 36};
+        if (type == 2) {
+            const double h=std::max(22.0,(std::max(1u,input_count)-1)*10.0+14.0);
+            return {-78,-h-31,156,2*h+82};
+        }
         return type == 1 ? QRectF(-46, -12, 92, 68) : QRectF(-78, -53, 156, 104);
     }
     QPainterPath shape() const override {
@@ -393,7 +397,8 @@ class Atom final : public QGraphicsItem {
             if (!separate_labels)
                 path.addRect(QRectF(-78, h + 7, 156, 24));
         } else {
-            path.addRect(type == 2 ? QRectF(-38, -22, 76, 44) : QRectF(-29, -28, 58, 56));
+            const double gate_h=std::max(22.0,(std::max(1u,input_count)-1)*10.0+14.0);
+            path.addRect(type == 2 ? QRectF(-38, -gate_h, 76, 2*gate_h) : QRectF(-29, -28, 58, 56));
             if (!separate_labels)
                 path.addRect(QRectF(-77, 28, 154, 22));
             if (!separate_labels && !value.isEmpty())
@@ -817,10 +822,15 @@ class Atom final : public QGraphicsItem {
             return;
         }
         if (type == 2) {
+            const double h=std::max(22.0,(std::max(1u,input_count)-1)*10.0+14.0);
             p->setBrush(theme_colors().gate_fill);
-            p->drawRoundedRect(QRectF(-38, -22, 76, 44), 7, 7);
-            label(p, QRectF(-38, -22, 76, 44), Qt::AlignCenter, symbol.isEmpty() ? QString("Gate") : symbol);
-            p->drawLine(38, 0, 60, 0);
+            p->drawRoundedRect(QRectF(-38, -h, 76, 2*h), 7, 7);
+            label(p, QRectF(-38, -h, 76, 2*h), Qt::AlignCenter, symbol.isEmpty() ? QString("Gate") : symbol);
+            for(unsigned index=0;index<input_count;++index) {
+                const double y=(double(index)-double(input_count-1)/2.0)*20.0;
+                p->drawLine(38,y,60,y);
+                if(input_count>1)label(p,QRectF(39,y-9,18,18),Qt::AlignCenter,QString::number(index));
+            }
         } else {
             p->drawLine(-60, 0, -27, 0);
             p->drawLine(27, 0, 60, 0);
@@ -2364,10 +2374,18 @@ void EditorWindow::rebuild_scene() {
     }
     for (const auto &g : project().patterns) {
         auto *a = atom(g.id, g.name, g.script ? QString("Code") : g.pwm ? QString("PWM") : QString(), 2);
+        if(a->input_count!=g.outputs)a->prepareGeometryChangeForInputs(g.outputs);
+        const double gate_h=std::max(22.0,(std::max(1u,g.outputs)-1)*10.0+14.0);
+        a->setData(15,QRectF(-38,-gate_h,76,2*gate_h));
         a->value = g.script ? QString()
                   : g.pwm   ? QString::number(g.frequency) + " Hz · " + QString::number(g.duty * 100) + " %"
                             : QString();
-        ports(a, {{"out", {60, 0}}}, QColor("#17866d"));
+        std::vector<std::pair<QString,QPointF>> list;
+        for(unsigned index=0;index<g.outputs;++index) {
+            const double y=(double(index)-double(g.outputs-1)/2.0)*20.0;
+            list.push_back({index==0?QString("out"):QString("out")+QString::number(index),{60,y}});
+        }
+        ports(a, list, QColor("#17866d"));
     }
     for (const auto &g : project().plots) {
         auto *a = atom(g.id, g.name, {}, 3);

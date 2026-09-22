@@ -259,6 +259,8 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return g.delay;
             if (key == "gate_code")
                 return g.code;
+            if (key == "gate_outputs")
+                return g.outputs;
             if (key == "script_step")
                 return g.script_step;
         }
@@ -479,7 +481,14 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 if (g.pwm && g.frequency <= 0)
                     g.frequency = 1000;
                 if (g.script && g.code.empty())
-                    g.code = "pwm(1000, 0.5, 0)";
+                    g.code = "return pwm(1000, 0.5, 0);";
+                if (!g.script && g.outputs > 1) {
+                    g.outputs = 1;
+                    std::erase_if(p.wires,[&](const Wire& wire) {
+                        auto removed=[&](const Endpoint& endpoint){return endpoint.object==id&&endpoint.port!="out";};
+                        return removed(wire.from)||removed(wire.to);
+                    });
+                }
                 return;
             }
             if (key == "closed")
@@ -492,6 +501,19 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 g.delay = std::get<double>(value);
             if (key == "gate_code")
                 g.code = std::get<std::string>(value);
+            if (key == "gate_outputs") {
+                const auto outputs=std::get<unsigned>(value);
+                if(outputs<1||outputs>16)throw Diagnostic("invalid_gate_outputs",id,"Gate requires 1..16 outputs");
+                g.outputs=outputs;
+                std::erase_if(p.wires,[&](const Wire& wire) {
+                    auto removed=[&](const Endpoint& endpoint) {
+                        if(endpoint.object!=id||endpoint.port=="out")return false;
+                        if(endpoint.port.rfind("out",0)!=0)return true;
+                        try{return std::stoul(endpoint.port.substr(3))>=outputs;}catch(...){return true;}
+                    };
+                    return removed(wire.from)||removed(wire.to);
+                });
+            }
             if (key == "script_step")
                 g.script_step = std::get<double>(value);
             return;
