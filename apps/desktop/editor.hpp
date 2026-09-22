@@ -325,6 +325,7 @@ class EditorWindow : public QMainWindow {
     std::string add_node(bool ground, QPointF point);
     std::string add_pattern(QPointF point);
     std::string add_plot(QPointF point);
+    std::string add_code_block(QPointF point);
     bool connect_ports(Endpoint from, Endpoint to);
     QPointF port_position(const Endpoint &endpoint) const;
     void start_simulation();
@@ -457,6 +458,7 @@ class EditorWindow : public QMainWindow {
     void update_properties_tab(bool visible);
     void compile_inspector_code();
     void open_full_code_editor();
+    void edit_code_block(const std::string &id);
     bool edit_text_at(QPoint position);
     void cancel_inline_edit();
     bool commit_inline_edit();

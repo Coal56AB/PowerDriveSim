@@ -1,6 +1,9 @@
 #include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/code_editor.hpp"
+#include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
+#include "core/model/c_program.hpp"
 #include "formats/project/project.hpp"
 #include <QAction>
 #include <QApplication>
@@ -13,6 +16,7 @@
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QKeySequenceEdit>
 #include <QLabel>
 #include <QLineEdit>
@@ -25,6 +29,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QTableWidget>
+#include <QTabWidget>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -33,6 +38,252 @@
 #include <set>
 #include <sstream>
 namespace pds::desktop {
+void EditorWindow::edit_code_block(const std::string &id) {
+    if (!editing_allowed())
+        return;
+    const auto found = std::find_if(project().code_blocks.begin(), project().code_blocks.end(),
+                                    [&](const CodeBlock &block) { return block.id == id; });
+    if (found == project().code_blocks.end())
+        return;
+    const CodeBlock original = *found;
+    QDialog dialog(this);
+    dialog.setObjectName("code_block_dialog");
+    dialog.setWindowTitle(text("edit_code_block"));
+    dialog.resize(900, 720);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *form = new QFormLayout;
+    auto *name = new QLineEdit(QString::fromStdString(original.name));
+    auto *period = new QLineEdit(engineering_value(original.period, "s"));
+    auto *phase = new QLineEdit(engineering_value(original.phase, "s"));
+    name->setObjectName("code_block_name");
+    period->setObjectName("code_block_period");
+    phase->setObjectName("code_block_phase");
+    normalize_decimal_point(period);
+    normalize_decimal_point(phase);
+    form->addRow(text("name"), name);
+    form->addRow(text("code_block_period"), period);
+    form->addRow(text("code_block_phase"), phase);
+    layout->addLayout(form);
+
+    auto *tabs = new QTabWidget;
+    struct PortTable { QTableWidget *table = nullptr; bool input = false; };
+    auto make_table = [&](const std::vector<CodePort> &ports, bool input) {
+        auto *page = new QWidget;
+        auto *page_layout = new QVBoxLayout(page);
+        auto *table = new QTableWidget(0, 4);
+        table->setObjectName(input ? "code_block_inputs" : "code_block_outputs");
+        table->setHorizontalHeaderLabels({text("name"), text("code_block_type"),
+                                          text("code_block_unit"), text("initial_value")});
+        table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+        table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+        table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+        table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Stretch);
+        table->verticalHeader()->setVisible(false);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setSelectionMode(QAbstractItemView::SingleSelection);
+        auto insert = [table](int row, const CodePort &port) {
+            table->insertRow(row);
+            auto *name_item = new QTableWidgetItem(QString::fromStdString(port.name));
+            name_item->setData(Qt::UserRole, QString::fromStdString(port.id));
+            table->setItem(row, 0, name_item);
+            auto *type = new QComboBox;
+            type->addItem("double", int(SignalScalarType::real));
+            type->addItem("bool", int(SignalScalarType::boolean));
+            type->setCurrentIndex(port.type == SignalScalarType::boolean ? 1 : 0);
+            table->setCellWidget(row, 1, type);
+            table->setItem(row, 2, new QTableWidgetItem(QString::fromStdString(port.unit)));
+            table->setItem(row, 3, new QTableWidgetItem(QString::number(port.initial, 'g', 15)));
+        };
+        for (const auto &port : ports)
+            insert(table->rowCount(), port);
+        auto *buttons = new QHBoxLayout;
+        auto *add = new QPushButton(text("add"));
+        auto *remove = new QPushButton(text("delete"));
+        auto *up = new QPushButton(text("move_up"));
+        auto *down = new QPushButton(text("move_down"));
+        add->setObjectName(input ? "add_code_input" : "add_code_output");
+        remove->setObjectName(input ? "remove_code_input" : "remove_code_output");
+        up->setObjectName(input ? "move_code_input_up" : "move_code_output_up");
+        down->setObjectName(input ? "move_code_input_down" : "move_code_output_down");
+        buttons->addWidget(add); buttons->addWidget(remove); buttons->addWidget(up); buttons->addWidget(down);
+        buttons->addStretch();
+        page_layout->addWidget(table);
+        page_layout->addLayout(buttons);
+        connect(add, &QPushButton::clicked, &dialog, [=] {
+            const QString stem = input ? "input" : "output";
+            int number = table->rowCount() + 1;
+            auto exists = [&](const QString &candidate) {
+                for (int row = 0; row < table->rowCount(); ++row)
+                    if (table->item(row, 0) && table->item(row, 0)->text() == candidate) return true;
+                return false;
+            };
+            while (exists(stem + QString::number(number))) ++number;
+            insert(table->rowCount(), {new_uuid(), (stem + QString::number(number)).toStdString(), "",
+                                       SignalScalarType::real, 0});
+            table->selectRow(table->rowCount() - 1);
+        });
+        connect(remove, &QPushButton::clicked, &dialog, [table] {
+            if (table->currentRow() >= 0) table->removeRow(table->currentRow());
+        });
+        auto swap_rows = [table](int from, int to) {
+            if (from < 0 || to < 0 || from >= table->rowCount() || to >= table->rowCount()) return;
+            struct Row { QString name, id, unit, initial; int type = 0; } rows[2];
+            for (int i = 0; i < 2; ++i) {
+                const int row = i ? to : from;
+                rows[i].name = table->item(row, 0) ? table->item(row, 0)->text() : QString();
+                rows[i].id = table->item(row, 0) ? table->item(row, 0)->data(Qt::UserRole).toString() : QString();
+                rows[i].unit = table->item(row, 2) ? table->item(row, 2)->text() : QString();
+                rows[i].initial = table->item(row, 3) ? table->item(row, 3)->text() : QString();
+                if (auto *combo = qobject_cast<QComboBox *>(table->cellWidget(row, 1))) rows[i].type = combo->currentData().toInt();
+            }
+            for (int i = 0; i < 2; ++i) {
+                const int row = i ? from : to;
+                auto *name_item = new QTableWidgetItem(rows[i].name);
+                name_item->setData(Qt::UserRole, rows[i].id);
+                table->setItem(row, 0, name_item);
+                auto *type = new QComboBox;
+                type->addItem("double", int(SignalScalarType::real));
+                type->addItem("bool", int(SignalScalarType::boolean));
+                type->setCurrentIndex(type->findData(rows[i].type));
+                table->setCellWidget(row, 1, type);
+                table->setItem(row, 2, new QTableWidgetItem(rows[i].unit));
+                table->setItem(row, 3, new QTableWidgetItem(rows[i].initial));
+            }
+            table->selectRow(to);
+        };
+        connect(up, &QPushButton::clicked, &dialog, [=] { swap_rows(table->currentRow(), table->currentRow() - 1); });
+        connect(down, &QPushButton::clicked, &dialog, [=] { swap_rows(table->currentRow(), table->currentRow() + 1); });
+        tabs->addTab(page, text(input ? "code_block_inputs" : "code_block_outputs"));
+        return PortTable{table, input};
+    };
+    const auto inputs = make_table(original.inputs, true);
+    const auto outputs = make_table(original.outputs, false);
+    layout->addWidget(tabs, 2);
+    auto *editor = new CCodeEdit(false, &dialog);
+    editor->setObjectName("code_block_code");
+    editor->setPlainText(QString::fromStdString(original.code));
+    layout->addWidget(editor, 3);
+    auto *status = new QLabel;
+    status->setObjectName("code_block_status");
+    status->setWordWrap(true);
+    layout->addWidget(status);
+    auto *bottom = new QHBoxLayout;
+    auto *format = new QPushButton(text("format_code"));
+    auto *compile_button = new QPushButton(text("compile_code"));
+    format->setObjectName("format_code_block");
+    compile_button->setObjectName("compile_code_block");
+    bottom->addWidget(format); bottom->addWidget(compile_button); bottom->addStretch();
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    bottom->addWidget(buttons);
+    layout->addLayout(bottom);
+    connect(format, &QPushButton::clicked, editor, &CCodeEdit::format_code);
+
+    auto read_ports = [&](const PortTable &source) {
+        std::vector<CodePort> result;
+        for (int row = 0; row < source.table->rowCount(); ++row) {
+            const auto *name_item = source.table->item(row, 0);
+            const auto *unit_item = source.table->item(row, 2);
+            const auto *initial_item = source.table->item(row, 3);
+            auto *type = qobject_cast<QComboBox *>(source.table->cellWidget(row, 1));
+            CodePort port;
+            port.id = name_item ? name_item->data(Qt::UserRole).toString().toStdString() : std::string();
+            if (port.id.empty()) port.id = new_uuid();
+            port.name = name_item ? name_item->text().trimmed().toStdString() : std::string();
+            port.unit = unit_item ? unit_item->text().trimmed().toStdString() : std::string();
+            port.type = type && type->currentData().toInt() == int(SignalScalarType::boolean)
+                            ? SignalScalarType::boolean : SignalScalarType::real;
+            port.initial = parse_si(initial_item ? initial_item->text().toStdString() : std::string(), port.unit);
+            result.push_back(std::move(port));
+        }
+        return result;
+    };
+    auto build = [&](bool compile_source = true) {
+        CodeBlock block = original;
+        block.name = name->text().trimmed().toStdString();
+        block.period = parse_si(period->text().toStdString(), "s");
+        block.phase = parse_si(phase->text().toStdString(), "s");
+        block.code = editor->toPlainText().toStdString();
+        block.inputs = read_ports(inputs);
+        block.outputs = read_ports(outputs);
+        if (block.name.empty()) throw std::runtime_error(text("code_block_name_required").toStdString());
+        if (!std::isfinite(block.period) || block.period <= 0 || !std::isfinite(block.phase) || block.phase < 0)
+            throw std::runtime_error(text("code_block_schedule_error").toStdString());
+        if (block.code.empty() || block.outputs.empty())
+            throw std::runtime_error(text("code_block_output_required").toStdString());
+        QRegularExpression identifier("^[A-Za-z_][A-Za-z0-9_]*$");
+        std::set<std::string> names{"t", "stime", "dt"};
+        std::set<std::string> ids;
+        auto validate = [&](const CodePort &port) {
+            if (!valid_uuid(port.id) || !ids.insert(port.id).second ||
+                !identifier.match(QString::fromStdString(port.name)).hasMatch() || !names.insert(port.name).second)
+                throw std::runtime_error(text("code_block_port_error").arg(QString::fromStdString(port.name)).toStdString());
+            if (!std::isfinite(port.initial) ||
+                (port.type == SignalScalarType::boolean && port.initial != 0 && port.initial != 1))
+                throw std::runtime_error(text("code_block_initial_error").arg(QString::fromStdString(port.name)).toStdString());
+        };
+        for (const auto &port : block.inputs) validate(port);
+        for (const auto &port : block.outputs) validate(port);
+        if (compile_source) {
+            CProgramOptions options;
+            options.diagnostic_code = "invalid_code_block";
+            options.object = block.id;
+            options.allow_time = true;
+            options.external_variables.insert("dt");
+            for (const auto &port : block.inputs) options.external_variables.insert(port.name);
+            for (const auto &port : block.outputs) {
+                options.external_variables.insert(port.name);
+                options.writable_variables.insert(port.name);
+            }
+            (void)compile_c_program(block.code, options);
+        }
+        return block;
+    };
+    connect(compile_button, &QPushButton::clicked, &dialog, [&] {
+        try { (void)build(); status->setText(text("code_valid")); }
+        catch (const std::exception &error) { status->setText(QString::fromUtf8(error.what())); }
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        try {
+            const auto block = build(false);
+            std::set<std::string> retained;
+            for (const auto &port : block.inputs) retained.insert(port.id);
+            for (const auto &port : block.outputs) retained.insert(port.id);
+            for (const auto &wire : project().wires) {
+                auto removed = [&](const Endpoint &endpoint) {
+                    return endpoint.object == id && !retained.contains(endpoint.port);
+                };
+                if (removed(wire.from) || removed(wire.to)) {
+                    const auto &endpoint = removed(wire.from) ? wire.from : wire.to;
+                    std::string port_name = endpoint.port;
+                    auto resolve_name = [&](const std::vector<CodePort> &ports) {
+                        if (auto port = std::find_if(ports.begin(), ports.end(),
+                                                     [&](const CodePort &candidate) { return candidate.id == endpoint.port; });
+                            port != ports.end())
+                            port_name = port->name;
+                    };
+                    resolve_name(original.inputs);
+                    resolve_name(original.outputs);
+                    throw Diagnostic("connected_code_port", id,
+                                     text("code_block_connected_port").arg(QString::fromStdString(port_name)).toStdString());
+                }
+            }
+            (void)build(true);
+            document_->apply("Edit code block", [&](Project &p) {
+                auto target = std::find_if(p.code_blocks.begin(), p.code_blocks.end(),
+                                           [&](const CodeBlock &candidate) { return candidate.id == id; });
+                if (target == p.code_blocks.end()) throw std::runtime_error("Code block no longer exists");
+                *target = block;
+            });
+            dialog.accept();
+        } catch (const std::exception &error) {
+            status->setText(QString::fromUtf8(error.what()));
+        }
+    });
+    if (dialog.exec() == QDialog::Accepted)
+        refresh();
+}
+
 void EditorWindow::show_command_search() {
     QDialog dialog(this);
     dialog.setObjectName("command_search_dialog");

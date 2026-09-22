@@ -526,6 +526,32 @@ void EditorWindow::fill_inspector() {
         publish();
         return;
     }
+    const auto selected_block = targets.size() == 1
+        ? std::find_if(project().code_blocks.begin(), project().code_blocks.end(),
+                       [&](const CodeBlock &block) { return block.id == targets.front(); })
+        : project().code_blocks.end();
+    const bool includes_code_block = std::any_of(targets.begin(), targets.end(), [&](const std::string &target) {
+        return std::any_of(project().code_blocks.begin(), project().code_blocks.end(),
+                           [&](const CodeBlock &block) { return block.id == target; });
+    });
+    if (includes_code_block) {
+        apply_button_->hide();
+        inspector_type_->setText(text("code_block"));
+        inspector_description_->setText(text("code_block_description"));
+        inspector_description_->show();
+        if (selected_block != project().code_blocks.end()) {
+            auto *button = new QPushButton(text("edit_code_block"));
+            button->setObjectName("edit_code_block");
+            properties_->insertRow(3, button);
+            connect(button, &QPushButton::clicked, this,
+                    [this, id = selected_block->id] { edit_code_block(id); });
+        } else {
+            inspector_hint_->setText(text("code_block_single_selection"));
+            inspector_hint_->show();
+        }
+        publish();
+        return;
+    }
     std::map<QString, QJsonObject> common;
     std::vector<QString> field_order;
     bool first = true;

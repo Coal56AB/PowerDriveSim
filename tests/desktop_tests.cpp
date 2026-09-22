@@ -5,9 +5,11 @@
 #include <QClipboard>
 #include <QComboBox>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QGraphicsItem>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPainterPath>
@@ -622,6 +624,84 @@ class DesktopTests : public QObject {
         QCOMPARE(window.project().wires.front().id, wire.id);
         window.redo();
         QCOMPARE(window.project().wires.size(), count - 1);
+    }
+    void code_block_editor_keeps_connected_port_identity() {
+        QTemporaryDir temp;
+        Project project; project.id = new_uuid(); project.wired = true; project.schema = project_schema;
+        CodeBlock source;
+        source.id = new_uuid(); source.name = "Source"; source.x = 0; source.y = 80;
+        source.period = 1e-4; source.code = "value = 1;";
+        source.outputs.push_back({new_uuid(), "value", "V", SignalScalarType::real, 0});
+        CodeBlock sink;
+        sink.id = new_uuid(); sink.name = "Sink"; sink.x = 300; sink.y = 80;
+        sink.period = 1e-4; sink.code = "result = input;";
+        sink.inputs.push_back({new_uuid(), "input", "V", SignalScalarType::real, 0});
+        sink.inputs.push_back({new_uuid(), "aux", "V", SignalScalarType::real, 0});
+        sink.outputs.push_back({new_uuid(), "result", "V", SignalScalarType::real, 0});
+        project.code_blocks = {source, sink};
+        project.wires.push_back({new_uuid(), {source.id, source.outputs[0].id},
+                                 {sink.id, sink.inputs[0].id}, {}});
+        const auto input_id = sink.inputs[0].id;
+        EditorWindow window("en", temp.path());
+        window.set_project(project);
+        window.show();
+        window.select_object(sink.id);
+        QVERIFY(window.findChild<QPushButton *>("edit_code_block"));
+        QVERIFY(!window.port_position({sink.id, input_id}).isNull());
+        QTimer first_safety;
+        first_safety.setSingleShot(true);
+        connect(&first_safety, &QTimer::timeout, [&] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+        });
+        first_safety.start(3000);
+        QTimer::singleShot(50, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            dialog->findChild<QLineEdit *>("code_block_name")->setText("Controller");
+            auto *inputs = dialog->findChild<QTableWidget *>("code_block_inputs");
+            QVERIFY(inputs && inputs->rowCount() == 2);
+            inputs->item(0, 0)->setText("measured");
+            inputs->selectRow(0);
+            dialog->findChild<QPushButton *>("move_code_input_down")->click();
+            dialog->findChild<QPlainTextEdit *>("code_block_code")->setPlainText("result = measured;");
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            buttons->button(QDialogButtonBox::Ok)->click();
+        });
+        window.findChild<QAction *>("action_properties")->trigger();
+        first_safety.stop();
+        QCOMPARE(window.project().code_blocks[1].name, std::string("Controller"));
+        QCOMPARE(window.project().code_blocks[1].inputs[1].name, std::string("measured"));
+        QCOMPARE(window.project().code_blocks[1].inputs[1].id, input_id);
+        QCOMPARE(window.project().wires[0].to, (Endpoint{sink.id, input_id}));
+        window.undo();
+        QCOMPARE(window.project().code_blocks[1].inputs[0].name, std::string("input"));
+        window.redo();
+        QCOMPARE(window.project().code_blocks[1].inputs[1].name, std::string("measured"));
+
+        window.select_object(sink.id);
+        const auto blocks_before_rejected_edit = window.project().code_blocks;
+        const auto wires_before_rejected_edit = window.project().wires;
+        QTimer second_safety;
+        second_safety.setSingleShot(true);
+        connect(&second_safety, &QTimer::timeout, [&] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+        });
+        second_safety.start(3000);
+        QTimer::singleShot(50, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            auto *inputs = dialog->findChild<QTableWidget *>("code_block_inputs");
+            inputs->selectRow(1);
+            dialog->findChild<QPushButton *>("remove_code_input")->click();
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            buttons->button(QDialogButtonBox::Ok)->click();
+            QVERIFY(dialog->findChild<QLabel *>("code_block_status")->text().contains("connected"));
+            buttons->button(QDialogButtonBox::Cancel)->click();
+        });
+        window.findChild<QAction *>("action_properties")->trigger();
+        second_safety.stop();
+        QVERIFY(window.project().code_blocks == blocks_before_rejected_edit);
+        QVERIFY(window.project().wires == wires_before_rejected_edit);
     }
 };
 int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }

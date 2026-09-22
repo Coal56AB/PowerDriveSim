@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/instrumentation.hpp"
+#include "apps/desktop/code_editor.hpp"
 #include "apps/desktop/labels.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
@@ -7,6 +8,7 @@
 #include "apps/desktop/ui_icons.hpp"
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/model/c_program.hpp"
 #include "formats/project/project.hpp"
 #include "results/csv.hpp"
 #include <QApplication>
@@ -337,6 +339,8 @@ class Atom final : public QGraphicsItem {
         return input_count > 18 ? 14.0 : input_count > 12 ? 18.0 : input_count > 8 ? 22.0 : 28.0;
     }
     double natural_body_half_height() const {
+        if (type == 6)
+            return std::max(48.0, (std::max(1u, input_count) - 1) * 14.0 + 28.0);
         if (type == 4) {
             double extent = (std::max(1u, input_count) - 1) * port_spacing() / 2.0;
             for (const auto &[port_name, point] : public_ports) {
@@ -358,6 +362,10 @@ class Atom final : public QGraphicsItem {
                                                     : natural_body_half_height();
     }
     QRectF boundingRect() const override {
+        if (type == 6) {
+            const double h = natural_body_half_height();
+            return {-112, -h - 8, 224, 2 * h + 40};
+        }
         if (type == 4) {
             double h = body_half_height();
             return {-110, -h - 8, 220, 2 * h + 40};
@@ -376,6 +384,11 @@ class Atom final : public QGraphicsItem {
     }
     QPainterPath shape() const override {
         QPainterPath path;
+        if (type == 6) {
+            const double h = natural_body_half_height();
+            path.addRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
+            return path;
+        }
         if (type == 4) {
             double h = body_half_height();
             path.addRect(QRectF(-90, -h, 180, 2 * h));
@@ -638,6 +651,31 @@ class Atom final : public QGraphicsItem {
         main_pen.setCosmetic(true);
         p->setPen(main_pen);
         p->setBrush(theme_colors().surface);
+        if (type == 6) {
+            const double h = natural_body_half_height();
+            p->setBrush(theme_colors().canvas);
+            p->drawRoundedRect(QRectF(-90, -h, 180, 2 * h), 6, 6);
+            auto title_font = p->font();
+            title_font.setBold(true);
+            p->setFont(title_font);
+            label(p, QRectF(-70, -18, 140, 36), Qt::AlignCenter, QString("{C}"));
+            title_font.setBold(false);
+            title_font.setPointSize(8);
+            p->setFont(title_font);
+            for (auto *child : childItems()) {
+                if (child->data(1).toString() != "port")
+                    continue;
+                const QPointF point = child->pos();
+                const bool left = point.x() < 0;
+                p->drawLine(point, QPointF(left ? -90 : 90, point.y()));
+                const auto caption = QFontMetricsF(title_font).elidedText(
+                    child->data(8).toString(), Qt::ElideRight, 72);
+                label(p, QRectF(left ? -84 : 12, point.y() - 10, 72, 20),
+                      left ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
+                      caption);
+            }
+            return;
+        }
         if (type == 4) {
             double h = body_half_height();
             p->setBrush(theme_colors().canvas);
@@ -969,6 +1007,7 @@ void EditorWindow::update_labels() {
                                    : atom->type == 1 ? QPointF(0, 41)
                                    : atom->type == 3 ? QPointF(0, std::max(40., atom->input_count * 20.) + 20)
                                    : atom->type == 4 ? QPointF(0, atom->body_half_height() + 20)
+                                   : atom->type == 6 ? QPointF(0, atom->natural_body_half_height() + 20)
                                                      : QPointF(0, 39);
             label->setData(5, anchor);
             if (canvas_->editing_gesture() && label->isSelected() && !atom->isSelected())
@@ -1118,6 +1157,23 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
             }
         }
     }
+    for (const auto &block : fragment.code_blocks) {
+        auto *a = add(block, 6, QString("{C}"), {});
+        a->input_count = unsigned(std::max(block.inputs.size(), block.outputs.size()));
+        auto append = [&](const std::vector<CodePort> &ports, bool input) {
+            for (size_t index = 0; index < ports.size(); ++index) {
+                const auto &port = ports[index];
+                const double y = (double(index) - double(ports.size() - 1) / 2.0) * 28.0;
+                const QString scalar = port.type == SignalScalarType::boolean ? QString("bool") : QString("double");
+                const QString unit = port.unit.empty() ? QString() : QString(" [") + q(port.unit) + "]";
+                a->port(q(port.id), {input ? -100.0 : 100.0, y},
+                        port.type == SignalScalarType::boolean ? QColor("#17866d") : QColor("#8c67c8"),
+                        q(port.name) + ": " + scalar + unit);
+            }
+        };
+        append(block.inputs, true);
+        append(block.outputs, false);
+    }
     for (const auto &instance : fragment.instances)
         add(instance, 4, {}, {})->set_definition(definition(fragment, instance.definition));
     auto position = [&](const Endpoint &endpoint) -> std::optional<QPointF> {
@@ -1156,6 +1212,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
                                   : a->type == 1  ? 41
                                   : a->type == 3  ? std::max(40., a->input_count * 20.) + 20
                                   : a->type == 4  ? a->body_half_height() + 20
+                                  : a->type == 6  ? a->natural_body_half_height() + 20
                                                   : 39);
                 LabelLayout layout;
                 for (const auto &stored : fragment.labels)
@@ -1371,6 +1428,11 @@ void EditorWindow::build_ui() {
             item->setSelected(true);
     });
     action(edit_menu, "properties", QKeySequence("Alt+Return"), [this] {
+        if (std::any_of(project().code_blocks.begin(), project().code_blocks.end(),
+                        [&](const CodeBlock &block) { return block.id == selected_; })) {
+            edit_code_block(selected_);
+            return;
+        }
         fill_inspector();
         if (name_ && name_->isVisible()) {
             name_->setFocus();
@@ -1951,6 +2013,11 @@ void EditorWindow::build_ui() {
     };
     canvas_->released = [this] { commit_positions(); };
     canvas_->open_object = [this](std::string id) {
+        if (std::any_of(project().code_blocks.begin(), project().code_blocks.end(),
+                        [&](const CodeBlock &block) { return block.id == id; })) {
+            edit_code_block(id);
+            return;
+        }
         if (std::any_of(project().instances.begin(), project().instances.end(),
                         [&](const auto &i) { return i.id == id; })) {
             open_subcircuit(id);
@@ -2253,6 +2320,8 @@ void EditorWindow::refresh(bool invalidate, bool navigation_only) {
         item(g.id, g.name);
     for (const auto &g : project().plots)
         item(g.id, g.name);
+    for (const auto &block : project().code_blocks)
+        item(block.id, block.name);
     for (const auto &i : project().instances)
         item(i.id, i.name);
     if (!stop_->isModified())
@@ -2432,6 +2501,58 @@ void EditorWindow::rebuild_scene() {
                 point = {stored->x, stored->y};
         ports(a, list, QColor("#8c67c8"));
     }
+    for (const auto &block : project().code_blocks) {
+        auto *a = atom(block.id, block.name, QString("{C}"), 6);
+        if (a->input_count != std::max(block.inputs.size(), block.outputs.size()))
+            a->prepareGeometryChangeForInputs(unsigned(std::max(block.inputs.size(), block.outputs.size())));
+        std::vector<std::pair<QString, QPointF>> list;
+        auto append = [&](const std::vector<CodePort> &group, bool input) {
+            for (size_t index = 0; index < group.size(); ++index) {
+                const auto &port = group[index];
+                const double y = (double(index) - double(group.size() - 1) / 2.0) * 28.0;
+                QPointF point{input ? -100.0 : 100.0, y};
+                if (auto stored = std::find_if(block.pin_positions.begin(), block.pin_positions.end(),
+                                               [&](const PinPosition &pin) { return pin.port == port.id; });
+                    stored != block.pin_positions.end())
+                    point = {stored->x, stored->y};
+                const QString type = port.type == SignalScalarType::boolean ? QString("bool") : QString("double");
+                const QString unit = port.unit.empty() ? QString() : QString(" [") + q(port.unit) + "]";
+                list.push_back({q(port.name) + ": " + type + unit, point});
+            }
+        };
+        append(block.inputs, true);
+        append(block.outputs, false);
+        std::vector<std::string> endpoint_ids;
+        for (const auto &port : block.inputs) endpoint_ids.push_back(port.id);
+        for (const auto &port : block.outputs) endpoint_ids.push_back(port.id);
+        const auto children = a->childItems();
+        bool endpoint_changed = children.size() != qsizetype(endpoint_ids.size());
+        for (qsizetype i = 0; !endpoint_changed && i < children.size(); ++i)
+            endpoint_changed = children[i]->data(2).toString().toStdString() != endpoint_ids[size_t(i)];
+        if (endpoint_changed) {
+            for (auto *child : a->childItems()) delete child;
+            size_t index = 0;
+            auto create = [&](const std::vector<CodePort> &group) {
+                for (const auto &port : group) {
+                    const auto &entry = list[index++];
+                    a->port(q(port.id), entry.second,
+                            port.type == SignalScalarType::boolean ? QColor("#17866d") : QColor("#8c67c8"),
+                            entry.first);
+                }
+            };
+            create(block.inputs);
+            create(block.outputs);
+        } else {
+            size_t index = 0;
+            for (auto *child : a->childItems()) {
+                if (child->data(1).toString() != "port") continue;
+                const auto &entry = list[index++];
+                child->setPos(entry.second);
+                child->setData(8, entry.first);
+                child->setToolTip(entry.first);
+            }
+        }
+    }
     for (const auto &i : project().instances) {
         atom(i.id, i.name, {}, 4)->set_definition(definition(project(), i.definition));
     }
@@ -2454,6 +2575,7 @@ void EditorWindow::rebuild_scene() {
     geometry(project().tags);
     geometry(project().patterns);
     geometry(project().plots);
+    geometry(project().code_blocks);
     geometry(project().instances);
     for (auto &[id, item] : atoms_) {
         (void)id;
@@ -2539,13 +2661,15 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
     if (atom->type == 1)
         return point;
     QPointF delta(0, -20);
-    if (atom->type == 4 || atom->type == 3) {
+    if (atom->type == 4 || atom->type == 3 || atom->type == 6) {
         const QPointF local = atom->mapFromScene(point);
-        const double h = atom->type == 4 ? atom->body_half_height() : std::max(40.0, atom->input_count * 20.0);
-        const double vertical_edge_distance = atom->type == 4
+        const double h = atom->type == 4 ? atom->body_half_height()
+                         : atom->type == 6 ? atom->natural_body_half_height()
+                                           : std::max(40.0, atom->input_count * 20.0);
+        const double vertical_edge_distance = atom->type == 4 || atom->type == 6
             ? std::abs(std::abs(local.x()) - 100.0)
             : std::min(std::abs(local.x() + 60.0), std::abs(local.x() - 60.0));
-        const double horizontal_edge_distance = atom->type == 4
+        const double horizontal_edge_distance = atom->type == 4 || atom->type == 6
             ? std::abs(std::abs(local.y()) - (h + 10.0))
             : std::abs(std::abs(local.y()) - (h + 20.0));
         if (vertical_edge_distance <= horizontal_edge_distance)
@@ -2614,6 +2738,7 @@ void EditorWindow::update_wires() {
             atom->mapRectToScene(atom->type == 4   ? QRectF(-90, -atom->body_half_height(), 180,
                                                             2 * atom->body_half_height())
                                  : atom->type == 3 ? QRectF(-46, -h, 104, 2 * h)
+                                 : atom->type == 6 ? QRectF(-90, -h, 180, 2 * h)
                                                    : QRectF(-38, -28, 76, 56));
         obstacles.push_back(box);
         next_boxes[id] = box;
@@ -2802,6 +2927,27 @@ std::string EditorWindow::add_plot(QPointF point) {
     refresh_canvas(true, false);
     auto_connect_nearby_pins();
     return selected_;
+}
+std::string EditorWindow::add_code_block(QPointF point) {
+    if (running() || !editing_allowed())
+        return {};
+    try {
+        point = canvas_->snap_point(point);
+        CodeBlock block;
+        block.id = new_uuid();
+        block.name = text("code_block").toStdString();
+        block.x = point.x();
+        block.y = point.y();
+        block.code = "out = 0;";
+        block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
+        selected_ = block.id;
+        document_->apply("Add code block", [&](Project &p) { p.code_blocks.push_back(block); });
+        refresh_canvas(true, false);
+        return selected_;
+    } catch (const std::exception &error) {
+        show_error(error);
+        return {};
+    }
 }
 bool EditorWindow::auto_connect_nearby_pins() {
     if (running() || rebuilding_)
@@ -3023,6 +3169,8 @@ void EditorWindow::commit_positions() {
         check(g);
     for (const auto &g : project().plots)
         check(g);
+    for (const auto &block : project().code_blocks)
+        check(block);
     for (const auto &i : project().instances)
         check(i);
     if (!moved)
@@ -3157,6 +3305,8 @@ void EditorWindow::commit_positions() {
             move(g);
         for (auto &g : p.plots)
             move(g);
+        for (auto &block : p.code_blocks)
+            move(block);
         for (auto &i : p.instances)
             move(i);
         move_branch_nodes();
