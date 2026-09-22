@@ -226,10 +226,15 @@ int main(int argc, char **argv) {
             auto periodic = read_project(example);
             periodic.profile.stop = 10;
             const auto periodic_ir = compile(periodic);
-            check(periodic_ir.gate_programs.empty(),
-                  "Constant programmable PWM is converted to exact scheduled edges");
-            check(!periodic_ir.events.empty() && periodic_ir.events.back().time > 9.95,
+            check(!periodic_ir.gate_programs.empty() ||
+                      (!periodic_ir.events.empty() && periodic_ir.events.back().time > 9.95),
                   "Periodic example keeps switching through a ten-second run");
+            if (std::string(name) == "vsi-2l") {
+                periodic.profile.stop = 1000;
+                const auto long_ir = compile(periodic);
+                check(!long_ir.gate_programs.empty() && long_ir.events.size() < 200000,
+                      "Long programmable PWM runs from Gate code without a huge event table");
+            }
         }
         doc.apply("Invalid gate script",[&](Project& p){p.patterns.back().code=
             "double a = b; double b = a; return a;";});

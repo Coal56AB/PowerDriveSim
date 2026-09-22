@@ -101,7 +101,8 @@ std::optional<std::array<double, 4>> ramp_arguments(std::string token,
 }
 bool generate_phase_pwm_edges(const GatePattern &g, double stop,
                               const std::function<void(double, bool)> &edge,
-                              const ScriptProgram *prepared = nullptr) {
+                              const ScriptProgram *prepared = nullptr,
+                              size_t max_edges = std::numeric_limits<size_t>::max()) {
     const auto parsed = prepared ? ScriptProgram{} : script_program(g.code);
     const auto &variables = prepared ? prepared->variables : parsed.variables;
     const auto &expression = prepared ? prepared->expression : parsed.expression;
@@ -119,6 +120,8 @@ bool generate_phase_pwm_edges(const GatePattern &g, double stop,
         throw Diagnostic("invalid_gate_script", g.id, "Use phasepwm(frequency,duty,delay) with duty 0..1");
     if (duty == 0 || duty == 1)
         return true;
+    if (stop > 0 && frequency > static_cast<double>(max_edges) / (2.0 * stop))
+        return false;
     const double period = 1.0 / frequency;
     auto emit_interval = [&](double begin, double end, double slope, double intercept) {
         if (end <= begin)
@@ -325,6 +328,7 @@ static SimulationIR compile_flat(const Project& p) {
 }
 static SimulationIR compile_wired(const Project& source, const std::map<std::string,ObjectPath>& origins) {
     Project project=source;
+    constexpr size_t max_optimized_script_edges = 200000;
     std::set<std::string> runtime_gate_scripts;
     // Manual table edges remain in the document while another gate mode is
     // active. They are inactive input, not a second driver of the same signal.
@@ -364,21 +368,40 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
             optimized.code = *simple_expression;
             const auto program=script_program(optimized.code);
             {
-                auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
-                if(generate_phase_pwm_edges(optimized,project.profile.stop,edge,&program)) {
+                std::vector<GateEvent> candidate_events;
+                const auto remaining = generated < max_optimized_script_edges
+                    ? max_optimized_script_edges - generated : 0;
+                bool overflow = false;
+                auto edge=[&](double time,bool state) {
+                    if(candidate_events.size() >= remaining) {
+                        overflow = true;
+                        return;
+                    }
+                    const double tolerance = 64 * std::numeric_limits<double>::epsilon() *
+                                             std::max({1.0, std::abs(time), std::abs(project.profile.stop)});
+                    if(time>0&&time<=project.profile.stop+tolerance) {
+                        if(time>project.profile.stop)time=project.profile.stop;
+                        candidate_events.push_back({time,g.id,state});
+                    }
+                };
+                if(generate_phase_pwm_edges(optimized,project.profile.stop,edge,&program,remaining) && !overflow) {
                     g.initial=gate_script_value(optimized,0,&program);
+                    generated += candidate_events.size();
+                    project.events.insert(project.events.end(), candidate_events.begin(), candidate_events.end());
                     continue;
                 }
             }
             if(auto args=script_pwm_arguments(optimized,{},&program);!args.empty()) {
                 g.initial=args[2]==0&&args[1]>0;
                 if(args[1]==0||args[2]>project.profile.stop)continue;
-                auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
-                if(args[1]==1){edge(args[2],true);continue;}
+                if(args[1]==1){generated_edge(g,args[2],true,generated);continue;}
                 double count=(project.profile.stop-args[2])*args[0];
-                if(!std::isfinite(count)||count>500000)throw Diagnostic("pwm_event_limit",g.id,"Gate script PWM exceeds one million edges; reduce frequency or simulation duration");
-                for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=args[2]+static_cast<double>(k)/args[0];double fall=args[2]+(static_cast<double>(k)+args[1])/args[0];edge(rise,true);edge(fall,false);}
-                continue;
+                if(std::isfinite(count) && count<=100000 &&
+                   generated + 2 * (static_cast<size_t>(std::floor(count)) + 1) <= max_optimized_script_edges) {
+                    auto edge=[&](double time,bool state){generated_edge(g,time,state,generated);};
+                    for(size_t k=0;k<=static_cast<size_t>(std::floor(count));++k){double rise=args[2]+static_cast<double>(k)/args[0];double fall=args[2]+(static_cast<double>(k)+args[1])/args[0];edge(rise,true);edge(fall,false);}
+                    continue;
+                }
             }
         }
         CProgramState c_state;
