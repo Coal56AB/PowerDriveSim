@@ -1,4 +1,5 @@
 #include "core/solver/reference/reference.hpp"
+#include "core/solver/reference/signal.hpp"
 #include "core/solver/reference/equation_cache.hpp"
 #include "core/solver/reference/adaptive.hpp"
 #include "core/compiler/topology.hpp"
@@ -60,6 +61,12 @@ std::vector<Channel> available_channels(const SimulationIR& ir){
     for(const auto& signal:ir.gate_signals)channels.push_back({"gate/"+signal.id,signal.name,"bool"});
     return channels;
 }
+static double observation_value(const SimulationIR& ir,const Observation& observation,double time,
+                                const std::vector<double>& values) {
+    return observation.source_stamp>=0?source_value(ir.stamps[observation.source_stamp].component,time):
+        ((observation.positive<0?0:values[observation.positive])-
+         (observation.negative<0?0:values[observation.negative]))*observation.gain+observation.offset;
+}
 void accumulate_statistics(Result& result,const Result& previous) {
     result.accepted_steps+=previous.accepted_steps;result.rejected_steps+=previous.rejected_steps;
     result.linear_solves+=previous.linear_solves;
@@ -93,6 +100,9 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
     (void)method_name(ir.profile.method);
     (void)initial_state_name(ir.profile.initial_state);
     validate_step_control(ir.profile,ir.project_id);
+    if(!ir.signal.tasks.empty()&&options&&(options->resume||options->capture_snapshot))
+        throw Diagnostic("signal_snapshot_unavailable",ir.signal.tasks.front().id,
+                         "Snapshot capture and resume are unavailable while Signal IR is active");
     if(!std::isfinite(ir.profile.warmup)||ir.profile.warmup<0||ir.profile.warmup>=ir.profile.stop)
         throw Diagnostic("invalid_profile",ir.project_id,"Warm-up must be shorter than stop time");
     Result result; result.project_id=ir.project_id; result.profile=ir.profile;
@@ -130,6 +140,11 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         for(const auto& output:source.outputs)if(output.signal>=ir.gate_signals.size())
             throw Diagnostic("invalid_gate_script",source.id,"Gate runtime signal is missing");
     }
+    auto signal_runtime=initialize_signal_runtime(ir.signal);
+    SignalFrame accepted_signal_inputs;
+    std::map<std::string,std::vector<std::size_t>> signal_gate_targets;
+    for(const auto& binding:ir.signal_gates)
+        signal_gate_targets[signal_endpoint_key(binding.endpoint)]=binding.targets;
     std::vector<double> states(ir.stamps.size()), history(ir.stamps.size());
     std::vector<bool> gates(ir.stamps.size()), diode_states(ir.stamps.size()), latched(ir.stamps.size()), released(ir.stamps.size());
     std::vector<size_t> thyristor_indices;
@@ -192,6 +207,53 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             }
         }
         return changed;
+    };
+    auto apply_signal_tasks=[&](double t) {
+        for(const auto& emission:run_signal_tasks(ir.signal,signal_runtime,t,accepted_signal_inputs)) {
+            const auto targets=signal_gate_targets.find(signal_endpoint_key(emission.endpoint));
+            if(targets==signal_gate_targets.end())continue;
+            const bool value=emission.value.value!=0;
+            for(const auto target:targets->second) {
+                if(target>=gates.size())throw Diagnostic("invalid_signal_gate",emission.endpoint.object,
+                                                         "Signal gate target is absent from electrical IR",t);
+                gates[target]=value;
+            }
+        }
+    };
+    auto capture_signal_inputs=[&](double t,const std::vector<double>& values) {
+        SignalFrame frame;
+        for(const auto& binding:ir.signal_inputs) {
+            double value=0;
+            switch(binding.source) {
+            case SignalInputSource::unknown:
+                if(binding.index>=values.size())throw Diagnostic("invalid_signal_binding",binding.endpoint.object,
+                                                                 "Signal unknown binding is outside electrical IR",t);
+                value=values[binding.index];
+                break;
+            case SignalInputSource::observation:
+                if(binding.index>=ir.observations.size())throw Diagnostic("invalid_signal_binding",binding.endpoint.object,
+                                                                          "Signal observation binding is outside electrical IR",t);
+                value=observation_value(ir,ir.observations[binding.index],t,values);
+                break;
+            case SignalInputSource::gate:
+                if(binding.index>=signal_values.size())throw Diagnostic("invalid_signal_binding",binding.endpoint.object,
+                                                                        "Signal Gate binding is outside electrical IR",t);
+                value=signal_values[binding.index]?1:0;
+                break;
+            }
+            frame[signal_endpoint_key(binding.endpoint)]={binding.type,binding.unit,value,t,true};
+        }
+        accepted_signal_inputs=std::move(frame);
+    };
+    auto next_signal_tick=[&] {
+        double next=std::numeric_limits<double>::infinity();
+        for(const auto& task:ir.signal.tasks) {
+            const auto runtime=signal_runtime.tasks.find(task.id);
+            if(runtime==signal_runtime.tasks.end())throw Diagnostic("invalid_signal_state",task.id,
+                                                                    "Signal runtime state does not match its IR");
+            next=std::min(next,task.phase+static_cast<double>(runtime->second.next_tick)*task.period);
+        }
+        return next;
     };
     EquationCache equations(ir);
     std::vector<size_t> violations;
@@ -335,9 +397,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         Sample sample;sample.time=t;sample.values.reserve(analog_indices.size());sample.gates.reserve(gate_indices.size());
         for(size_t index:analog_indices){
             if(index<ir.unknowns.size())sample.values.push_back(values[index]);
-            else {const auto& o=ir.observations[index-ir.unknowns.size()];sample.values.push_back(o.source_stamp>=0?
-                source_value(ir.stamps[o.source_stamp].component,t):
-                ((o.positive<0?0:values[o.positive])-(o.negative<0?0:values[o.negative]))*o.gain+o.offset);}
+            else sample.values.push_back(observation_value(ir,ir.observations[index-ir.unknowns.size()],t,values));
         }
         for(size_t index:gate_indices)sample.gates.push_back(index<switch_indices.size()?gates[switch_indices[index]]:signal_values[index-switch_indices.size()]);
         result.samples.push_back(std::move(sample));
@@ -350,6 +410,8 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         apply_events(0);
         apply_gate_programs(0);
         final_values=&solve(0,0,true,ir.profile.initial_state==InitialState::dc_operating_point);
+        apply_signal_tasks(0);
+        capture_signal_inputs(0,*final_values);
     }
     record(time,*final_values);
     const bool adaptive=ir.profile.step_control.adaptive;
@@ -399,6 +461,7 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         double end=std::min(grid_time,ir.profile.stop);
         if(time<ir.profile.warmup)end=std::min(end,ir.profile.warmup);
         if(next_event<ir.events.size()) end=std::min(end,ir.events[next_event].time);
+        end=std::min(end,next_signal_tick());
         double source_edge=std::numeric_limits<double>::infinity();
         for(auto index:source_indices)source_edge=std::min(source_edge,next_source_breakpoint(ir.stamps[index].component,time));
         end=std::min(end,source_edge);
@@ -470,6 +533,8 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
         bool gate_event=apply_events(time);
         gate_event=apply_gate_programs(time)||gate_event;
         if(gate_event||time==source_edge) values=&solve(time,0,true);
+        apply_signal_tasks(time);
+        capture_signal_inputs(time,*values);
         if(adaptive){accepted_values=*values;values=&accepted_values;}
         record(time,*values);
         final_values=values;

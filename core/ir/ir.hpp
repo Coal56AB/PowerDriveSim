@@ -1,5 +1,6 @@
 #pragma once
 #include "core/model/model.hpp"
+#include "core/ir/signal.hpp"
 #include <utility>
 #include <map>
 namespace pds {
@@ -16,6 +17,18 @@ struct GateProgram {
     std::string id, source;
     std::vector<GateProgramOutput> outputs;
 };
+enum class SignalInputSource { unknown, observation, gate };
+struct SignalInputBinding {
+    SignalEndpointIR endpoint;
+    SignalScalarType type=SignalScalarType::real;
+    std::string unit;
+    SignalInputSource source=SignalInputSource::unknown;
+    std::size_t index=0;
+};
+struct SignalGateBinding {
+    SignalEndpointIR endpoint;
+    std::vector<std::size_t> targets;
+};
 struct SimulationIR {
     std::map<std::string,ObjectPath> origins;
     std::string project_id;
@@ -26,6 +39,9 @@ struct SimulationIR {
     std::vector<Observation> observations;
     std::vector<GateSignal> gate_signals;
     std::vector<GateProgram> gate_programs;
+    SignalIR signal;
+    std::vector<SignalInputBinding> signal_inputs;
+    std::vector<SignalGateBinding> signal_gates;
     std::vector<std::pair<int,int>> sparsity;
     int node_count=0;
 };

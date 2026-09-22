@@ -1,4 +1,5 @@
 #include "core/solver/reference/signal.hpp"
+#include "core/solver/reference/reference.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/connectivity.hpp"
 #include "core/compiler/signal.hpp"
@@ -176,7 +177,6 @@ int main() {
         write_project(wired, serialized);
         std::istringstream saved(serialized.str());
         check(read_project(saved) == wired, "Wired code-block ports survive project round-trip");
-        error("code_block_runtime_unavailable", [&] { (void)compile(wired); });
         auto tagged = wired;
         ConnectionTag tag;
         tag.id = derived_uuid("code-signal-tag");
@@ -216,6 +216,104 @@ int main() {
         auto disconnected = wired;
         disconnected.wires.pop_back();
         error("missing_signal_source", [&] { (void)compile_signal_ir(disconnected); });
+
+        Project integrated;
+        integrated.id = derived_uuid("integrated-signal-project");
+        integrated.wired = true;
+        integrated.profile.step = .1;
+        integrated.profile.stop = .31;
+        const auto ground = derived_uuid("integrated-ground");
+        const auto supply_node = derived_uuid("integrated-supply-node");
+        const auto load_node = derived_uuid("integrated-load-node");
+        const auto resistor_node = derived_uuid("integrated-resistor-node");
+        integrated.nodes = {{ground, "GND", true}, {supply_node, "supply"},
+                            {load_node, "load"}, {resistor_node, "resistor"}};
+        Component supply;
+        supply.id = derived_uuid("integrated-supply");
+        supply.name = "V1";
+        supply.kind = Kind::voltage;
+        supply.value = 1;
+        Component sensed;
+        sensed.id = derived_uuid("integrated-probe");
+        sensed.name = "VP";
+        sensed.kind = Kind::voltage_probe;
+        Component controlled;
+        controlled.id = derived_uuid("integrated-switch");
+        controlled.name = "S";
+        controlled.kind = Kind::ideal_switch;
+        Component measured_current;
+        measured_current.id = derived_uuid("integrated-current-probe");
+        measured_current.name = "IP";
+        measured_current.kind = Kind::current_probe;
+        Component load;
+        load.id = derived_uuid("integrated-load");
+        load.name = "R";
+        load.kind = Kind::resistor;
+        load.value = 1;
+        integrated.components = {supply, sensed, controlled, measured_current, load};
+        GatePattern enable;
+        enable.id = derived_uuid("integrated-enable");
+        enable.name = "Enable";
+        enable.initial = true;
+        integrated.patterns.push_back(enable);
+        CodeBlock controller;
+        controller.id = derived_uuid("integrated-controller");
+        controller.name = "Controller";
+        controller.period = .15;
+        controller.code = "gate = enable && sensed > 0.5 && current > -1;";
+        controller.inputs = {{derived_uuid("integrated-controller-input"), "sensed", "V",
+                              SignalScalarType::real, 0},
+                             {derived_uuid("integrated-current-input"), "current", "A",
+                              SignalScalarType::real, 0},
+                             {derived_uuid("integrated-enable-input"), "enable", "",
+                              SignalScalarType::boolean, 0}};
+        controller.outputs = {{derived_uuid("integrated-controller-output"), "gate", "",
+                               SignalScalarType::boolean, 0}};
+        integrated.code_blocks.push_back(controller);
+        auto wire = [&](const std::string& key, Endpoint from, Endpoint to) {
+            integrated.wires.push_back({derived_uuid(key),std::move(from),std::move(to)});
+        };
+        wire("integrated-supply-p",{supply.id,"p"},{supply_node,"node"});
+        wire("integrated-supply-n",{supply.id,"n"},{ground,"node"});
+        wire("integrated-probe-p",{sensed.id,"p"},{supply_node,"node"});
+        wire("integrated-probe-n",{sensed.id,"n"},{ground,"node"});
+        wire("integrated-switch-p",{controlled.id,"p"},{supply_node,"node"});
+        wire("integrated-switch-n",{controlled.id,"n"},{load_node,"node"});
+        wire("integrated-current-p",{measured_current.id,"p"},{load_node,"node"});
+        wire("integrated-current-n",{measured_current.id,"n"},{resistor_node,"node"});
+        wire("integrated-load-p",{load.id,"p"},{resistor_node,"node"});
+        wire("integrated-load-n",{load.id,"n"},{ground,"node"});
+        wire("integrated-sense",{sensed.id,"out"},{controller.id,controller.inputs[0].id});
+        wire("integrated-current",{measured_current.id,"out"},{controller.id,controller.inputs[1].id});
+        wire("integrated-enable-wire",{enable.id,"out"},{controller.id,controller.inputs[2].id});
+        wire("integrated-gate",{controller.id,controller.outputs[0].id},{controlled.id,"gate"});
+        const auto integrated_ir = compile(integrated);
+        check(integrated_ir.signal.tasks.size() == 1 && integrated_ir.signal_inputs.size() == 3 &&
+                  integrated_ir.signal_gates.size() == 1,
+              "Electrical compilation retains typed voltage, current, Gate and output bindings");
+        const auto simulation = execute(integrated_ir);
+        const auto load_channel = std::find_if(simulation.channels.begin(),simulation.channels.end(),
+                                               [&](const Channel& channel){return channel.object==load_node;});
+        const auto gate_channel = std::find(simulation.gate_objects.begin(),simulation.gate_objects.end(),controlled.id);
+        check(load_channel != simulation.channels.end() && gate_channel != simulation.gate_objects.end(),
+              "Integrated run records the controlled load and Gate");
+        const auto load_index = static_cast<std::size_t>(load_channel-simulation.channels.begin());
+        const auto gate_index = static_cast<std::size_t>(gate_channel-simulation.gate_objects.begin());
+        const auto tick = std::find_if(simulation.samples.begin(),simulation.samples.end(),[](const Sample& sample) {
+            return std::abs(sample.time-.15)<1e-15;
+        });
+        const auto driven = std::find_if(simulation.samples.begin(),simulation.samples.end(),[](const Sample& sample) {
+            return std::abs(sample.time-.2)<1e-15;
+        });
+        check(tick != simulation.samples.end() && tick->gates[gate_index] &&
+                  std::abs(tick->values[load_index])<1e-12,
+              "Signal tick is exact and cannot change its already accepted electrical frame");
+        check(driven != simulation.samples.end() && driven->gates[gate_index] &&
+                  std::abs(driven->values[load_index]-1)<1e-12,
+              "Code-block Gate output controls the generic switch path on the following interval");
+        ExecutionOptions snapshot_options;
+        snapshot_options.capture_snapshot = true;
+        error("signal_snapshot_unavailable", [&] { (void)execute(integrated_ir,nullptr,nullptr,nullptr,nullptr,{},&snapshot_options); });
         std::cout << "PASS typed causal Signal IR and deterministic C scheduler\n";
         return 0;
     } catch (const std::exception &exception) {

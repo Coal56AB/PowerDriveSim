@@ -1,4 +1,5 @@
 #include "core/ir/ir.hpp"
+#include "core/compiler/signal.hpp"
 #include "core/compiler/topology.hpp"
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
@@ -601,9 +602,6 @@ SimulationIR compile(const Project& source) {
     auto resolved=resolve_parameter_expressions(active);
     auto expanded=flatten(resolved);
     try {
-        if (!expanded.project.code_blocks.empty())
-            throw Diagnostic("code_block_runtime_unavailable", expanded.project.code_blocks.front().id,
-                             "Code-block execution is not connected to the electrical solver yet");
         if(!active.instances.empty()) {
             for(const auto& [terminal,net]:resolve_connections(expanded.project).nets) {
                 auto origin=expanded.origins.find(terminal.substr(0,terminal.find('/')));
@@ -611,6 +609,69 @@ SimulationIR compile(const Project& source) {
             }
         }
         auto ir=compile_wired(expanded.project,expanded.origins);
+        ir.signal=compile_signal_ir(expanded.project);
+        if(!ir.signal.tasks.empty()) {
+            const auto connections=resolve_connections(expanded.project,expanded.origins);
+            std::set<std::string> bound_inputs;
+            for(const auto& task:ir.signal.tasks)for(const auto& input:task.inputs) {
+                const auto key=signal_endpoint_key(input.source);
+                if(!bound_inputs.insert(key).second)continue;
+                if(std::any_of(ir.signal.tasks.begin(),ir.signal.tasks.end(),[&](const SignalTaskIR& candidate) {
+                    return candidate.id==input.source.object;
+                }))continue;
+                SignalInputBinding binding;
+                binding.endpoint=input.source;binding.type=input.port.type;binding.unit=input.port.unit;
+                const auto component=std::find_if(expanded.project.components.begin(),expanded.project.components.end(),
+                    [&](const Component& candidate){return candidate.id==input.source.object;});
+                if(component!=expanded.project.components.end()) {
+                    if(component->kind==Kind::current_probe) {
+                        const auto channel=std::find_if(ir.unknowns.begin(),ir.unknowns.end(),[&](const Channel& candidate) {
+                            return candidate.object==component->id&&candidate.unit=="A";
+                        });
+                        if(channel==ir.unknowns.end())throw Diagnostic("missing_signal_source",task.id,"Current probe is absent from electrical IR");
+                        binding.source=SignalInputSource::unknown;
+                        binding.index=static_cast<std::size_t>(channel-ir.unknowns.begin());
+                    } else {
+                        const auto observation=std::find_if(ir.observations.begin(),ir.observations.end(),[&](const Observation& candidate) {
+                            return candidate.channel.object==component->id&&candidate.channel.unit=="V";
+                        });
+                        if(observation==ir.observations.end())throw Diagnostic("missing_signal_source",task.id,"Voltage probe is absent from electrical IR");
+                        binding.source=SignalInputSource::observation;
+                        binding.index=static_cast<std::size_t>(observation-ir.observations.begin());
+                    }
+                } else {
+                    const auto pattern=std::find_if(expanded.project.patterns.begin(),expanded.project.patterns.end(),
+                        [&](const GatePattern& candidate){return candidate.id==input.source.object;});
+                    if(pattern==expanded.project.patterns.end())throw Diagnostic("missing_signal_source",task.id,"Signal source is absent from simulation IR");
+                    unsigned output=0;
+                    if(input.source.port!="out")output=static_cast<unsigned>(std::stoul(input.source.port.substr(3)));
+                    const auto signal_id=gate_signal_id(*pattern,output);
+                    const auto gate=std::find_if(ir.gate_signals.begin(),ir.gate_signals.end(),[&](const GateSignal& candidate) {
+                        return candidate.id==signal_id;
+                    });
+                    if(gate==ir.gate_signals.end())throw Diagnostic("missing_signal_source",task.id,"Gate source is absent from simulation IR");
+                    binding.source=SignalInputSource::gate;
+                    binding.index=static_cast<std::size_t>(gate-ir.gate_signals.begin());
+                }
+                ir.signal_inputs.push_back(std::move(binding));
+            }
+            for(const auto& task:ir.signal.tasks)for(const auto& output:task.outputs) {
+                if(output.type!=SignalScalarType::boolean)continue;
+                SignalGateBinding binding{{task.id,output.id},{}};
+                const auto driver=endpoint_key({task.id,output.id});
+                for(const auto& [target,connected]:connections.gate_drivers)if(connected==driver) {
+                    const auto stamp=std::find_if(ir.stamps.begin(),ir.stamps.end(),[&](const Stamp& candidate) {
+                        return candidate.component.id==target;
+                    });
+                    if(stamp!=ir.stamps.end()) {
+                        const auto index=static_cast<std::size_t>(stamp-ir.stamps.begin());
+                        binding.targets.push_back(index);
+                        ir.stamps[index].component.closed=output.initial!=0;
+                    }
+                }
+                if(!binding.targets.empty())ir.signal_gates.push_back(std::move(binding));
+            }
+        }
         ir.origins=std::move(expanded.origins);
         return ir;
     } catch(Diagnostic& error) {
