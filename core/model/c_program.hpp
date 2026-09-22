@@ -20,6 +20,10 @@ struct CProgramOptions {
     // read-only unless explicitly listed as writable outputs.
     std::set<std::string> external_variables;
     std::set<std::string> writable_variables;
+    // Fixed-size arrays supplied by the embedding runtime. Array storage is
+    // bounded at compile time; user code may address it with a checked index.
+    std::map<std::string, std::size_t> external_arrays;
+    std::set<std::string> writable_arrays;
 };
 
 struct CProgramState {

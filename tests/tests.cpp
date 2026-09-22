@@ -309,6 +309,13 @@ static void serialization() {
     near(second.variables.at("command"),4.5,1e-15,"C external inputs and persistent state");
     error("code_ports",[&]{(void)compile_c_program("error = 1;",ports);});
     error("code_ports",[&]{(void)execute_c_program(pi,0,&pi_state,{{"unknown",1}});});
+    CProgramOptions arrays;arrays.diagnostic_code="code_arrays";arrays.external_arrays["IN"]=6;arrays.writable_arrays.insert("IN");
+    const auto six_gates=compile_c_program("for (int ind = 0; ind < 6; ++ind) IN[ind] = ind % 2;",arrays);
+    const auto outputs=execute_c_program(six_gates);
+    for(int ind=0;ind<6;++ind)require(outputs.variables.at("IN["+std::to_string(ind)+"]")==ind%2,"Checked writable C array");
+    error("code_arrays",[&]{const auto out_of_range=compile_c_program("IN[6] = 1;",arrays);(void)execute_c_program(out_of_range);});
+    arrays.writable_arrays.clear();
+    error("code_arrays",[&]{(void)compile_c_program("IN[0] = 1;",arrays);});
     error("bounded_c",[&]{(void)compile_c_program("return "+std::string(300,'!')+"true;",returning_options);});
     auto invalid=expression_loaded;invalid.parameter_expressions={{id(999),"value","base"}};
     error("invalid_parameter_expression",[&]{compile(invalid);});

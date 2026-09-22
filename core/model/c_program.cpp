@@ -82,7 +82,7 @@ std::vector<Token> lex(const std::string &source, const CProgramOptions &options
             matched = true; break;
         }
         if (matched) continue;
-        if (std::string("+-*/%=!<>&|^~?:;,(){}").find(source[i]) == std::string::npos)
+        if (std::string("+-*/%=!<>&|^~?:;,(){}[]").find(source[i]) == std::string::npos)
             error("Unsupported character");
         result.push_back({Token::Kind::symbol, std::string(1, source[i]), 0, token_line, token_column});
         advance(source[i]);
@@ -92,7 +92,7 @@ std::vector<Token> lex(const std::string &source, const CProgramOptions &options
 }
 
 struct Expression {
-    enum class Kind { number, variable, unary, binary, conditional, call, assignment, prefix, postfix } kind;
+    enum class Kind { number, variable, subscript, unary, binary, conditional, call, assignment, prefix, postfix } kind;
     std::string text;
     double number = 0;
     std::vector<std::unique_ptr<Expression>> children;
@@ -282,7 +282,13 @@ private:
         return p<tokens_.size()&&tokens_[p].kind==Token::Kind::identifier&&type_name(tokens_[p].text);
     }
     std::unique_ptr<Expression> postfix() {
-        auto v=primary();if(peek().text=="++"||peek().text=="--"){auto n=std::make_unique<Expression>();n->kind=Expression::Kind::postfix;n->text=take().text;n->children.push_back(std::move(v));return n;}return v;
+        auto v=primary();
+        while(match("[")) {
+            if(v->kind!=Expression::Kind::variable)error("Array name must precede '['");
+            auto n=std::make_unique<Expression>();n->kind=Expression::Kind::subscript;n->text=v->text;
+            n->children.push_back(expression());expect("]");v=std::move(n);
+        }
+        if(peek().text=="++"||peek().text=="--"){auto n=std::make_unique<Expression>();n->kind=Expression::Kind::postfix;n->text=take().text;n->children.push_back(std::move(v));return n;}return v;
     }
     std::unique_ptr<Expression> primary() {
         if(match("(")){auto v=expression();expect(")");return v;}
@@ -308,9 +314,16 @@ public:
         if(options_.allow_time){scopes_.back()["t"]=true;scopes_.back()["stime"]=true;}
         for(const auto &name:options_.writable_variables)
             if(!options_.external_variables.contains(name))error("Writable variable '"+name+"' is not external");
+        for(const auto &name:options_.writable_arrays)
+            if(!options_.external_arrays.contains(name))error("Writable array '"+name+"' is not external");
         for(const auto &name:options_.external_variables) {
             if(name.empty())error("External variable name must not be empty");
+            if(options_.external_arrays.contains(name))error("External name '"+name+"' is both a scalar and an array");
             declare(name,!options_.writable_variables.contains(name));
+        }
+        for(const auto &[name,size]:options_.external_arrays) {
+            if(name.empty())error("External array name must not be empty");
+            if(size==0||size>1024)error("External array '"+name+"' has invalid size");
         }
         for(const auto &statement:statements)if(statement->kind==Statement::Kind::declaration)
             for(const auto &declaration:statement->declarations)declare(declaration.name,declaration.constant);
@@ -337,10 +350,16 @@ private:
     }
     void expression(const Expression &value) {
         if(value.kind==Expression::Kind::variable&&!lookup(value.text))error("Unknown variable '"+value.text+"'");
+        if(value.kind==Expression::Kind::subscript&&!options_.external_arrays.contains(value.text))error("Unknown array '"+value.text+"'");
         if(value.kind==Expression::Kind::assignment||value.kind==Expression::Kind::prefix||value.kind==Expression::Kind::postfix) {
             const auto &target=*value.children.front();bool constant=false;
-            if(target.kind!=Expression::Kind::variable)error("Assignment target must be a variable");
-            if(!lookup(target.text,&constant))error("Unknown variable '"+target.text+"'");
+            if(target.kind==Expression::Kind::subscript) {
+                if(!options_.external_arrays.contains(target.text))error("Unknown array '"+target.text+"'");
+                constant=!options_.writable_arrays.contains(target.text);
+            } else {
+                if(target.kind!=Expression::Kind::variable)error("Assignment target must be a variable");
+                if(!lookup(target.text,&constant))error("Unknown variable '"+target.text+"'");
+            }
             if(constant)error("Cannot modify const variable '"+target.text+"'");
         }
         if(value.kind==Expression::Kind::call) {
@@ -388,11 +407,20 @@ public:
         : options_(options),functions_(functions),time_(time),state_(state) {
         scopes_.emplace_back();
         for(const auto &[name,value]:inputs)
-            if(!options_.external_variables.contains(name))error("Undeclared external variable '"+name+"'");
+            if(!options_.external_variables.contains(name)&&!array_input(name))error("Undeclared external variable '"+name+"'");
         for(const auto &name:options_.external_variables) {
             const auto found=inputs.find(name);
             scopes_.back().emplace(name,Binding{found==inputs.end()?0.0:found->second,
                                                !options_.writable_variables.contains(name),{}});
+        }
+        for(const auto &[name,size]:options_.external_arrays) {
+            auto &values=arrays_[name];values.reserve(size);
+            for(std::size_t index=0;index<size;++index) {
+                const auto key=name+"["+std::to_string(index)+"]";
+                const auto found=inputs.find(key);
+                values.push_back(Binding{found==inputs.end()?0.0:found->second,
+                                         !options_.writable_arrays.contains(name),{}});
+            }
         }
         if(options.allow_time){scopes_.back().emplace("t",Binding{time,true,{}});scopes_.back().emplace("stime",Binding{time,true,{}});}
         scopes_.back().emplace("true",Binding{1,true,{}});scopes_.back().emplace("false",Binding{0,true,{}});
@@ -409,6 +437,8 @@ public:
         if(options_.require_return&&!result.return_value)error("C program must return a value");
         if(result.return_value&&!std::isfinite(*result.return_value))error("C program return value must be finite");
         for(const auto &[name,binding]:scopes_.front())if(name!="t"&&name!="stime"&&name!="true"&&name!="false")result.variables[name]=binding.value;
+        for(const auto &[name,values]:arrays_)for(std::size_t index=0;index<values.size();++index)
+            result.variables[name+"["+std::to_string(index)+"]"]=values[index].value;
         return result;
     }
 private:
@@ -417,6 +447,20 @@ private:
     Binding &binding(const std::string &name) {
         for(auto scope=scopes_.rbegin();scope!=scopes_.rend();++scope)if(auto found=scope->find(name);found!=scope->end())return found->second;
         error("Unknown variable '"+name+"'");
+    }
+    bool array_input(const std::string &key) const {
+        for(const auto &[name,size]:options_.external_arrays)for(std::size_t index=0;index<size;++index)
+            if(key==name+"["+std::to_string(index)+"]")return true;
+        return false;
+    }
+    Binding &target_binding(const Expression &target) {
+        if(target.kind==Expression::Kind::variable)return binding(target.text);
+        if(target.kind!=Expression::Kind::subscript)error("Assignment target must be a variable or array element");
+        const auto found=arrays_.find(target.text);if(found==arrays_.end())error("Unknown array '"+target.text+"'");
+        const auto raw=evaluate(*target.children.front());const auto index=integer(raw);
+        if(double(index)!=raw||index<0||static_cast<std::size_t>(index)>=found->second.size())
+            error("Array index for '"+target.text+"' is out of range");
+        return found->second[static_cast<std::size_t>(index)];
     }
     long long integer(double value) const {
         if(!std::isfinite(value)||value<double(std::numeric_limits<long long>::min())||
@@ -429,8 +473,7 @@ private:
         return static_cast<unsigned>(count);
     }
     double assign(const Expression &target,double value,const std::string &op="=") {
-        if(target.kind!=Expression::Kind::variable)error("Assignment target must be a variable");
-        auto &b=binding(target.text);if(b.constant)error("Cannot modify const variable '"+target.text+"'");
+        auto &b=target_binding(target);if(b.constant)error("Cannot modify const variable '"+target.text+"'");
         double next=value;
         if(op!="="){
             const auto old=b.value;
@@ -449,9 +492,10 @@ private:
         switch(e.kind){
         case Expression::Kind::number:return e.number;
         case Expression::Kind::variable:return binding(e.text).value;
+        case Expression::Kind::subscript:return target_binding(e).value;
         case Expression::Kind::unary:{const auto v=evaluate(*e.children[0]);if(e.text=="+")return v;if(e.text=="-")return -v;if(e.text=="!")return v==0;if(e.text=="~")return double(~integer(v));if(e.text=="cast_bool")return v!=0;if(e.text=="cast_integer")return double(integer(v));if(e.text=="cast_real")return v;break;}
-        case Expression::Kind::prefix:{auto &target=*e.children[0];const auto v=binding(target.text).value+(e.text=="++"?1:-1);return assign(target,v);}
-        case Expression::Kind::postfix:{auto &target=*e.children[0];const auto old=binding(target.text).value;assign(target,old+(e.text=="++"?1:-1));return old;}
+        case Expression::Kind::prefix:{auto &target=*e.children[0];const auto v=target_binding(target).value+(e.text=="++"?1:-1);return assign(target,v);}
+        case Expression::Kind::postfix:{auto &target=*e.children[0];const auto old=target_binding(target).value;assign(target,old+(e.text=="++"?1:-1));return old;}
         case Expression::Kind::assignment:return assign(*e.children[0],evaluate(*e.children[1]),e.text);
         case Expression::Kind::conditional:return evaluate(*e.children[evaluate(*e.children[0])!=0?1:2]);
         case Expression::Kind::call:{std::vector<double>a;for(const auto &child:e.children)a.push_back(evaluate(*child));return call(e.text,a);}
@@ -497,7 +541,7 @@ private:
         return {};
     }
     const CProgramOptions &options_;const std::map<std::string,Function> &functions_;double time_;CProgramState *state_;
-    std::vector<std::map<std::string,Binding>> scopes_;std::size_t instructions_=0,call_depth_=0;
+    std::vector<std::map<std::string,Binding>> scopes_;std::map<std::string,std::vector<Binding>> arrays_;std::size_t instructions_=0,call_depth_=0;
 };
 } // namespace
 
