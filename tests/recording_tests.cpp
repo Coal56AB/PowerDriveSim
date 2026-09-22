@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
         Recording pulses;pulses.all=false;pulses.channels={"gate/"+pwm};
         auto pulse_result=execute(compile(doc.project()),nullptr,nullptr,&pulses);
         bool rise=false,fall=false;
-        for(const auto& sample:pulse_result.samples){if(sample.time==.0001){check(sample.gates[0],"PWM rising edge");rise=true;}if(sample.time==(.0001+.25/1000)){check(!sample.gates[0],"PWM falling edge");fall=true;}}
+        for(const auto& sample:pulse_result.samples){if(std::abs(sample.time-.0001)<1e-12){check(sample.gates[0],"PWM rising edge");rise=true;}if(std::abs(sample.time-(.0001+.25/1000))<1e-12){check(!sample.gates[0],"PWM falling edge");fall=true;}}
         check(rise&&fall,"PWM schedules exact edges independently of timestep");
         doc.transform({pwm},1,true);
         std::ostringstream rotated;write_project(doc.project(),rotated);std::istringstream reload(rotated.str());auto restored=read_project(reload);
