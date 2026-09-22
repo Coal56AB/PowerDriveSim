@@ -245,6 +245,24 @@ int main(int argc, char **argv) {
         const auto six_result=execute(compile(doc.project()),nullptr,nullptr,&six);
         check(six_result.gate_objects.size()==2&&!six_result.samples.back().gates[0]&&six_result.samples.back().gates[1],
               "One Gate C program drives independently indexed outputs");
+        doc.apply("Six scheduled PWM outputs",[&](Project& p){auto& g=p.patterns.back();
+            g.code="IN[0] = phasepwm(50, 0.02, 0);\n"
+                   "IN[1] = phasepwm(50, 0.02, 0.002);\n"
+                   "IN[2] = phasepwm(50, 0.02, 0.003);\n"
+                   "IN[3] = phasepwm(50, 0.02, 0.004);\n"
+                   "IN[4] = phasepwm(50, 0.02, 0.005);\n"
+                   "IN[5] = phasepwm(50, 0.02, ramp(0, 10, 0.006, 0.001));";
+            p.profile.stop=.03;});
+        const auto scheduled_six_ir=compile(doc.project());
+        check(scheduled_six_ir.gate_programs.empty()&&
+                  std::any_of(scheduled_six_ir.events.begin(),scheduled_six_ir.events.end(),
+                              [&](const GateEvent& event){return event.target==output1&&event.time>.02;}),
+              "Independent indexed PWM outputs are scheduled instead of interpreted on every step");
+        const auto scheduled_six_result=execute(scheduled_six_ir,nullptr,nullptr,&six);
+        check(scheduled_six_result.samples.front().gates[0]&&
+                  std::any_of(scheduled_six_result.samples.begin(),scheduled_six_result.samples.end(),
+                          [](const Sample& sample){return sample.gates[0]||sample.gates[1];}),
+              "Scheduled indexed PWM initial states and edges remain observable");
         std::ostringstream six_saved;write_project(doc.project(),six_saved);std::istringstream six_input(six_saved.str());
         check(read_project(six_input).patterns.back().outputs==6,"Multi-output Gate count roundtrips");
         for (const auto *name : {"bidirectional-charge", "bidirectional-discharge", "half-bridge",

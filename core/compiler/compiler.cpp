@@ -210,6 +210,52 @@ std::optional<std::string> simple_return_expression(const std::string &code) {
         return {};
     return code.substr(expression_begin, expression_end - expression_begin + 1);
 }
+std::optional<std::vector<std::string>> indexed_output_expressions(const std::string &code,
+                                                                   unsigned outputs) {
+    std::vector<std::string> expressions(outputs);
+    std::vector<bool> assigned(outputs, false);
+    size_t position = 0;
+    auto whitespace = [&] {
+        while (position < code.size() && std::isspace(static_cast<unsigned char>(code[position])))
+            ++position;
+    };
+    while (true) {
+        whitespace();
+        if (position == code.size())
+            break;
+        if (code.compare(position, 3, "IN[") != 0)
+            return {};
+        position += 3;
+        const auto index_begin = position;
+        while (position < code.size() && std::isdigit(static_cast<unsigned char>(code[position])))
+            ++position;
+        if (position == index_begin || position >= code.size() || code[position] != ']')
+            return {};
+        unsigned index = 0;
+        try {
+            index = static_cast<unsigned>(std::stoul(code.substr(index_begin, position - index_begin)));
+        } catch (...) {
+            return {};
+        }
+        ++position;
+        whitespace();
+        if (position >= code.size() || code[position++] != '=' || index >= outputs || assigned[index])
+            return {};
+        const auto expression_begin = code.find_first_not_of(" \t\r\n", position);
+        const auto semicolon = code.find(';', expression_begin);
+        if (expression_begin == std::string::npos || semicolon == std::string::npos)
+            return {};
+        const auto expression_end = code.find_last_not_of(" \t\r\n", semicolon - 1);
+        if (expression_end == std::string::npos || expression_end < expression_begin)
+            return {};
+        expressions[index] = code.substr(expression_begin, expression_end - expression_begin + 1);
+        assigned[index] = true;
+        position = semicolon + 1;
+    }
+    if (std::any_of(assigned.begin(), assigned.end(), [](bool value) { return !value; }))
+        return {};
+    return expressions;
+}
 bool gate_c_value(const CProgram &program,CProgramState &state,double time) {
     const auto result=execute_c_program(program,time,&state);
     return result.return_value.value_or(0)!=0;
@@ -325,6 +371,8 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     Project project=source;
     constexpr size_t max_optimized_script_edges = 200000;
     std::set<std::string> runtime_gate_scripts;
+    std::map<std::string, bool> scheduled_signal_initials;
+    std::vector<GateEvent> scheduled_signal_events;
     // Manual table edges remain in the document while another gate mode is
     // active. They are inactive input, not a second driver of the same signal.
     for(const auto& g:project.patterns)if(g.pwm||g.script)
@@ -359,7 +407,42 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
         auto optimized = g;
         std::optional<ScriptProgram> optimization_program;
         try {
-            if(g.outputs>1)throw Diagnostic("not_scalar_gate_optimizer",g.id,"Multiple outputs use the safe C runtime");
+            if(g.outputs>1) {
+                const auto expressions=indexed_output_expressions(g.code,g.outputs);
+                if(!expressions)throw Diagnostic("not_indexed_gate_optimizer",g.id,"Multiple outputs use the safe C runtime");
+                std::vector<GateEvent> candidate_events;
+                std::map<std::string,bool> candidate_initials;
+                bool optimized_all=true;
+                for(unsigned index=0;index<g.outputs&&optimized_all;++index) {
+                    GatePattern output=g;output.id=gate_signal_id(g,index);output.outputs=1;
+                    output.code=expressions->at(index);
+                    const auto program=script_program(output.code);
+                    const auto remaining=generated+candidate_events.size()<max_optimized_script_edges
+                        ? max_optimized_script_edges-generated-candidate_events.size():0;
+                    const auto output_event_begin=candidate_events.size();
+                    bool overflow=false;
+                    auto edge=[&](double time,bool state) {
+                        if(candidate_events.size()-output_event_begin>=remaining) {
+                            overflow=true;return;
+                        }
+                        const double tolerance=64*std::numeric_limits<double>::epsilon()*
+                            std::max({1.0,std::abs(time),std::abs(project.profile.stop)});
+                        if(time>0&&time<=project.profile.stop+tolerance) {
+                            if(time>project.profile.stop)time=project.profile.stop;
+                            candidate_events.push_back({time,output.id,state});
+                        }
+                    };
+                    optimized_all=generate_phase_pwm_edges(output,project.profile.stop,edge,&program,remaining)&&!overflow;
+                    if(optimized_all)candidate_initials[output.id]=gate_script_value(output,0,&program);
+                }
+                if(optimized_all) {
+                    generated+=candidate_events.size();
+                    scheduled_signal_events.insert(scheduled_signal_events.end(),candidate_events.begin(),candidate_events.end());
+                    scheduled_signal_initials.insert(candidate_initials.begin(),candidate_initials.end());
+                    continue;
+                }
+                throw Diagnostic("not_indexed_gate_optimizer",g.id,"Multiple outputs use the safe C runtime");
+            }
             if (const auto simple_expression = simple_return_expression(g.code))
                 optimized.code = *simple_expression;
             optimization_program = script_program(optimized.code);
@@ -435,10 +518,25 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     }
 
     auto resolved=resolve_connections(project,origins);
+    std::map<std::string,bool> scheduled_driver_initials;
+    for(const auto& pattern:project.patterns)for(unsigned index=0;index<pattern.outputs;++index) {
+        const auto signal=gate_signal_id(pattern,index);
+        if(auto initial=scheduled_signal_initials.find(signal);initial!=scheduled_signal_initials.end())
+            scheduled_driver_initials[endpoint_key({pattern.id,gate_port(index)})]=initial->second;
+    }
+    for(const auto& [target,driver]:resolved.gate_drivers)
+        if(auto initial=scheduled_driver_initials.find(driver);initial!=scheduled_driver_initials.end())
+            if(auto component=std::find_if(resolved.project.components.begin(),resolved.project.components.end(),
+                    [&](const Component& candidate){return candidate.id==target;});component!=resolved.project.components.end())
+                component->closed=initial->second;
     auto ir=compile_flat(resolved.project);
     auto patterns=project.patterns;std::sort(patterns.begin(),patterns.end(),[](const GatePattern& a,const GatePattern& b){return a.id<b.id;});
-    for(const auto& pattern:patterns)for(unsigned index=0;index<pattern.outputs;++index)
-        ir.gate_signals.push_back({gate_signal_id(pattern,index),pattern.name+(pattern.outputs>1?"["+std::to_string(index)+"]":""),pattern.initial});
+    for(const auto& pattern:patterns)for(unsigned index=0;index<pattern.outputs;++index) {
+        const auto signal=gate_signal_id(pattern,index);
+        const auto initial=scheduled_signal_initials.find(signal);
+        ir.gate_signals.push_back({signal,pattern.name+(pattern.outputs>1?"["+std::to_string(index)+"]":""),
+                                   initial==scheduled_signal_initials.end()?pattern.initial:initial->second});
+    }
     for(const auto& pattern:patterns)if(runtime_gate_scripts.count(pattern.id)) {
         GateProgram program{pattern.id,pattern.code,{}};
         for(unsigned index=0;index<pattern.outputs;++index) {
@@ -456,6 +554,18 @@ static SimulationIR compile_wired(const Project& source, const std::map<std::str
     }
     for(const auto& event:project.events)
         if(std::any_of(project.patterns.begin(),project.patterns.end(),[&](const GatePattern& p){return p.id==event.target;}))ir.events.push_back(event);
+    std::map<std::string,std::vector<std::string>> scheduled_targets;
+    for(const auto& pattern:patterns)for(unsigned index=0;index<pattern.outputs;++index) {
+        const auto signal=gate_signal_id(pattern,index);
+        const auto driver=endpoint_key({pattern.id,gate_port(index)});
+        for(const auto& [target,connected]:resolved.gate_drivers)if(connected==driver)
+            scheduled_targets[signal].push_back(target);
+    }
+    for(const auto& event:scheduled_signal_events) {
+        ir.events.push_back(event);
+        for(const auto& target:scheduled_targets[event.target])
+            ir.events.push_back({event.time,target,event.closed});
+    }
     std::sort(ir.events.begin(),ir.events.end(),[](const GateEvent& a,const GateEvent& b){return a.time==b.time?a.target<b.target:a.time<b.time;});
     return ir;
 }
