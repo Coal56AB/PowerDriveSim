@@ -3896,7 +3896,10 @@ void EditorWindow::update_title() {
     setWindowTitle("PowerDriveSim — " +
                    (path_.isEmpty() ? q(root_project().name) : QFileInfo(path_).fileName()) +
                    (serialized(root_project()) == saved_state_ ? "" : " *"));
-    statusBar()->showMessage(QString::number(project().components.size()) + " " + text("components") + " · " +
+    const auto elements = project().components.size() + project().nodes.size() + project().tags.size() +
+                          project().patterns.size() + project().plots.size() + project().code_blocks.size() +
+                          project().instances.size();
+    statusBar()->showMessage(QString::number(elements) + " " + text("components") + " · " +
                              QString::number(project().wires.size()) + " " + text("wires"));
 }
 bool EditorWindow::confirm_discard() {

@@ -20,6 +20,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QStatusBar>
 #include <QProgressBar>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -745,6 +746,7 @@ class DesktopTests : public QObject {
         EditorWindow window("en", temp.path());
         window.set_project(project);
         window.show();
+        QCOMPARE(window.statusBar()->currentMessage(), QString("2 elements · 1 wires"));
         QGraphicsItem *sink_item = nullptr;
         for (auto *item : window.canvas()->scene()->items())
             if (item->data(0).toString().toStdString() == sink.id && item->data(1).toString() == "atom")
