@@ -1511,6 +1511,10 @@ class InteractionTests : public QObject {
             auto *parameter_default = qobject_cast<QLineEdit *>(table->cellWidget(0, 2));
             QCOMPARE(parameter_default->text(), QString("base_resistance * 2"));
             parameter_default->setText("2.5 kOhm");
+            auto *symbol = dialog->findChild<QComboBox *>("public_symbol");
+            QVERIFY(symbol->findData(0) >= 0);
+            QVERIFY(symbol->findData(108) >= 0);
+            symbol->setCurrentIndex(symbol->findData(0));
             numeric_default_saved = true;
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
@@ -1518,6 +1522,11 @@ class InteractionTests : public QObject {
         QVERIFY(numeric_default_saved);
         QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 2500.);
         QVERIFY(definition(w.root_project(), definition_id).parameters[0].default_expression.empty());
+        QCOMPARE(definition(w.root_project(), definition_id).appearance.symbol, 0);
+        std::ostringstream atom_symbol_stream;
+        write_project(w.root_project(), atom_symbol_stream);
+        std::istringstream atom_symbol_input(atom_symbol_stream.str());
+        QCOMPARE(definition(read_project(atom_symbol_input), definition_id).appearance.symbol, 0);
         w.undo();
         QCOMPARE(w.root_project(), after_interface);
         const auto labels = w.findChildren<QLabel *>();

@@ -808,12 +808,11 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     auto *symbol = new QComboBox;
     symbol->setObjectName("public_symbol");
     symbol->addItem(text("appearance_automatic"), -1);
-    for (const auto &[id, action] : component_actions_)
-        if (id >= 200) {
-            symbol->addItem(component_icon(id), action->toolTip(), id);
-            if (edited.appearance.symbol == id)
-                symbol->setCurrentIndex(symbol->count() - 1);
-        }
+    for (const auto &[id, action] : component_actions_) {
+        symbol->addItem(component_icon(id), action->text(), id);
+        if (edited.appearance.symbol == id)
+            symbol->setCurrentIndex(symbol->count() - 1);
+    }
     auto *symbol_row = new QHBoxLayout;
     symbol_row->addWidget(new QLabel(text("appearance_symbol")));
     symbol_row->addWidget(symbol, 1);
