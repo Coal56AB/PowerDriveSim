@@ -332,6 +332,7 @@ void EditorWindow::refresh_hierarchy() {
         label->setObjectName("hierarchy_separator");
         label->setStyleSheet("color:palette(placeholder-text);padding:0 2px;font-weight:600;");
         layout->addWidget(label);
+        label->show();
     };
     auto add_level = [&](const std::string &name, size_t depth) {
         if (depth)
@@ -350,6 +351,7 @@ void EditorWindow::refresh_hierarchy() {
             if (depth <= path.size()) { path.resize(depth); navigate_hierarchy(path); }
         });
         layout->addWidget(button);
+        button->show();
     };
     std::vector<std::string> levels{root.name};
     const Schematic *level = &root;
@@ -384,6 +386,7 @@ void EditorWindow::refresh_hierarchy() {
         }
         overflow->setMenu(menu);
         layout->addWidget(overflow);
+        overflow->show();
         for (size_t index = levels.size() - 2; index < levels.size(); ++index)
             add_level(levels[index], index);
     }
@@ -404,6 +407,7 @@ void EditorWindow::refresh_hierarchy() {
     if (depth != 0 && locked)
         layout->addWidget(definition_button_);
     layout->addStretch();
+    layout->activate();
     std::map<std::string, QString> exposed;
     if (depth)
         for (const auto &port : definition(root, document_->current_definition()).ports)

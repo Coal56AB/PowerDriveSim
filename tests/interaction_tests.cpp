@@ -1678,6 +1678,13 @@ class InteractionTests : public QObject {
         EditorWindow w("en", dir.path());
         w.set_project(project);
         ready(w);
+        const auto root_levels = w.findChildren<QToolButton *>("hierarchy_level_0");
+        auto root_level = std::find_if(root_levels.begin(), root_levels.end(),
+                                       [](auto *level) { return level->isVisible(); });
+        QVERIFY(root_level != root_levels.end());
+        QVERIFY2((*root_level)->geometry().left() <= 25,
+                 qPrintable(QString("root x=%1 parent width=%2")
+                     .arg((*root_level)->geometry().left()).arg((*root_level)->parentWidget()->width())));
         const QString expected[] = {"#146cca", "#17866d", "#8c67c8"};
         for (size_t index = 0; index < project.tags.size(); ++index) {
             auto *tag = item(w, project.tags[index].id);
