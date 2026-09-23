@@ -786,9 +786,22 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         });
         update_default();
     };
+    auto unused_name = [](const QTableWidget &table, const std::string &stem) {
+        for (int number = table.rowCount() + 1;; ++number) {
+            const auto candidate = stem + std::to_string(number);
+            bool taken = false;
+            for (int row = 0; row < table.rowCount(); ++row)
+                if (table.item(row, 0)->text().trimmed().toStdString() == candidate) {
+                    taken = true;
+                    break;
+                }
+            if (!taken)
+                return candidate;
+        }
+    };
     page(ports, text("public_ports"), [&] {
         if (!terminals.empty())
-            add_port({{}, "port" + std::to_string(ports.rowCount() + 1), terminals.front().endpoint});
+            add_port({{}, unused_name(ports, "port"), terminals.front().endpoint});
     });
     page(parameters, text("public_parameters"), [&] {
         auto same_field = [](const Binding &a, const Binding &b) {
@@ -806,7 +819,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         if (available != bindings.end()) {
             const auto &b = *available;
             add_parameter({{},
-                           "parameter" + std::to_string(parameters.rowCount() + 1),
+                           unused_name(parameters, "parameter"),
                            b.unit,
                            b.object,
                            b.field,

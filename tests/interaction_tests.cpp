@@ -1433,6 +1433,8 @@ class InteractionTests : public QObject {
             const auto expose = [&](const QString &name, const QString &label) {
                 add->click();
                 const int row = ports->rowCount() - 1;
+                if (row == 1)
+                    QCOMPARE(ports->item(row, 0)->text(), QString("port3"));
                 ports->item(row, 0)->setText(name);
                 auto *binding = qobject_cast<QComboBox *>(ports->cellWidget(row, 1));
                 QCOMPARE(binding->count(), 6);
@@ -1440,7 +1442,7 @@ class InteractionTests : public QObject {
                 QVERIFY(index >= 0);
                 binding->setCurrentIndex(index);
             };
-            expose("sense", "Logic / sense");
+            expose("port2", "Logic / sense");
             expose("gate", "Logic / gate");
             expose("third", "Gate C / out2");
             expose("tag", "Signal tag / io");
@@ -1977,7 +1979,7 @@ class InteractionTests : public QObject {
             QVERIFY(binding->findText("V / Frequency, Hz") >= 0);
         });
         project.definitions.front().parameters.push_back(
-            {new_uuid(), "Voltage", "V", source.id, "value", 10});
+            {new_uuid(), "parameter2", "V", source.id, "value", 10});
         inspect([&](QDialog *dialog) {
             auto *table = dialog->findChild<QTableWidget *>("public_parameters");
             QCOMPARE(table->rowCount(), 1);
@@ -1986,6 +1988,7 @@ class InteractionTests : public QObject {
             QCOMPARE(table->rowCount(), 2);
             const auto second = qobject_cast<QComboBox *>(table->cellWidget(1, 1))->currentIndex();
             QCOMPARE(second, first + 1);
+            QCOMPARE(table->item(1, 0)->text(), QString("parameter3"));
         });
     }
     void connection_tags_distinguish_domains_on_canvas() {
