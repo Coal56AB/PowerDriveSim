@@ -1626,6 +1626,26 @@ class InteractionTests : public QObject {
         QVERIFY(checked);
         QCOMPARE(w.root_project(), project);
     }
+    void connection_tags_distinguish_domains_on_canvas() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        project.tags.push_back({new_uuid(), "POWER", 0, 0, Domain::electrical});
+        project.tags.push_back({new_uuid(), "FIRE", 0, 100, Domain::gate});
+        project.tags.push_back({new_uuid(), "MEASURE", 0, 200, Domain::signal});
+        EditorWindow w("en", dir.path());
+        w.set_project(project);
+        ready(w);
+        const QString expected[] = {"#146cca", "#17866d", "#8c67c8"};
+        for (size_t index = 0; index < project.tags.size(); ++index) {
+            auto *tag = item(w, project.tags[index].id);
+            QVERIFY(tag && tag->childItems().size() == 1);
+            QCOMPARE(tag->childItems().front()->data(11).toString(), expected[index]);
+        }
+        if (const auto screenshot = qEnvironmentVariable("PDS_TAG_DOMAINS_SCREENSHOT"); !screenshot.isEmpty())
+            QVERIFY(w.grab().save(screenshot));
+    }
     void connection_tag_scope_and_suggestion_visibility() {
         try {
         QTemporaryDir dir;
