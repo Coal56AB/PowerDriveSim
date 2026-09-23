@@ -1388,7 +1388,7 @@ class InteractionTests : public QObject {
             QVERIFY(w.grab().save(screenshot));
         }
     }
-    void public_interface_exposes_code_and_all_gate_outputs() {
+    void public_interface_exposes_signal_and_tag_ports() {
         QTemporaryDir dir;
         Project project;
         project.id = new_uuid();
@@ -1411,6 +1411,11 @@ class InteractionTests : public QObject {
         pattern.outputs = 3;
         pattern.code = "IN[0] = 0; IN[1] = 0; IN[2] = 0;";
         body.patterns.push_back(pattern);
+        ConnectionTag tag;
+        tag.id = new_uuid();
+        tag.name = "Signal tag";
+        tag.domain = Domain::signal;
+        body.tags.push_back(tag);
         project.definitions.push_back(body);
         const auto instance = new_uuid();
         project.instances.push_back({instance, "Signals", body.id, 0, 0});
@@ -1430,7 +1435,7 @@ class InteractionTests : public QObject {
                 const int row = ports->rowCount() - 1;
                 ports->item(row, 0)->setText(name);
                 auto *binding = qobject_cast<QComboBox *>(ports->cellWidget(row, 1));
-                QCOMPARE(binding->count(), 5);
+                QCOMPARE(binding->count(), 6);
                 const int index = binding->findText(label);
                 QVERIFY(index >= 0);
                 binding->setCurrentIndex(index);
@@ -1438,6 +1443,7 @@ class InteractionTests : public QObject {
             expose("sense", "Logic / sense");
             expose("gate", "Logic / gate");
             expose("third", "Gate C / out2");
+            expose("tag", "Signal tag / io");
             visited = true;
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
@@ -1448,7 +1454,7 @@ class InteractionTests : public QObject {
         w.findChild<QAction *>("public_interface")->trigger();
         QVERIFY(visited);
         const auto ports = definition(w.root_project(), body.id).ports;
-        QCOMPARE(ports.size(), size_t(3));
+        QCOMPARE(ports.size(), size_t(4));
         QCOMPARE(ports[0].terminal, (Endpoint{block.id, block.inputs[0].id}));
         QCOMPARE(ports[0].domain, Domain::signal);
         QCOMPARE(ports[0].direction, Direction::input);
@@ -1457,7 +1463,21 @@ class InteractionTests : public QObject {
         QCOMPARE(ports[1].direction, Direction::output);
         QCOMPARE(ports[2].terminal, (Endpoint{pattern.id, "out2"}));
         QCOMPARE(ports[2].domain, Domain::gate);
+        QCOMPARE(ports[3].terminal, (Endpoint{tag.id, "io"}));
+        QCOMPARE(ports[3].domain, Domain::signal);
+        QCOMPARE(ports[3].direction, Direction::conserving);
         validate_hierarchy(w.root_project());
+        QCOMPARE(flatten(w.root_project()).project.tags.size(), size_t(1));
+        auto connected = w.root_project();
+        CodeBlock signal;
+        signal.id = new_uuid();
+        signal.name = "External signal";
+        signal.code = "out = 1;";
+        signal.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
+        connected.code_blocks.push_back(signal);
+        connected.wires.push_back({new_uuid(), {signal.id, signal.outputs[0].id},
+                                   {instance, ports[3].id}, {}});
+        QCOMPARE(flatten(connected).project.wires.size(), size_t(1));
         std::istringstream saved(encoded(w.root_project()));
         QCOMPARE(definition(read_project(saved), body.id).ports, ports);
         w.undo();

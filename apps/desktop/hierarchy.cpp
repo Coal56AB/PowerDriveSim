@@ -549,6 +549,8 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     };
     for (const auto &n : body.nodes)
         terminal(n.id, n.name, "node");
+    for (const auto &tag : body.tags)
+        terminal(tag.id, tag.name, "io");
     for (const auto &c : body.components) {
         terminal(c.id, c.name, "p");
         terminal(c.id, c.name, "n");
