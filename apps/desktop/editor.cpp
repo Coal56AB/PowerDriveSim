@@ -73,6 +73,14 @@ namespace pds::desktop {
 static QString q(const std::string &s) {
     return QString::fromStdString(s);
 }
+static QColor domain_color(Domain domain) {
+    return domain == Domain::gate ? QColor("#17866d")
+         : domain == Domain::signal ? QColor("#8c67c8") : QColor("#146cca");
+}
+static QString tag_symbol(Domain domain) {
+    return domain == Domain::gate ? QString("G")
+         : domain == Domain::signal ? QString("S") : QString("N");
+}
 static void prune_orphan_nodes(Schematic &schematic) {
     std::set<std::string> orphaned;
     for (const auto &node : schematic.nodes) {
@@ -846,9 +854,9 @@ class Atom final : public QGraphicsItem {
             return;
         }
         if (type == 5) {
-            const bool gate = symbol == "G";
-            const QColor color = themed_signal(gate ? QColor("#17866d")
-                : symbol == "S" ? QColor("#8c67c8") : QColor("#146cca"));
+            const Domain domain = symbol == "G" ? Domain::gate
+                                  : symbol == "S" ? Domain::signal : Domain::electrical;
+            const QColor color = themed_signal(domain_color(domain));
             p->setBrush(theme_colors().canvas);
             p->setPen(QPen(color, isSelected() ? 2.4 : 1.6));
             QPainterPath tag;
@@ -866,6 +874,12 @@ class Atom final : public QGraphicsItem {
             p->setFont(font);
             if(code_icon.empty())label(p, QRectF(-26, -11, 50, 22), Qt::AlignCenter, symbol);
             else paint_code_icon(*p,code_icon,QRectF(-23,-11,42,22));
+            if (!separate_labels) {
+                font.setBold(false);
+                p->setFont(font);
+                label(p, QRectF(36, -10, 64, 20), Qt::AlignLeft | Qt::AlignVCenter,
+                      QFontMetricsF(font).elidedText(name, Qt::ElideRight, 60));
+            }
             return;
         }
         if (type == 1) {
@@ -1166,8 +1180,8 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         a->port("node", {0, 0}, QColor("#146cca"));
     }
     for (const auto &t : fragment.tags) {
-        auto *a = add(t, 5, t.domain == Domain::gate ? QString("G") : QString("N"), {});
-        a->port("io", {0, 0}, t.domain == Domain::gate ? QColor("#17866d") : QColor("#146cca"));
+        auto *a = add(t, 5, tag_symbol(t.domain), {});
+        a->port("io", {0, 0}, domain_color(t.domain));
     }
     for (const auto &g : fragment.patterns) {
         auto *a = add(g, 2, g.script ? QString("Code") : g.pwm ? QString("PWM") : QString(),
@@ -2526,13 +2540,9 @@ void EditorWindow::rebuild_scene() {
         ports(a, {{"node", {0, 0}}}, QColor("#146cca"));
     }
     for (const auto &t : project().tags) {
-        const auto symbol = t.domain == Domain::gate ? QString("G")
-                          : t.domain == Domain::signal ? QString("S") : QString("N");
-        const auto color = t.domain == Domain::gate ? QColor("#17866d")
-                         : t.domain == Domain::signal ? QColor("#8c67c8") : QColor("#146cca");
-        auto *a = atom(t.id, t.name, symbol, 5);
+        auto *a = atom(t.id, t.name, tag_symbol(t.domain), 5);
         a->value.clear();
-        ports(a, {{"io", {0, 0}}}, color);
+        ports(a, {{"io", {0, 0}}}, domain_color(t.domain));
     }
     for (const auto &g : project().patterns) {
         auto *a = atom(g.id, g.name, g.script ? QString("Code") : g.pwm ? QString("PWM") : QString(), 2);

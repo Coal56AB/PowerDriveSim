@@ -1686,6 +1686,18 @@ class InteractionTests : public QObject {
         }
         if (const auto screenshot = qEnvironmentVariable("PDS_TAG_DOMAINS_SCREENSHOT"); !screenshot.isEmpty())
             QVERIFY(w.grab().save(screenshot));
+        w.select_object(project.tags.back().id);
+        QTest::keyClick(w.canvas(), Qt::Key_C, Qt::ControlModifier);
+        QTest::keyClick(w.canvas(), Qt::Key_V, Qt::ControlModifier);
+        bool preview_port = false;
+        for (auto *part : w.canvas()->scene()->items())
+            if (part->data(1).toString() == "preview" && part->data(2).toString() == "io") {
+                QCOMPARE(part->data(11).toString(), QString("#8c67c8"));
+                preview_port = true;
+            }
+        QVERIFY(preview_port);
+        QTest::keyClick(w.canvas(), Qt::Key_Escape);
+        QCOMPARE(w.project().tags.size(), size_t(3));
     }
     void connection_tag_scope_and_suggestion_visibility() {
         try {
