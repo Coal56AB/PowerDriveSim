@@ -1808,6 +1808,74 @@ class InteractionTests : public QObject {
         QCOMPARE(headings[1]->text(), QString("Ungrouped"));
         QCOMPARE(headings[2]->text(), QString("Power"));
     }
+    void public_mask_lists_active_fields_and_keeps_existing_bindings() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        Definition body;
+        body.id = new_uuid();
+        body.name = "Source mask";
+        body.wired = true;
+        Component source;
+        source.id = new_uuid();
+        source.name = "V";
+        source.kind = Kind::voltage;
+        source.value = 10;
+        body.components.push_back(source);
+        project.definitions.push_back(body);
+        const auto instance = new_uuid();
+        project.instances.push_back({instance, "Source", body.id, 0, 0});
+        EditorWindow w("en", dir.path());
+        auto inspect = [&](const auto &check_dialog) {
+            w.set_project(project);
+            ready(w);
+            w.select_object(instance);
+            bool visited = false;
+            QTimer::singleShot(20, &w, [&] {
+                auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+                if (!dialog)
+                    return;
+                check_dialog(dialog);
+                visited = true;
+                dialog->reject();
+            });
+            QTimer watchdog;
+            watchdog.setSingleShot(true);
+            QObject::connect(&watchdog, &QTimer::timeout, &w, [&] {
+                if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog"))
+                    dialog->reject();
+            });
+            watchdog.start(2000);
+            w.findChild<QAction *>("public_interface")->trigger();
+            watchdog.stop();
+            QVERIFY(visited);
+        };
+        inspect([&](QDialog *dialog) {
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            QCOMPARE(qobject_cast<QComboBox *>(table->cellWidget(0, 1))->count(), 1);
+        });
+        const auto frequency_parameter = new_uuid();
+        project.definitions.front().parameters.push_back(
+            {frequency_parameter, "Frequency", "Hz", source.id, "source_frequency", 50});
+        inspect([&](QDialog *dialog) {
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            QCOMPARE(table->rowCount(), 1);
+            auto *binding = qobject_cast<QComboBox *>(table->cellWidget(0, 1));
+            QCOMPARE(binding->count(), 2);
+            QCOMPARE(binding->currentText(), QString("V / Frequency, Hz"));
+        });
+        project.definitions.front().parameters.clear();
+        project.definitions.front().components.front().source.kind = Waveform::sine;
+        inspect([&](QDialog *dialog) {
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            auto *binding = qobject_cast<QComboBox *>(table->cellWidget(0, 1));
+            QVERIFY(binding->count() > 1);
+            QVERIFY(binding->findText("V / Frequency, Hz") >= 0);
+        });
+    }
     void connection_tags_distinguish_domains_on_canvas() {
         QTemporaryDir dir;
         Project project;

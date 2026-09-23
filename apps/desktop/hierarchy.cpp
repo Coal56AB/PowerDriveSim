@@ -593,6 +593,13 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                 if (field.value("editor").toString() != "number")
                     continue;
                 const auto key = field.value("key").toString().toStdString();
+                const bool existing_binding = std::any_of(
+                    edited.parameters.begin(), edited.parameters.end(),
+                    [&](const PublicParameter &parameter) {
+                        return parameter.object == object.id && parameter.field == key;
+                    });
+                if (!existing_binding && !property_visible(body, object.id, field))
+                    continue;
                 const auto value = read_property(body, object.id, key);
                 if (!std::holds_alternative<double>(value))
                     continue;
