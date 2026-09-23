@@ -611,10 +611,14 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     fields(body.patterns);
     for (const auto &i : body.instances) {
         const auto &nested = definition(body, i.definition);
-        for (const auto &p : nested.parameters)
+        for (const auto &p : nested.parameters) {
+            const auto override = std::find_if(i.parameters.begin(), i.parameters.end(),
+                                               [&](const auto &entry) { return entry.first == p.id; });
             bindings.push_back({QString::fromStdString(i.name + " / " + p.name), i.id, p.id, p.unit,
-                                public_parameter_default_value(nested, p), 1,
+                                override == i.parameters.end() ? public_parameter_default_value(nested, p)
+                                                               : override->second, 1,
                                 p.has_minimum, p.minimum, p.has_maximum, p.maximum});
+        }
     }
     auto default_value = [&](const QString &input, const Binding &binding,
                              const std::string &parameter) -> DefaultValue {

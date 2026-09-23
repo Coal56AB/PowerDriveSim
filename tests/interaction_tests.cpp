@@ -1667,6 +1667,64 @@ class InteractionTests : public QObject {
         QVERIFY(checked);
         QCOMPARE(w.root_project(), project);
     }
+    void public_mask_preserves_nested_instance_override() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        Definition leaf;
+        leaf.id = new_uuid();
+        leaf.name = "Leaf";
+        leaf.wired = true;
+        Component resistor;
+        resistor.id = new_uuid();
+        resistor.name = "R";
+        resistor.kind = Kind::resistor;
+        resistor.value = 1000;
+        leaf.components.push_back(resistor);
+        const auto leaf_parameter = new_uuid();
+        leaf.parameters.push_back({leaf_parameter, "Resistance", "Ohm", resistor.id, "value", 1000});
+        Definition parent;
+        parent.id = new_uuid();
+        parent.name = "Parent";
+        parent.wired = true;
+        const auto child = new_uuid();
+        parent.instances.push_back({child, "Configured leaf", leaf.id, 0, 0});
+        parent.instances.back().parameters.push_back({leaf_parameter, 2500});
+        project.definitions = {leaf, parent};
+        const auto parent_instance = new_uuid();
+        project.instances.push_back({parent_instance, "Parent instance", parent.id, 0, 0});
+        EditorWindow w("en", dir.path());
+        w.set_project(project);
+        ready(w);
+        w.select_object(parent_instance);
+        bool saved = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            QVERIFY(dialog);
+            auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            QCOMPARE(parameters->rowCount(), 1);
+            QCOMPARE(qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->text(),
+                     QString("2500"));
+            saved = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        QTimer::singleShot(2000, &w, [&] {
+            if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog"))
+                dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(saved);
+        const auto &edited = definition(w.root_project(), parent.id);
+        QCOMPARE(edited.parameters.size(), size_t(1));
+        QCOMPARE(edited.parameters.front().value, 2500.);
+        QCOMPARE(flatten(w.root_project()).project.components.front().value, 2500.);
+        w.undo();
+        QVERIFY(definition(w.root_project(), parent.id).parameters.empty());
+        w.redo();
+        QCOMPARE(flatten(w.root_project()).project.components.front().value, 2500.);
+    }
     void connection_tags_distinguish_domains_on_canvas() {
         QTemporaryDir dir;
         Project project;
