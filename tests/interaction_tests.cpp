@@ -1724,6 +1724,36 @@ class InteractionTests : public QObject {
         QVERIFY(definition(w.root_project(), parent.id).parameters.empty());
         w.redo();
         QCOMPARE(flatten(w.root_project()).project.components.front().value, 2500.);
+
+        auto expressed = project;
+        expressed.definitions[1].instances.front().parameters.clear();
+        expressed.definitions[1].initialization_code = "double setting = 3200;";
+        expressed.definitions[1].parameter_expressions.push_back(
+            {child, "parameter/" + leaf_parameter, "setting"});
+        QTemporaryDir expression_dir;
+        EditorWindow expression_window("en", expression_dir.path());
+        expression_window.set_project(expressed);
+        ready(expression_window);
+        expression_window.select_object(parent_instance);
+        bool expression_checked = false;
+        QTimer::singleShot(20, &expression_window, [&] {
+            auto *dialog = expression_window.findChild<QDialog *>("public_interface_dialog");
+            QVERIFY(dialog);
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
+            QCOMPARE(qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->text(), QString("3200"));
+            expression_checked = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        QTimer::singleShot(2000, &expression_window, [&] {
+            if (auto *dialog = expression_window.findChild<QDialog *>("public_interface_dialog"))
+                dialog->reject();
+        });
+        expression_window.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(expression_checked);
+        QCOMPARE(definition(expression_window.root_project(), parent.id).parameters.front().value, 3200.);
+        QCOMPARE(definition(expression_window.root_project(), parent.id).parameter_expressions.size(), size_t(1));
+        QCOMPARE(flatten(expression_window.root_project()).project.components.front().value, 3200.);
     }
     void connection_tags_distinguish_domains_on_canvas() {
         QTemporaryDir dir;

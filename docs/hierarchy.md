@@ -66,7 +66,7 @@ invalid definition.
 
 Graph windows use expanded plot UUIDs and remain open across level changes. Root-level `ViewOptions` can override a particular expanded plot, including its time viewport and cursors, without changing a shared definition. Definition settings remain defaults. Grouping, copying and expansion remap plot/channel identities together; unnamed electrical nets are resolved through terminals rather than by prefixing the old net UUID. Deleting an instance removes its overrides; undo restores them. Public graph inputs retain their electrical/gate tap behavior through nested aliases.
 
-The public parameter dialog derives numeric bindings and display scales from component property configurations, including constant PWM. Nested instance parameters inherit primitive editor constraints. The hierarchy tree rebuilds only after structural/name changes and preserves collapsed branches; text editing suppresses hierarchy keyboard shortcuts.
+The public parameter dialog derives numeric bindings and display scales from component property configurations, including constant PWM. A newly exposed binding starts with the effective value of its target, including nested instance overrides and values resolved from definition-local initialization expressions. The source expressions remain in the project. Nested instance parameters inherit primitive editor constraints. The hierarchy tree rebuilds only after structural/name changes and preserves collapsed branches; text editing suppresses hierarchy keyboard shortcuts.
 
 The same public-interface dialog stores a `DefinitionAppearance`. A definition may
 select any symbol from the centralized schematic icon set or keep automatic

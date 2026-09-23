@@ -534,7 +534,7 @@ std::vector<std::string> EditorWindow::visible_plot_channels(const std::string &
 
 void EditorWindow::edit_public_interface(const std::string &definition_id) {
     Definition edited = definition(root_project(), definition_id);
-    auto body = definition_project(root_project(), definition_id);
+    auto body = definition_project(resolve_parameter_expressions(root_project()), definition_id);
     struct Terminal {
         QString name;
         Endpoint endpoint;
