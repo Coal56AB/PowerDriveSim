@@ -1,0 +1,12 @@
+{
+  "type": "signal_limiter",
+  "fields": [],
+  "palette": {
+    "id": 114,
+    "label": "signal_limiter",
+    "category": "signals",
+    "short": "Lim",
+    "fixed": false,
+    "hidden": false
+  }
+}

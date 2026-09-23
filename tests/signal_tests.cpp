@@ -218,6 +218,89 @@ int main() {
         disconnected.wires.pop_back();
         error("missing_signal_source", [&] { (void)compile_signal_ir(disconnected); });
 
+        Project operators;
+        operators.id = derived_uuid("signal-operator-project");
+        operators.wired = true;
+        auto source = [&](const std::string &key, const char *code, SignalScalarType type) {
+            CodeBlock result;
+            result.id = derived_uuid("signal-operator-" + key);
+            result.name = key;
+            result.period = 100e-6;
+            result.code = code;
+            result.outputs = {{derived_uuid("signal-operator-" + key + "-out"), "out", "", type, 0}};
+            return result;
+        };
+        auto real_a = source("real-a", "out = 2;", SignalScalarType::real);
+        auto real_b = source("real-b", "out = -3;", SignalScalarType::real);
+        auto bool_true = source("bool-true", "out = 1;", SignalScalarType::boolean);
+        auto bool_false = source("bool-false", "out = 0;", SignalScalarType::boolean);
+        auto operator_block = [&](const std::string &key, const char *code,
+                                  std::vector<CodePort> inputs, SignalScalarType output_type) {
+            CodeBlock result;
+            result.id = derived_uuid("signal-operator-" + key);
+            result.name = key;
+            result.period = 100e-6;
+            result.code = code;
+            result.inputs = std::move(inputs);
+            result.outputs = {{derived_uuid("signal-operator-" + key + "-out"), "out", "", output_type, 0}};
+            return result;
+        };
+        auto sum = operator_block("sum", "out = a + b;", {
+                                      {derived_uuid("signal-operator-sum-a"), "a", "", SignalScalarType::real, 0},
+                                      {derived_uuid("signal-operator-sum-b"), "b", "", SignalScalarType::real, 0},
+                                  }, SignalScalarType::real);
+        auto limiter = operator_block("limiter", "out = clamp(in, -1, 1);", {
+                                          {derived_uuid("signal-operator-limiter-in"), "in", "", SignalScalarType::real, 0},
+                                      }, SignalScalarType::real);
+        auto comparator = operator_block("comparator", "out = a >= b;", {
+                                             {derived_uuid("signal-operator-comparator-a"), "a", "", SignalScalarType::real, 0},
+                                             {derived_uuid("signal-operator-comparator-b"), "b", "", SignalScalarType::real, 0},
+                                         }, SignalScalarType::boolean);
+        auto logical_and = operator_block("and", "out = a && b;", {
+                                              {derived_uuid("signal-operator-and-a"), "a", "", SignalScalarType::boolean, 0},
+                                              {derived_uuid("signal-operator-and-b"), "b", "", SignalScalarType::boolean, 0},
+                                          }, SignalScalarType::boolean);
+        operators.code_blocks = {real_a, real_b, bool_true, bool_false, sum, limiter, comparator, logical_and};
+        auto signal_wire = [&](const std::string &key, const CodeBlock &from, const CodeBlock &to, size_t input) {
+            operators.wires.push_back({derived_uuid("signal-operator-wire-" + key),
+                                       {from.id, from.outputs[0].id}, {to.id, to.inputs[input].id}});
+        };
+        signal_wire("sum-a", real_a, sum, 0);
+        signal_wire("sum-b", real_b, sum, 1);
+        signal_wire("limiter", real_a, limiter, 0);
+        signal_wire("comparator-a", real_a, comparator, 0);
+        signal_wire("comparator-b", real_b, comparator, 1);
+        signal_wire("and-a", bool_true, logical_and, 0);
+        signal_wire("and-b", bool_false, logical_and, 1);
+        const auto operator_ir = compile_signal_ir(operators);
+        check(operator_ir.tasks.size() == operators.code_blocks.size(),
+              "Operator presets compile through the ordinary Signal IR");
+        auto operator_state = initialize_signal_runtime(operator_ir);
+        (void)run_signal_tasks(operator_ir, operator_state, 0, {});
+        auto operator_value = [&](const CodeBlock &block) {
+            return operator_state.outputs.at(signal_endpoint_key({block.id, block.outputs[0].id}));
+        };
+        near(operator_value(sum).value, 0, 1e-15,
+             "Sum uses its initial inputs on the first simultaneous Signal frame");
+        (void)run_signal_tasks(operator_ir, operator_state, 100e-6, {});
+        near(operator_value(sum).value, -1, 1e-15, "Sum reads both real inputs from the previous accepted frame");
+        near(operator_value(limiter).value, 1, 1e-15, "Limiter uses the default -1..1 clamp");
+        check(operator_value(comparator).type == SignalScalarType::boolean && operator_value(comparator).value == 1,
+              "Comparator produces a boolean output");
+        check(operator_value(logical_and).type == SignalScalarType::boolean && operator_value(logical_and).value == 0,
+              "AND accepts boolean inputs and produces a boolean output");
+        auto missing_operator_input = operators;
+        std::erase_if(missing_operator_input.wires, [&](const Wire &wire) {
+            return wire.to == Endpoint{sum.id, sum.inputs[0].id};
+        });
+        try {
+            (void)compile_signal_ir(missing_operator_input);
+            throw std::runtime_error("Expected missing Signal operator input diagnostic");
+        } catch (const Diagnostic &diagnostic) {
+            check(diagnostic.code == "missing_signal_source" && diagnostic.object == sum.id,
+                  "Unconnected operator input reports the operator UUID");
+        }
+
         Project integrated;
         integrated.id = derived_uuid("integrated-signal-project");
         integrated.wired = true;

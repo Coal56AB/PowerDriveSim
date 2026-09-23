@@ -1,0 +1,12 @@
+{
+  "type": "signal_comparator",
+  "fields": [],
+  "palette": {
+    "id": 115,
+    "label": "signal_comparator",
+    "category": "signals",
+    "short": "≥",
+    "fixed": false,
+    "hidden": false
+  }
+}

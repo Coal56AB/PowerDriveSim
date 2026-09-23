@@ -1,0 +1,12 @@
+{
+  "type": "signal_and",
+  "fields": [],
+  "palette": {
+    "id": 116,
+    "label": "signal_and",
+    "category": "signals",
+    "short": "AND",
+    "fixed": false,
+    "hidden": false
+  }
+}

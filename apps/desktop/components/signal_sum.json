@@ -1,0 +1,12 @@
+{
+  "type": "signal_sum",
+  "fields": [],
+  "palette": {
+    "id": 113,
+    "label": "signal_sum",
+    "category": "signals",
+    "short": "Σ",
+    "fixed": false,
+    "hidden": false
+  }
+}

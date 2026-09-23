@@ -2,11 +2,25 @@
 
 namespace pds::desktop {
 namespace {
-constexpr std::array<SignalPreset, 4> presets{{
-    {109, "out = 1;", 100e-6},
-    {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6},
-    {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6},
-    {112, "out = sin(2 * PI * 50 * t);", 100e-6},
+constexpr std::array<SignalPortPreset, 1> real_output{{{"out", SignalScalarType::real}}};
+constexpr std::array<SignalPortPreset, 1> real_input{{{"in", SignalScalarType::real}}};
+constexpr std::array<SignalPortPreset, 2> real_pair{{
+    {"a", SignalScalarType::real}, {"b", SignalScalarType::real},
+}};
+constexpr std::array<SignalPortPreset, 1> boolean_output{{{"out", SignalScalarType::boolean}}};
+constexpr std::array<SignalPortPreset, 2> boolean_pair{{
+    {"a", SignalScalarType::boolean}, {"b", SignalScalarType::boolean},
+}};
+
+constexpr std::array<SignalPreset, 8> presets{{
+    {109, "out = 1;", 100e-6, {}, real_output},
+    {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6, {}, real_output},
+    {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6, {}, real_output},
+    {112, "out = sin(2 * PI * 50 * t);", 100e-6, {}, real_output},
+    {113, "out = a + b;", 100e-6, real_pair, real_output},
+    {114, "out = clamp(in, -1, 1);", 100e-6, real_input, real_output},
+    {115, "out = a >= b;", 100e-6, real_pair, boolean_output},
+    {116, "out = a && b;", 100e-6, boolean_pair, boolean_output},
 }};
 } // namespace
 
@@ -25,7 +39,10 @@ CodeBlock make_signal_preset(const SignalPreset &preset, const std::string &name
     block.y = y;
     block.period = preset.period;
     block.code = preset.code;
-    block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
+    for (const auto &port : preset.inputs)
+        block.inputs.push_back({new_uuid(), port.name, "", port.type, 0});
+    for (const auto &port : preset.outputs)
+        block.outputs.push_back({new_uuid(), port.name, "", port.type, 0});
     return block;
 }
 

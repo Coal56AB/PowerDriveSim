@@ -895,6 +895,66 @@ class DesktopTests : public QObject {
         QVERIFY(std::abs(ramp_end->values[channels[2]] - 1) < 1e-12);
         QVERIFY(std::abs(ramp_end->values[channels[3]] - std::sin(2 * std::acos(-1.0) * 50 * 10.1e-3)) < 1e-12);
     }
+    void signal_operator_presets_use_editable_code_block_factory() {
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        struct Preset {
+            int id;
+            const char *code;
+            std::vector<std::string> input_names;
+            SignalScalarType input_type;
+            SignalScalarType output_type;
+        };
+        const std::vector<Preset> presets{
+            {113, "out = a + b;", {"a", "b"}, SignalScalarType::real, SignalScalarType::real},
+            {114, "out = clamp(in, -1, 1);", {"in"}, SignalScalarType::real, SignalScalarType::real},
+            {115, "out = a >= b;", {"a", "b"}, SignalScalarType::real, SignalScalarType::boolean},
+            {116, "out = a && b;", {"a", "b"}, SignalScalarType::boolean, SignalScalarType::boolean},
+        };
+        for (size_t index = 0; index < presets.size(); ++index) {
+            QTreeWidgetItem *entry = nullptr;
+            for (QTreeWidgetItemIterator it(library); *it; ++it)
+                if ((*it)->data(0, Qt::UserRole).toInt() == presets[index].id)
+                    entry = *it;
+            QVERIFY(entry);
+            for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
+            library->scrollToItem(entry);
+            QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              library->visualItemRect(entry).center());
+            QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               library->visualItemRect(entry).center());
+            QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              window.canvas()->mapFromScene(QPointF(120 + 220 * index, 100)));
+            const auto &block = window.project().code_blocks.back();
+            QCOMPARE(block.code, std::string(presets[index].code));
+            QCOMPARE(block.period, 100e-6);
+            QCOMPARE(block.inputs.size(), presets[index].input_names.size());
+            QCOMPARE(block.outputs.size(), size_t(1));
+            for (size_t input = 0; input < block.inputs.size(); ++input) {
+                QCOMPARE(block.inputs[input].name, presets[index].input_names[input]);
+                QCOMPARE(block.inputs[input].type, presets[index].input_type);
+                QCOMPARE(block.inputs[input].unit, std::string());
+                QVERIFY(!block.inputs[input].id.empty());
+            }
+            QCOMPARE(block.outputs[0].name, std::string("out"));
+            QCOMPARE(block.outputs[0].type, presets[index].output_type);
+            QCOMPARE(block.outputs[0].unit, std::string());
+            QVERIFY(!block.outputs[0].id.empty());
+        }
+        window.undo();
+        QCOMPARE(window.project().code_blocks.size(), presets.size() - 1);
+        window.redo();
+        QCOMPARE(window.project().code_blocks.size(), presets.size());
+        const auto path = temp.filePath("signal-operators.pds");
+        QVERIFY(window.save_project(path));
+        QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().code_blocks.size(), presets.size());
+        for (size_t index = 0; index < presets.size(); ++index)
+            QCOMPARE(window.project().code_blocks[index].code, std::string(presets[index].code));
+    }
 };
 int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }
 #include "desktop_tests.moc"
