@@ -1789,6 +1789,7 @@ void EditorWindow::build_ui() {
     dl->addWidget(diagnostic_hint);
     errors_ = new QListWidget;
     errors_->setObjectName("diagnostics_list");
+    errors_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     dl->addWidget(errors_, 1);
     bottom_->addTab(diagnostics, text("diagnostics"));
     connect(errors_, &QListWidget::itemClicked, this, [this](QListWidgetItem *i) {
@@ -1830,6 +1831,7 @@ void EditorWindow::build_ui() {
     scope_hint_->setWordWrap(true);
     scope_hint_->setAlignment(Qt::AlignCenter);
     scope_hint_->setStyleSheet("color:palette(placeholder-text);padding:24px;font-size:13px;");
+    scope_hint_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
     scope_layout_->addWidget(scope_hint_, 1);
     bottom_->addTab(scope_page_, text("scope_tab"));
     connect(scope_enable_, &QCheckBox::toggled, this, [this](bool checked) {

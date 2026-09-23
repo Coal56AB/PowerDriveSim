@@ -164,10 +164,12 @@ void EditorWindow::sync_scope() {
     if (scope_content_)
         return;
     scope_content_ = new QWidget;
+    scope_content_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
     auto *layout = new QHBoxLayout(scope_content_);
     layout->setContentsMargins(0, 0, 0, 0);
     channels_ = new QListWidget;
     channels_->setObjectName("channels");
+    channels_->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Ignored);
     channels_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     channels_->setMinimumWidth(240);
     channels_->setMaximumWidth(300);
@@ -176,6 +178,8 @@ void EditorWindow::sync_scope() {
     channels_->viewport()->installEventFilter(this);
     layout->addWidget(channels_);
     scope_ = new Scope;
+    scope_->setMinimumHeight(0);
+    scope_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
     scope_->set_wheel_modifiers(scope_wheel_x_, scope_wheel_y_);
     for (const auto &options : project().view_options)
         if (options.plot.empty())

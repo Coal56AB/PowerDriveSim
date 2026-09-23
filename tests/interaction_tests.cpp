@@ -18,6 +18,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QDockWidget>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
@@ -85,6 +86,41 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void results_panel_keeps_user_height_across_tabs() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        ready(w);
+        auto *dock = w.findChild<QDockWidget *>("results");
+        auto *tabs = w.findChild<QTabWidget *>("results_tabs");
+        QVERIFY(dock && tabs);
+        w.resizeDocks({dock}, {120}, Qt::Vertical);
+        QTest::qWait(30);
+        const int chosen_height = dock->height();
+        QVERIFY2(chosen_height <= 140, qPrintable(QString("height=%1 minimum=%2 hint=%3")
+                     .arg(chosen_height).arg(dock->minimumHeight()).arg(dock->minimumSizeHint().height())));
+        tabs->setCurrentIndex(1);
+        QTest::qWait(30);
+        QVERIFY(std::abs(dock->height() - chosen_height) <= 2);
+        tabs->setCurrentIndex(0);
+        QTest::qWait(30);
+        QVERIFY(std::abs(dock->height() - chosen_height) <= 2);
+        w.findChild<QCheckBox *>("scope_enable")->setChecked(true);
+        QTest::qWait(30);
+        w.resizeDocks({dock}, {120}, Qt::Vertical);
+        QTest::qWait(30);
+        const int recording_height = dock->height();
+        QVERIFY2(recording_height <= 140, qPrintable(QString("recording height=%1 minimum=%2 hint=%3")
+                     .arg(recording_height).arg(dock->minimumHeight()).arg(dock->minimumSizeHint().height())));
+        tabs->setCurrentIndex(1);
+        QTest::qWait(30);
+        QVERIFY2(std::abs(dock->height() - recording_height) <= 2,
+                 qPrintable(QString("before=%1 after=%2 minimum=%3 hint=%4")
+                     .arg(recording_height).arg(dock->height()).arg(dock->minimumHeight())
+                     .arg(dock->minimumSizeHint().height())));
+        tabs->setCurrentIndex(0);
+        QTest::qWait(30);
+        QVERIFY(std::abs(dock->height() - recording_height) <= 2);
+    }
     void grid_style_settings_persist() {
         QTemporaryDir dir;
         {
