@@ -1,6 +1,7 @@
 #include "core/editor/document.hpp"
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/model/expression.hpp"
 #include "core/model/waveform.hpp"
 #include "core/solver/reference/reference.hpp"
 #include "formats/project/project.hpp"
@@ -173,6 +174,25 @@ int main(int argc, char **argv) try {
                       diagnostic.path == std::vector<std::string>{id(53)},
                   "Instance override reports the source and instance path");
         }
+        std::ostringstream invalid_override_output;
+        write_project(masked, invalid_override_output);
+        std::istringstream invalid_override_input(invalid_override_output.str());
+        error("invalid_waveform", [&] { read_project(invalid_override_input); });
+        auto expressed_override = masked;
+        expressed_override.initialization_code = "double safe_frequency = 50;";
+        expressed_override.parameter_expressions.push_back(
+            {id(53), "parameter/" + id(54), "safe_frequency"});
+        std::ostringstream expressed_output;
+        write_project(expressed_override, expressed_output);
+        std::istringstream expressed_input(expressed_output.str());
+        const auto loaded_expression = read_project(expressed_input);
+        near(flatten(resolve_parameter_expressions(loaded_expression)).project.components.front().source.frequency,
+             50, 1e-12, "Expression overrides a stale invalid instance parameter cache");
+        expressed_override.initialization_code = "double safe_frequency = 0;";
+        std::ostringstream invalid_expression_output;
+        write_project(expressed_override, invalid_expression_output);
+        std::istringstream invalid_expression_input(invalid_expression_output.str());
+        error("invalid_waveform", [&] { read_project(invalid_expression_input); });
         masked.instances.front().parameters.pop_back();
         masked.definitions.front().parameters.back().value = 0;
         error("invalid_waveform", [&] { validate_hierarchy(masked); });

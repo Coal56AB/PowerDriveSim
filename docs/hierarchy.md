@@ -54,6 +54,11 @@ Each instance's effective waveform, semiconductor and inductor loss parameters
 are checked again during expansion after applying its overrides. Diagnostics
 identify the complete instance path, including overrides passed through a
 nested public parameter.
+The project loader also checks effective values of directly configured
+instances after definition defaults and ranges have been validated. That order
+preserves the diagnostic for an invalid definition instead of reporting its
+stale numeric expression cache as an instance error. Instance parameter
+expressions are evaluated for this check; the saved source remains unchanged.
 
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 

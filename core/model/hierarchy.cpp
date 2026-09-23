@@ -8,6 +8,7 @@
 #include <cmath>
 #include <functional>
 #include <numbers>
+#include <optional>
 #include <set>
 
 namespace pds {
@@ -165,6 +166,19 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
     throw Diagnostic("invalid_parameter_binding", p.id,
                      "Public parameter refers to an unsupported numeric field");
 }
+Schematic configured_instance_body(const Project &catalog, const Instance &instance) {
+    const auto &definition_body = definition(catalog, instance.definition);
+    Schematic body = definition_body;
+    for (const auto &parameter : definition_body.parameters) {
+        const auto override = std::find_if(instance.parameters.begin(), instance.parameters.end(),
+                                           [&](const auto &entry) { return entry.first == parameter.id; });
+        parameter_value(body, catalog, parameter,
+                        override == instance.parameters.end()
+                            ? public_parameter_default_value(definition_body, parameter)
+                            : override->second);
+    }
+    return body;
+}
 void validate_effective_components(const Schematic &schematic) {
     for (const auto &component : schematic.components) {
         validate_waveform(component);
@@ -300,6 +314,35 @@ void validate_hierarchy(const Project &p) {
         if (!d.parameters.empty())
             validate_effective_components(body);
     }
+    // Check effective instance values only after definition defaults and ranges.
+    // This keeps invalid definition metadata as the first diagnostic.
+    auto has_instance_expression = [](const Schematic &schematic) {
+        return std::any_of(schematic.parameter_expressions.begin(), schematic.parameter_expressions.end(),
+                           [](const ParameterExpression &expression) {
+                               return expression.field.starts_with("parameter/");
+                           });
+    };
+    std::optional<Project> resolved;
+    if (has_instance_expression(p) ||
+        std::any_of(p.definitions.begin(), p.definitions.end(), has_instance_expression))
+        resolved = resolve_parameter_expressions(p);
+    const Project &effective = resolved ? *resolved : p;
+    auto validate_instances = [&](const Schematic &schematic) {
+        for (const auto &instance : schematic.instances) {
+            if (definition(effective, instance.definition).parameters.empty())
+                continue;
+            try {
+                validate_effective_components(configured_instance_body(effective, instance));
+            } catch (Diagnostic &diagnostic) {
+                if (diagnostic.path.empty())
+                    diagnostic.path = {instance.id};
+                throw;
+            }
+        }
+    };
+    validate_instances(effective);
+    for (const auto &definition_body : effective.definitions)
+        validate_instances(definition_body);
 }
 FlattenedProject flatten(const Project &source) {
     validate_hierarchy(source);
@@ -410,15 +453,7 @@ FlattenedProject flatten(const Project &source) {
         }
         for (const auto &i : s.instances) {
             const auto &d = definition(source, i.definition);
-            Schematic body = d;
-            for (const auto &param : d.parameters) {
-                auto override = std::find_if(i.parameters.begin(), i.parameters.end(),
-                                             [&](const auto &v) { return v.first == param.id; });
-                parameter_value(body, source, param,
-                                override == i.parameters.end()
-                                    ? public_parameter_default_value(d, param)
-                                    : override->second);
-            }
+            Schematic body = configured_instance_body(source, i);
             auto child_path = path;
             child_path.push_back(i.id);
             if (!d.parameters.empty()) {
