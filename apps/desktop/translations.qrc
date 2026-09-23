@@ -16,6 +16,8 @@
     <file alias="signal_and.json">components/signal_and.json</file>
     <file alias="signal_integrator.json">components/signal_integrator.json</file>
     <file alias="signal_delay_tick.json">components/signal_delay_tick.json</file>
+    <file alias="signal_carrier.json">components/signal_carrier.json</file>
+    <file alias="signal_pwm_comparator.json">components/signal_pwm_comparator.json</file>
     <file alias="differential_plot.json">components/differential_plot.json</file>
     <file alias="open-end-winding.json">components/open-end-winding.json</file>
     <file alias="npc-3l.json">components/npc-3l.json</file>

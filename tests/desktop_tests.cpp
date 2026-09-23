@@ -958,6 +958,74 @@ class DesktopTests : public QObject {
         for (size_t index = 0; index < presets.size(); ++index)
             QCOMPARE(window.project().code_blocks[index].code, std::string(presets[index].code));
     }
+    void carrier_and_pwm_comparator_presets_use_editable_code_block_factory() {
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        auto place = [&](int id, QPointF point) {
+            QTreeWidgetItem *entry = nullptr;
+            for (QTreeWidgetItemIterator it(library); *it; ++it)
+                if ((*it)->data(0, Qt::UserRole).toInt() == id)
+                    entry = *it;
+            QVERIFY(entry);
+            for (auto *parent = entry->parent(); parent; parent = parent->parent())
+                parent->setExpanded(true);
+            library->scrollToItem(entry);
+            QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              library->visualItemRect(entry).center());
+            QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               library->visualItemRect(entry).center());
+            QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              window.canvas()->mapFromScene(point));
+        };
+        place(119, {120, 100});
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        const auto &carrier = window.project().code_blocks[0];
+        QCOMPARE(carrier.name, std::string("Carrier generator"));
+        QCOMPARE(carrier.code, std::string("double phase = t * 1000 - floor(t * 1000);\nout = 1 - 4 * abs(phase - 0.5);"));
+        QCOMPARE(carrier.period, 100e-6);
+        QCOMPARE(carrier.inputs.size(), size_t(0));
+        QCOMPARE(carrier.outputs.size(), size_t(1));
+        QCOMPARE(carrier.outputs[0].name, std::string("out"));
+        QCOMPARE(carrier.outputs[0].type, SignalScalarType::real);
+        QVERIFY(!carrier.outputs[0].id.empty());
+        const auto carrier_code = carrier.code;
+
+        place(120, {340, 100});
+        QCOMPARE(window.project().code_blocks.size(), size_t(2));
+        const auto &comparator = window.project().code_blocks[1];
+        QCOMPARE(comparator.name, std::string("PWM comparator"));
+        QCOMPARE(comparator.code, std::string("out = reference >= carrier;"));
+        QCOMPARE(comparator.period, 100e-6);
+        QCOMPARE(comparator.inputs.size(), size_t(2));
+        QCOMPARE(comparator.inputs[0].name, std::string("reference"));
+        QCOMPARE(comparator.inputs[1].name, std::string("carrier"));
+        QCOMPARE(comparator.inputs[0].type, SignalScalarType::real);
+        QCOMPARE(comparator.inputs[1].type, SignalScalarType::real);
+        QCOMPARE(comparator.outputs.size(), size_t(1));
+        QCOMPARE(comparator.outputs[0].name, std::string("out"));
+        QCOMPARE(comparator.outputs[0].type, SignalScalarType::boolean);
+        QVERIFY(!comparator.inputs[0].id.empty());
+        QVERIFY(!comparator.inputs[1].id.empty());
+        QVERIFY(!comparator.outputs[0].id.empty());
+        const auto comparator_code = comparator.code;
+
+        window.undo();
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        window.redo();
+        QCOMPARE(window.project().code_blocks.size(), size_t(2));
+        const auto path = temp.filePath("carrier-pwm-presets.pds");
+        QVERIFY(window.save_project(path));
+        QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().code_blocks.size(), size_t(2));
+        QCOMPARE(window.project().code_blocks[0].code, carrier_code);
+        QCOMPARE(window.project().code_blocks[1].code, comparator_code);
+        QCOMPARE(window.project().code_blocks[1].inputs[0].name, std::string("reference"));
+        QCOMPARE(window.project().code_blocks[1].inputs[1].name, std::string("carrier"));
+        QCOMPARE(window.project().code_blocks[1].outputs[0].type, SignalScalarType::boolean);
+    }
     void signal_state_presets_are_causal_and_snapshot_safe() {
         const auto *integrator_preset = signal_preset(117);
         const auto *delay_preset = signal_preset(118);

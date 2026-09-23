@@ -1,0 +1,12 @@
+{
+  "type": "signal_pwm_comparator",
+  "fields": [],
+  "palette": {
+    "id": 120,
+    "label": "signal_pwm_comparator",
+    "category": "signals",
+    "short": "PWM",
+    "fixed": false,
+    "hidden": false
+  }
+}

@@ -301,6 +301,86 @@ int main() {
                   "Unconnected operator input reports the operator UUID");
         }
 
+        Project carrier_pwm;
+        carrier_pwm.id = derived_uuid("carrier-pwm-project");
+        carrier_pwm.wired = true;
+        carrier_pwm.profile.step = 100e-6;
+        carrier_pwm.profile.stop = 1e-3;
+        const auto carrier_ground = derived_uuid("carrier-pwm-ground");
+        const auto carrier_node = derived_uuid("carrier-pwm-node");
+        carrier_pwm.nodes = {{carrier_ground, "GND", true}, {carrier_node, "supply"}};
+        Component carrier_supply;
+        carrier_supply.id = derived_uuid("carrier-pwm-supply");
+        carrier_supply.name = "V1";
+        carrier_supply.kind = Kind::voltage;
+        carrier_supply.value = 1;
+        Component carrier_load;
+        carrier_load.id = derived_uuid("carrier-pwm-load");
+        carrier_load.name = "R1";
+        carrier_load.kind = Kind::resistor;
+        carrier_load.value = 1;
+        carrier_pwm.components = {carrier_supply, carrier_load};
+        CodeBlock carrier;
+        carrier.id = derived_uuid("carrier-pwm-carrier");
+        carrier.name = "Carrier generator";
+        carrier.period = 100e-6;
+        carrier.code = "double phase = t * 1000 - floor(t * 1000);\nout = 1 - 4 * abs(phase - 0.5);";
+        carrier.outputs = {{derived_uuid("carrier-pwm-carrier-out"), "out", "", SignalScalarType::real, 0}};
+        CodeBlock reference;
+        reference.id = derived_uuid("carrier-pwm-reference");
+        reference.name = "Reference";
+        reference.period = 100e-6;
+        reference.code = "out = 0;";
+        reference.outputs = {{derived_uuid("carrier-pwm-reference-out"), "out", "", SignalScalarType::real, 0}};
+        CodeBlock pwm_comparator;
+        pwm_comparator.id = derived_uuid("carrier-pwm-comparator");
+        pwm_comparator.name = "PWM comparator";
+        pwm_comparator.period = 100e-6;
+        pwm_comparator.code = "out = reference >= carrier;";
+        pwm_comparator.inputs = {{derived_uuid("carrier-pwm-reference-in"), "reference", "", SignalScalarType::real, 0},
+                                 {derived_uuid("carrier-pwm-carrier-in"), "carrier", "", SignalScalarType::real, 0}};
+        pwm_comparator.outputs = {{derived_uuid("carrier-pwm-comparator-out"), "out", "", SignalScalarType::boolean, 0}};
+        carrier_pwm.code_blocks = {carrier, reference, pwm_comparator};
+        carrier_pwm.wires = {
+            {derived_uuid("carrier-pwm-supply-p"), {carrier_supply.id, "p"}, {carrier_node, "node"}},
+            {derived_uuid("carrier-pwm-supply-n"), {carrier_supply.id, "n"}, {carrier_ground, "node"}},
+            {derived_uuid("carrier-pwm-load-p"), {carrier_load.id, "p"}, {carrier_node, "node"}},
+            {derived_uuid("carrier-pwm-load-n"), {carrier_load.id, "n"}, {carrier_ground, "node"}},
+            {derived_uuid("carrier-pwm-reference-wire"), {reference.id, reference.outputs[0].id},
+             {pwm_comparator.id, pwm_comparator.inputs[0].id}},
+            {derived_uuid("carrier-pwm-carrier-wire"), {carrier.id, carrier.outputs[0].id},
+             {pwm_comparator.id, pwm_comparator.inputs[1].id}},
+        };
+        const auto carrier_ir = compile(carrier_pwm);
+        check(carrier_ir.signal.tasks.size() == 3 && carrier_ir.signal_gates.empty(),
+              "Carrier and PWM comparator use the ordinary Signal IR without a gate-specific model");
+        const auto carrier_run = execute(carrier_ir);
+        const auto carrier_channel = std::find_if(carrier_run.channels.begin(), carrier_run.channels.end(), [&](const Channel &channel) {
+            return channel.object == endpoint_key({carrier.id, carrier.outputs[0].id});
+        });
+        const auto comparator_gate = std::find(carrier_run.gate_objects.begin(), carrier_run.gate_objects.end(),
+                                               endpoint_key({pwm_comparator.id, pwm_comparator.outputs[0].id}));
+        check(carrier_channel != carrier_run.channels.end() && comparator_gate != carrier_run.gate_objects.end(),
+              "Carrier and PWM comparator outputs are recorded by their typed Signal ports");
+        const auto carrier_index = static_cast<std::size_t>(carrier_channel - carrier_run.channels.begin());
+        const auto comparator_index = static_cast<std::size_t>(comparator_gate - carrier_run.gate_objects.begin());
+        auto carrier_sample = [&](double time) -> const Sample & {
+            const auto found = std::find_if(carrier_run.samples.begin(), carrier_run.samples.end(), [&](const Sample &sample) {
+                return std::abs(sample.time - time) < 1e-13;
+            });
+            if (found == carrier_run.samples.end())
+                throw std::runtime_error("Missing carrier sample");
+            return *found;
+        };
+        near(carrier_sample(0).values[carrier_index], -1, 1e-12, "Carrier starts at -1");
+        near(carrier_sample(.2e-3).values[carrier_index], -.2, 1e-12, "Carrier rises on the first quarter");
+        near(carrier_sample(.5e-3).values[carrier_index], 1, 1e-12, "Carrier reaches +1 halfway through its period");
+        near(carrier_sample(.8e-3).values[carrier_index], -.2, 1e-12, "Carrier falls symmetrically after the peak");
+        near(carrier_sample(1e-3).values[carrier_index], -1, 1e-12, "Carrier repeats after one millisecond");
+        check(carrier_sample(.3e-3).gates[comparator_index] &&
+                  !carrier_sample(.4e-3).gates[comparator_index],
+              "PWM comparator reads the previous accepted carrier frame through its wired Signal input");
+
         Project integrated;
         integrated.id = derived_uuid("integrated-signal-project");
         integrated.wired = true;

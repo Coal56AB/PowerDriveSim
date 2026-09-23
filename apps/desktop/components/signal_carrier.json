@@ -1,0 +1,12 @@
+{
+  "type": "signal_carrier",
+  "fields": [],
+  "palette": {
+    "id": 119,
+    "label": "signal_carrier",
+    "category": "signals",
+    "short": "△",
+    "fixed": false,
+    "hidden": false
+  }
+}
