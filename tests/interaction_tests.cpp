@@ -2817,11 +2817,10 @@ class InteractionTests : public QObject {
         s.set_result(&r, {0}, p);
         s.show();
         auto *navigation=s.navigation();navigation->show();
-        auto *arm_toolbar=navigation->findChild<QAction *>("trigger_arm_toolbar");
         auto *stop_toolbar=navigation->findChild<QAction *>("trigger_stop_toolbar");
         auto *level_toolbar=navigation->findChild<QLineEdit *>("trigger_level_toolbar");
         auto *position_toolbar=navigation->findChild<QLineEdit *>("trigger_position_toolbar");
-        QVERIFY(arm_toolbar&&stop_toolbar&&level_toolbar&&position_toolbar);
+        QVERIFY(stop_toolbar&&level_toolbar&&position_toolbar);
         s.set_live(true);
         s.changed = [&](double a, double b, double ca, double cb) {
             p.scope_begin = a;
@@ -2832,6 +2831,10 @@ class InteractionTests : public QObject {
         s.show_measurements();
         auto *d = s.findChild<QDialog *>("scope_measurements");
         QVERIFY(d);
+        QCOMPARE(d->findChild<QPushButton *>("trigger_apply")->text(),QString("Apply"));
+        const auto measurement_buttons=d->findChildren<QPushButton *>();
+        QVERIFY(std::none_of(measurement_buttons.begin(),measurement_buttons.end(),
+                            [](QPushButton *button){return button->text()=="Refresh";}));
         d->findChild<QTabWidget *>("measurement_tabs")->setCurrentIndex(3);
         d->findChild<QLineEdit *>("trigger_level")->setText("0.5");
         d->findChild<QLineEdit *>("trigger_holdoff")->setText("3");
@@ -2874,7 +2877,7 @@ class InteractionTests : public QObject {
         QTest::mouseRelease(&s,Qt::LeftButton,Qt::NoModifier,{position_end,int(trigger_area.top()+4)});
         QString position_text=position_toolbar->text();position_text.remove('%');
         QVERIFY(std::abs(position_text.trimmed().toDouble()-65)<1);
-        stop_toolbar->trigger();QVERIFY(!stop_toolbar->isEnabled()&&arm_toolbar->isEnabled());
+        stop_toolbar->trigger();QVERIFY(!stop_toolbar->isEnabled());
         trigger_mode->setCurrentIndex(1);
         arm();
         for (int i = 8; i <= 12; ++i)
@@ -2891,6 +2894,12 @@ class InteractionTests : public QObject {
         r.samples.push_back({15, {1}, {}});
         s.set_result(&r, {0}, p);
         QCOMPARE(s.begin, first);
+        s.fit(Scope::Axes::x);
+        const double fitted=s.begin;
+        r.samples.push_back({16, {0}, {}});
+        r.samples.push_back({17, {1}, {}});
+        s.set_result(&r, {0}, p);
+        QCOMPARE(s.begin,fitted);
     }
     void configurable_scope_wheel_modifiers() {
         QTemporaryDir dir;

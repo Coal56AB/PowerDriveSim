@@ -138,13 +138,11 @@ private:
     }
     double call(const std::string &name,const std::vector<double> &a) const {
         if(name=="ramp") {
-            if(!options_.allow_gate_functions)error("Function 'ramp' is not available here");
             if(a.size()!=4)error("Use ramp(t0,t1,value0,value1)");
             if(a[1]<=a[0])error("Ramp end time must be greater than start time");
             const auto k=std::clamp((time_-a[0])/(a[1]-a[0]),0.0,1.0);return a[2]+(a[3]-a[2])*k;
         }
         if(name=="pwm"||name=="square"||name=="phasepwm") {
-            if(!options_.allow_gate_functions)error("Gate functions are not available here");
             if(a.size()!=3||a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Use pwm(frequency,duty,delay) with duty 0..1");
             if(a[1]==0)return 0;
             if(a[1]==1)return 1;
@@ -162,6 +160,16 @@ private:
         if(name=="max"&&a.size()==2)return std::max(a[0],a[1]);
         if(name=="sqrt"&&a.size()==1&&a[0]>=0)return std::sqrt(a[0]);
         if(name=="pow"&&a.size()==2)return std::pow(a[0],a[1]);
+        if(name=="clamp"&&a.size()==3&&a[1]<=a[2])return std::clamp(a[0],a[1],a[2]);
+        if(name=="lerp"&&a.size()==3)return a[0]+(a[1]-a[0])*a[2];
+        if(name=="saturate"&&a.size()==1)return std::clamp(a[0],0.0,1.0);
+        if(name=="sign"&&a.size()==1)return (a[0]>0)-(a[0]<0);
+        if(name=="step"&&a.size()==2)return a[1]>=a[0];
+        if(name=="smoothstep"&&a.size()==3&&a[1]>a[0]){const auto x=std::clamp((a[2]-a[0])/(a[1]-a[0]),0.0,1.0);return x*x*(3-2*x);}
+        if(name=="deadband"&&a.size()==2&&a[1]>=0)return std::abs(a[0])<=a[1]?0:a[0]-std::copysign(a[1],a[0]);
+        if(name=="wrap"&&a.size()==2&&a[1]>0)return a[0]-std::floor(a[0]/a[1])*a[1];
+        if(name=="pulse"&&a.size()==2&&a[1]>=0)return time_>=a[0]&&time_<a[0]+a[1];
+        if((name=="saw"||name=="triangle")&&a.size()==2&&a[0]>0){const auto period=1.0/a[0];double phase=std::fmod(time_-a[1],period);if(phase<0)phase+=period;const auto unit=phase/period;return name=="saw"?unit:1-4*std::abs(unit-.5);}
         error("Unknown function or invalid argument count for '"+name+"'");
     }
     const std::string &text_;const std::map<std::string,std::string> &variables_;double time_;
@@ -172,7 +180,9 @@ bool depends(const std::string &text,const std::map<std::string,std::string> &va
     for(size_t i=0;i<text.size();) {
         if(!(std::isalpha(static_cast<unsigned char>(text[i]))||text[i]=='_')){++i;continue;}
         const size_t begin=i++;while(i<text.size()&&(std::isalnum(static_cast<unsigned char>(text[i]))||text[i]=='_'))++i;
-        const auto name=text.substr(begin,i-begin);if(name=="t"||name=="ramp")return true;
+        const auto name=text.substr(begin,i-begin);
+        if(name=="t"||name=="ramp"||name=="pulse"||name=="pwm"||name=="square"||
+           name=="phasepwm"||name=="saw"||name=="triangle")return true;
         if(const auto variable=variables.find(name);variable!=variables.end()&&checking.insert(name).second){
             const bool result=depends(variable->second,variables,checking);checking.erase(name);if(result)return true;
         }

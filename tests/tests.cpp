@@ -270,13 +270,31 @@ static void serialization() {
     block.outputs={{id(32),"command","V",SignalScalarType::real,0},
                    {id(33),"gate","",SignalScalarType::boolean,0}};
     block.pin_positions={{id(31),-60,0},{id(32),60,-10},{id(33),60,10}};
+    block.icon={{IconPrimitiveKind::polyline,IconColor::signal,false,{},{{2,26},{9,18},{16,8},{23,18},{30,26}}},
+                {IconPrimitiveKind::text,IconColor::foreground,false,"PI",{{16,17},{8,0}}}};
     code_project.code_blocks.push_back(block);
+    code_project.object_icons.push_back({code_project.components.front().id,
+        {{IconPrimitiveKind::rectangle,IconColor::accent,false,{},{{4,4},{28,28}}}}});
     std::istringstream code_input(saved(code_project));
     const auto code_loaded=read_project(code_input);
     require(code_loaded.patterns==code_project.patterns,
             "Multi-output Gate pin layout round trip");
     require(code_loaded.code_blocks==code_project.code_blocks,
             "Typed code-block ports, schedule, layout and multiline C source round trip");
+    require(code_loaded.object_icons==code_project.object_icons,"Generic object icon round trip");
+    auto incomplete_code_icon=code_project;
+    incomplete_code_icon.code_blocks.front().icon.front().points.resize(1);
+    error("invalid_code_icon",[&]{(void)saved(incomplete_code_icon);});
+    auto incomplete_object_icon=code_project;
+    incomplete_object_icon.object_icons.front().primitives.front().points.resize(1);
+    error("invalid_object_icon",[&]{(void)saved(incomplete_object_icon);});
+    auto malformed_icon=saved(code_project);
+    const auto icon_record=malformed_icon.find("x-code-icon ");
+    const auto point_count=malformed_icon.find("\"\" 5 ",icon_record);
+    require(icon_record!=std::string::npos&&point_count!=std::string::npos,
+            "Serialized code icon record is available for parser validation");
+    malformed_icon.replace(point_count+3,1,"1");
+    error("parse_error",[&]{std::istringstream input(malformed_icon);(void)read_project(input);});
     auto invalid_code=code_project;invalid_code.code_blocks.front().outputs.back().initial=2;
     error("invalid_signal_port",[&]{(void)saved(invalid_code);});
     auto expression_project=p;
@@ -305,6 +323,15 @@ static void serialization() {
         "return phasepwm(50, 0.02, curr_ramp) + (stime == t ? 0 : 10);",returning_options);
     require(execute_c_program(ramp_program,5).return_value.has_value(),
             "Gate C accepts local ramp variables and stime aliases the current invocation time");
+    CProgramOptions common_options;common_options.diagnostic_code="common_c";
+    common_options.require_return=true;common_options.allow_time=true;
+    const auto common_program=compile_c_program(
+        "return ramp(0, 2, 0, 10) + pulse(1, 1) + saw(1, 0) + triangle(1, 0) + "
+        "lerp(2, 4, 0.5) + saturate(2) + sign(-3) + step(2, 2) + "
+        "smoothstep(0, 1, 0.5) + deadband(3, 1) + wrap(-1, 4);",common_options);
+    const auto common_result=execute_c_program(common_program,1.5).return_value;
+    require(common_result&&std::abs(*common_result-19.5)<1e-12,
+            "Common signal functions are available without Gate-only options");
     CProgramOptions ports;ports.diagnostic_code="code_ports";
     ports.external_variables={"error","dt","command"};ports.writable_variables={"command"};
     const auto pi=compile_c_program("static double integral = 0; integral += error * dt; command = 2 * error + integral;",ports);

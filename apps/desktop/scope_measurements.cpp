@@ -134,6 +134,7 @@ void Scope::arm_trigger() {
     trigger_after_=live_&&!result_->samples.empty()?result_->samples.back().time:-1;
     trigger_time_.reset();
     trigger_capture_until_.reset();
+    trigger_enabled_=true;
     trigger_armed_=true;
     if(trigger_mode_==1) {
         follow_live_=false;
@@ -145,6 +146,7 @@ void Scope::arm_trigger() {
     update();
 }
 void Scope::stop_trigger() {
+    trigger_enabled_=false;
     trigger_armed_=false;
     trigger_time_.reset();
     trigger_capture_until_.reset();
@@ -162,7 +164,7 @@ void Scope::set_time_span(double seconds) {
     if (time_span_edit_)
         time_span_edit_->setText(engineering_value(time_span_, "s"));
     follow_live_ = true;
-    trigger_armed_ = false;
+    trigger_armed_ = trigger_enabled_;
     trigger_time_.reset();
     trigger_capture_until_.reset();
     if (follow_action_)
@@ -192,6 +194,8 @@ void Scope::update_live_view(bool force) {
                         (!trigger_time_ || edge.time >= *trigger_time_ + trigger_holdoff_)) {
                         trigger_time_ = edge.time;
                         trigger_armed_ = trigger_mode_ != 0;
+                        if(trigger_mode_==0)
+                            trigger_enabled_=false;
                         triggered = true;
                         const double span = time_span_ > 0 ? time_span_ : std::max(1e-6, end - begin);
                         trigger_capture_until_=edge.time+span*(1-trigger_position_);
@@ -405,7 +409,7 @@ void Scope::show_measurements() {
     tf->addRow(text("trigger_mode"), mode);
     number(tf, "trigger_holdoff", text("trigger_holdoff"), trigger_holdoff_);
     number(tf, "trigger_position", text("trigger_position"), trigger_position_ * 100);
-    auto *arm = new QPushButton(text("trigger_arm"));
+    auto *arm = new QPushButton(text("apply"));
     arm->setObjectName("trigger_apply");
     auto *reset = new QPushButton(text("trigger_reset"));
     tf->addRow(arm, reset);
@@ -466,12 +470,6 @@ void Scope::show_measurements() {
     auto *hint = new QLabel(text("measure_hint"));
     hint->setWordWrap(true);
     layout->addWidget(hint);
-    auto *refresh = new QPushButton(text("refresh_measurements"));
-    layout->addWidget(refresh);
-    connect(refresh, &QPushButton::clicked, this, [this, dialog] {
-        dialog->setProperty("measurement_signature", QVariant());
-        update_measurements();
-    });
     connect(tabs, &QTabWidget::currentChanged, this, [this] { update_measurements(); });
     connect(signal, &QComboBox::currentIndexChanged, this, [this] { update_measurements(); });
     connect(range, &QComboBox::currentIndexChanged, this, [this] { update_measurements(); });

@@ -7,6 +7,7 @@
 #include "apps/desktop/signal_presets.hpp"
 #include "apps/desktop/theme.hpp"
 #include "apps/desktop/ui_icons.hpp"
+#include "apps/desktop/code_icon_editor.hpp"
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/c_program.hpp"
@@ -212,6 +213,7 @@ class Atom final : public QGraphicsItem {
     double frame_half_height = 0.0;
     int library_icon_id = -1;
     QImage custom_image;
+    std::vector<IconPrimitive> code_icon;
     bool ground = false, separate_labels = false, differential_plot = false;
     Atom(std::string uuid, QString label, QString mark, int category)
         : id(std::move(uuid)), name(label), symbol(mark), type(category) {
@@ -670,7 +672,10 @@ class Atom final : public QGraphicsItem {
             auto title_font = p->font();
             title_font.setBold(true);
             p->setFont(title_font);
-            label(p, QRectF(-18, -15, 36, 30), Qt::AlignCenter, QString("{C}"));
+            if(code_icon.empty())
+                label(p, QRectF(-18, -15, 36, 30), Qt::AlignCenter, QString("{C}"));
+            else
+                paint_code_icon(*p,code_icon,QRectF(-20,-18,40,36));
             title_font.setBold(false);
             title_font.setPointSize(8);
             p->setFont(title_font);
@@ -722,7 +727,10 @@ class Atom final : public QGraphicsItem {
                           QFontMetricsF(font).elidedText(port_name, Qt::ElideRight, 46));
                 }
             }
-            if (!custom_image.isNull()) {
+            if (!code_icon.empty()) {
+                const int icon_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
+                paint_code_icon(*p,code_icon,QRectF(-44,-icon_h/2,88,icon_h));
+            } else if (!custom_image.isNull()) {
                 const int image_h = int(std::min(112.0, std::max(58.0, 2.0 * h - 34.0)));
                 fixed_aspect_image(p, custom_image, QRectF(-44, -image_h / 2, 88, image_h));
             } else if (library_icon_id >= 0) {
@@ -792,6 +800,10 @@ class Atom final : public QGraphicsItem {
                 p->drawLine(35, 29, 43, 29);
                 p->drawLine(38, 33, 40, 33);
             }
+            if(!code_icon.empty()) {
+                p->fillRect(QRectF(-22,-28,68,62),theme_colors().surface);
+                paint_code_icon(*p,code_icon,QRectF(-18,-24,60,54));
+            }
             const auto children = childItems();
             for (unsigned i = 1; i <= input_count; ++i) {
                 const QString port_id = differential_plot
@@ -851,7 +863,8 @@ class Atom final : public QGraphicsItem {
             auto font = p->font();
             font.setBold(true);
             p->setFont(font);
-            label(p, QRectF(-26, -11, 50, 22), Qt::AlignCenter, symbol);
+            if(code_icon.empty())label(p, QRectF(-26, -11, 50, 22), Qt::AlignCenter, symbol);
+            else paint_code_icon(*p,code_icon,QRectF(-23,-11,42,22));
             font.setBold(false);
             p->setFont(font);
             label(p, QRectF(36, -10, 64, 20), Qt::AlignLeft | Qt::AlignVCenter,
@@ -881,7 +894,8 @@ class Atom final : public QGraphicsItem {
             const double h=std::max(22.0,(std::max(1u,input_count)-1)*10.0+14.0);
             p->setBrush(theme_colors().gate_fill);
             p->drawRoundedRect(QRectF(-38, -h, 76, 2*h), 7, 7);
-            label(p, QRectF(-38, -h, 76, 2*h), Qt::AlignCenter, symbol.isEmpty() ? QString("Gate") : symbol);
+            if(code_icon.empty())label(p, QRectF(-38, -h, 76, 2*h), Qt::AlignCenter, symbol.isEmpty() ? QString("Gate") : symbol);
+            else paint_code_icon(*p,code_icon,QRectF(-22,-std::min(22.0,h-3),44,2*std::min(22.0,h-3)));
             unsigned index=0;
             for(auto *child:childItems()) {
                 if(child->data(1).toString()!="port")continue;
@@ -893,7 +907,14 @@ class Atom final : public QGraphicsItem {
                     QPointF(std::clamp(pin.x(),body.left(),body.right()),body.bottom())};
                 const auto edge=*std::min_element(edges.begin(),edges.end(),[&](QPointF a,QPointF b){return QLineF(pin,a).length()<QLineF(pin,b).length();});
                 p->drawLine(edge,pin);
-                if(input_count>1)label(p,QRectF(edge.x()-9,edge.y()-9,18,18),Qt::AlignCenter,QString::number(index));
+                if(input_count>1) {
+                    QRectF number(edge.x()-9,edge.y()-9,18,18);
+                    if(edge.x()==body.left())number.translate(12,0);
+                    else if(edge.x()==body.right())number.translate(-12,0);
+                    else if(edge.y()==body.top())number.translate(0,12);
+                    else number.translate(0,-12);
+                    label(p,number,Qt::AlignCenter,QString::number(index));
+                }
                 ++index;
             }
         } else {
@@ -910,7 +931,9 @@ class Atom final : public QGraphicsItem {
                 label(p, QRectF(44, 4, 18, 16), Qt::AlignRight, right);
             }
             p->restore();
-            if (symbol == "R")
+            if(!code_icon.empty())
+                paint_code_icon(*p,code_icon,QRectF(-25,-25,50,50));
+            else if (symbol == "R")
                 p->drawRect(QRectF(-27, -12, 54, 24));
             else if (symbol == "C") {
                 p->drawLine(-27, 0, -7, 0);
@@ -1174,6 +1197,7 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
     }
     for (const auto &block : fragment.code_blocks) {
         auto *a = add(block, 6, QString("{C}"), {});
+        a->code_icon = block.icon;
         a->input_count = unsigned(std::max(block.inputs.size(), block.outputs.size()));
         auto append = [&](const std::vector<CodePort> &ports, bool input) {
             for (size_t index = 0; index < ports.size(); ++index) {
@@ -1192,6 +1216,10 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
     }
     for (const auto &instance : fragment.instances)
         add(instance, 4, {}, {})->set_definition(definition(fragment, instance.definition));
+    for(const auto &appearance:fragment.object_icons)
+        for(auto *child:group->childItems())
+            if(auto *a=dynamic_cast<Atom *>(child);a&&a->id==appearance.object)
+                a->code_icon=appearance.primitives;
     auto position = [&](const Endpoint &endpoint) -> std::optional<QPointF> {
         for (auto *child : group->childItems())
             if (auto *a = dynamic_cast<Atom *>(child); a && a->id == endpoint.object)
@@ -1281,6 +1309,7 @@ void EditorWindow::set_placement_preview() {
                 block.id = new_uuid();
                 block.name = text("code_block").toStdString();
                 block.code = "out = 0;";
+                block.icon = default_code_icon(108);
                 block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
                 p.code_blocks.push_back(std::move(block));
             });
@@ -1400,6 +1429,7 @@ void EditorWindow::build_ui() {
     auto *file_menu = menuBar()->addMenu(text("file_menu"));
     auto *edit_menu = menuBar()->addMenu(text("edit_menu"));
     auto *view_menu = menuBar()->addMenu(text("view_menu"));
+    auto *help_menu = menuBar()->addMenu(text("help_menu"));
     auto action = [&](QMenu *menu, const char *key, const QKeySequence &shortcut, auto callback) {
         auto *a = new QAction(text(key), this);
         a->setObjectName(QString("action_") + key);
@@ -1412,6 +1442,8 @@ void EditorWindow::build_ui() {
         connect(a, &QAction::triggered, this, callback);
         return a;
     };
+    action(help_menu, "c_code_reference", {},
+           [this] { show_c_code_reference(this); });
     action(file_menu, "new", QKeySequence::New, [this] {
         if (!running() && confirm_discard())
             new_file();
@@ -2436,6 +2468,10 @@ void EditorWindow::rebuild_scene() {
         a->name = q(name);
         a->symbol = symbol;
         a->type = type;
+        a->code_icon.clear();
+        if(auto appearance=std::find_if(project().object_icons.begin(),project().object_icons.end(),
+                [&](const ObjectIcon &candidate){return candidate.object==id;});appearance!=project().object_icons.end())
+            a->code_icon=appearance->primitives;
         a->setData(10, type == 4);
         a->setData(12, type == 3);
         a->setData(17, type == 2);
@@ -2541,6 +2577,7 @@ void EditorWindow::rebuild_scene() {
     }
     for (const auto &block : project().code_blocks) {
         auto *a = atom(block.id, block.name, QString("{C}"), 6);
+        if(a->code_icon.empty())a->code_icon = block.icon;
         if (a->input_count != std::max(block.inputs.size(), block.outputs.size()))
             a->prepareGeometryChangeForInputs(unsigned(std::max(block.inputs.size(), block.outputs.size())));
         std::vector<std::pair<QString, QPointF>> list;
@@ -2991,6 +3028,7 @@ std::string EditorWindow::add_code_block(QPointF point, const SignalPreset *pres
             block.x = point.x();
             block.y = point.y();
             block.code = "out = 0;";
+            block.icon = default_code_icon(108);
             block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
         }
         selected_ = block.id;

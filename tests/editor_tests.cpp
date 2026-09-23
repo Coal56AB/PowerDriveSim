@@ -32,15 +32,17 @@ int main(int argc,char** argv) {
             sink.inputs={{new_uuid(),"in","",SignalScalarType::real,0}};
             sink.outputs={{new_uuid(),"out","",SignalScalarType::real,0}};
             circuit.code_blocks={source,sink};
+            circuit.object_icons={{source.id,{{IconPrimitiveKind::line,IconColor::accent,false,{},{{4,4},{28,28}}}}}};
             circuit.wires.push_back({new_uuid(),{source.id,source.outputs[0].id},
                                      {sink.id,sink.inputs[0].id}});
             Document editor(circuit);
             const auto fragment=editor.copy({source.id,sink.id});
-            check(fragment.code_blocks.size()==2&&fragment.wires.size()==1,
+            check(fragment.code_blocks.size()==2&&fragment.wires.size()==1&&fragment.object_icons.size()==1,
                   "Clipboard includes selected code blocks and their signal wire");
             const auto pasted=editor.paste(fragment,0,160);
             check(pasted.size()==2&&editor.project().code_blocks.size()==4&&
                   editor.project().wires.size()==2&&
+                  editor.project().object_icons.size()==2&&editor.project().object_icons.back().object==pasted[0]&&
                   editor.project().wires.back().from.object==pasted[0]&&
                   editor.project().wires.back().to.object==pasted[1],
                   "Paste remaps code-block identities and connected wire endpoints");
@@ -56,16 +58,22 @@ int main(int argc,char** argv) {
             auto visual=editor.project();
             visual.code_blocks[0].x+=80;
             visual.code_blocks[0].orientation.quarter_turns=1;
+            visual.code_blocks[0].icon={{IconPrimitiveKind::line,IconColor::accent,false,{},{{0,0},{32,32}}}};
+            visual.object_icons.push_back({visual.code_blocks[1].id,
+                {{IconPrimitiveKind::ellipse,IconColor::signal,false,{},{{4,4},{28,28}}}}});
             check(same_simulation(visual,editor.project()),
                   "Code-block placement and orientation do not alter simulation");
             const auto instance=editor.create_definition({source.id},"Grouped source");
             check(editor.project().code_blocks.size()==3&&
                   definition(editor.project(),editor.project().instances.back().definition).code_blocks.size()==1&&
+                  definition(editor.project(),editor.project().instances.back().definition).object_icons.size()==1&&
                   editor.project().wires.front().from.object==instance,
                   "Grouping a code block exposes its connected output");
             editor.expand_instance(instance);
             check(editor.project().code_blocks.size()==4&&editor.project().wires.size()==2&&
-                  editor.project().wires.front().from.object==expanded_uuid({instance},source.id),
+                  editor.project().wires.front().from.object==expanded_uuid({instance},source.id)&&
+                  std::any_of(editor.project().object_icons.begin(),editor.project().object_icons.end(),
+                    [&](const ObjectIcon &appearance){return appearance.object==expanded_uuid({instance},source.id);}),
                   "Expanding restores editable code block and signal connection");
         }
         {
@@ -76,6 +84,31 @@ int main(int argc,char** argv) {
             const auto repeated=resolved.nets.at(endpoint_key({references.nodes[1].id,"node"}));
             const auto isolated=resolved.nets.at(endpoint_key({references.nodes[2].id,"node"}));
             check(first==repeated&&first!=isolated,"Ground names define shared and isolated reference nets");
+        }
+        {
+            Project nested; nested.id=new_uuid(); nested.wired=true;
+            Definition leaf; leaf.id=new_uuid(); leaf.name="Leaf"; leaf.wired=true;
+            Definition parent; parent.id=new_uuid(); parent.name="Parent"; parent.wired=true;
+            const auto child_id=new_uuid();
+            parent.instances.push_back({child_id,"Child",leaf.id,0,0});
+            parent.object_icons.push_back({child_id,
+                {{IconPrimitiveKind::rectangle,IconColor::accent,false,{},{{4,4},{28,28}}}}});
+            const auto root_id=new_uuid();
+            nested.instances.push_back({root_id,"Root",parent.id,0,0});
+            nested.definitions={leaf,parent};
+            Document editor(nested);
+            editor.expand_instance(root_id);
+            check(editor.project().object_icons.empty(),
+                  "Expanding a nested instance does not leave an icon for a flattened UUID");
+            const auto encoded=save(editor.root_project());
+            std::istringstream input(encoded);
+            check(save(read_project(input))==encoded,
+                  "Expanded nested instance icons leave a saveable round-trip project");
+            editor.undo();
+            check(editor.root_project()==nested,"Undo restores nested instance appearance");
+            editor.redo();
+            check(save(editor.root_project())==encoded,
+                  "Redo restores the saveable expanded appearance state");
         }
         {
             Project differential; differential.id=new_uuid(); differential.wired=true;

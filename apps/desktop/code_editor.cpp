@@ -1,17 +1,26 @@
 #include "apps/desktop/code_editor.hpp"
+#include "apps/desktop/editor.hpp"
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QCheckBox>
 #include <QCompleter>
+#include <QDialog>
 #include <QFontDatabase>
+#include <QFormLayout>
+#include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QStringListModel>
 #include <QSyntaxHighlighter>
+#include <QTextBrowser>
 #include <QStyle>
 #include <QTextBlock>
 #include <QTextCharFormat>
@@ -38,7 +47,7 @@ class CCodeHighlighter final : public QSyntaxHighlighter {
     void highlightBlock(const QString &source) override {
         apply(source, R"(\b(if|else|for|while|break|continue|return|true|false)\b)", keyword_);
         apply(source, R"(\b(auto|bool|const|double|float|int|void)\b)", type_);
-        apply(source, R"(\b(abs|fabs|sqrt|sin|cos|tan|asin|acos|atan|atan2|exp|log|log10|floor|ceil|round|pow|fmod|min|fmin|max|fmax|clamp|pwm|phasepwm|square|ramp)\s*(?=\())", function_);
+        apply(source, R"(\b(abs|fabs|sqrt|sin|cos|tan|asin|acos|atan|atan2|exp|log|log10|floor|ceil|round|pow|fmod|min|fmin|max|fmax|clamp|lerp|saturate|sign|step|smoothstep|deadband|wrap|pwm|phasepwm|square|ramp|pulse|saw|triangle)\s*(?=\())", function_);
         apply(source, R"((?<![A-Za-z_])(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?)", number_);
         apply(source, R"(\b[A-Za-z_][A-Za-z0-9_]*(?=\s*(?:=|\()))", declaration_);
         apply(source, R"([{}=;,()\[\]])", punctuation_);
@@ -84,12 +93,17 @@ QStringList common_completions() {
 
 } // namespace
 
-CCodeEdit::CCodeEdit(bool gate_functions, QWidget *parent) : QPlainTextEdit(parent) {
+CCodeEdit::CCodeEdit(bool time_context, QWidget *parent) : QPlainTextEdit(parent) {
     base_completions_ = common_completions();
-    if (gate_functions)
-        base_completions_ << "phasepwm(frequency, duty, phase)" << "pwm(frequency, duty, delay)"
-                          << "ramp(t0, t1, value0, value1)" << "square(frequency, duty, delay)"
-                          << "stime" << "t";
+    base_completions_ << "phasepwm(frequency, duty, phase)" << "pwm(frequency, duty, delay)"
+                      << "ramp(t0, t1, value0, value1)" << "square(frequency, duty, delay)"
+                      << "pulse(start, duration)" << "saw(frequency, delay)"
+                      << "triangle(frequency, delay)" << "lerp(a, b, factor)"
+                      << "saturate(value)" << "smoothstep(low, high, value)"
+                      << "step(edge, value)" << "deadband(value, width)"
+                      << "wrap(value, period)" << "sign(value)";
+    if (time_context)
+        base_completions_ << "stime" << "t";
     base_completions_.sort(Qt::CaseInsensitive);
     completer_ = new QCompleter(base_completions_, this);
     completer_->setWidget(this);
@@ -109,6 +123,112 @@ CCodeEdit::CCodeEdit(bool gate_functions, QWidget *parent) : QPlainTextEdit(pare
     format->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     addAction(format);
     connect(format, &QAction::triggered, this, &CCodeEdit::format_code);
+
+}
+
+void show_c_code_reference(QWidget *parent) {
+    QDialog dialog(parent);
+    dialog.setObjectName("c_code_reference_dialog");
+    dialog.setWindowTitle(text("c_code_reference"));
+    dialog.setWindowFlag(Qt::WindowMaximizeButtonHint, true);
+    dialog.resize(900, 720);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *browser = new QTextBrowser;
+    browser->setObjectName("c_code_reference_view");
+    browser->setOpenExternalLinks(true);
+    browser->setHtml(text("c_code_reference_html"));
+    layout->addWidget(browser);
+    auto *close = new QPushButton(text("close"));
+    QObject::connect(close, &QPushButton::clicked, &dialog, &QDialog::accept);
+    layout->addWidget(close, 0, Qt::AlignRight);
+    dialog.exec();
+}
+
+void CCodeEdit::show_search(bool replacement) {
+    QDialog dialog(this);
+    dialog.setObjectName(replacement ? "code_replace_dialog" : "code_find_dialog");
+    dialog.setWindowTitle(text(replacement ? "replace_code" : "find_code"));
+    dialog.setModal(true);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *form = new QFormLayout;
+    auto *find_text = new QLineEdit;
+    find_text->setObjectName("code_find_text");
+    const auto selected = textCursor().selectedText();
+    if (!selected.contains(QChar::ParagraphSeparator) && !selected.contains('\n'))
+        find_text->setText(selected);
+    form->addRow(text("find_what"), find_text);
+    QLineEdit *replace_text = nullptr;
+    if (replacement) {
+        replace_text = new QLineEdit;
+        replace_text->setObjectName("code_replace_text");
+        form->addRow(text("replace_with"), replace_text);
+    }
+    auto *match_case = new QCheckBox(text("match_case"));
+    match_case->setObjectName("code_find_case");
+    form->addRow(QString(), match_case);
+    layout->addLayout(form);
+    auto *row = new QHBoxLayout;
+    auto *next = new QPushButton(text("find_next"));
+    next->setObjectName("code_find_next");
+    row->addWidget(next);
+    QPushButton *replace_one = nullptr, *replace_all = nullptr;
+    if (replacement) {
+        replace_one = new QPushButton(text("replace_one"));
+        replace_all = new QPushButton(text("replace_all"));
+        replace_one->setObjectName("code_replace_one");
+        replace_all->setObjectName("code_replace_all");
+        row->addWidget(replace_one);
+        row->addWidget(replace_all);
+    }
+    auto *close = new QPushButton(text("close"));
+    row->addStretch();
+    row->addWidget(close);
+    layout->addLayout(row);
+    auto flags = [&] {
+        return match_case->isChecked() ? QTextDocument::FindCaseSensitively : QTextDocument::FindFlags{};
+    };
+    auto find_next = [&] {
+        const auto needle = find_text->text();
+        if (needle.isEmpty()) return;
+        auto found = document()->find(needle, textCursor(), flags());
+        if (found.isNull()) {
+            QTextCursor start(document());
+            start.movePosition(QTextCursor::Start);
+            found = document()->find(needle, start, flags());
+        }
+        if (!found.isNull()) {
+            setTextCursor(found);
+            ensureCursorVisible();
+        }
+    };
+    connect(next, &QPushButton::clicked, &dialog, find_next);
+    connect(find_text, &QLineEdit::returnPressed, &dialog, find_next);
+    if (replacement) {
+        connect(replace_one, &QPushButton::clicked, &dialog, [&] {
+            const auto selected_text = textCursor().selectedText();
+            const auto sensitivity = match_case->isChecked() ? Qt::CaseSensitive : Qt::CaseInsensitive;
+            if (!find_text->text().isEmpty() && selected_text.compare(find_text->text(), sensitivity) == 0) {
+                auto cursor = textCursor();
+                cursor.insertText(replace_text->text());
+                setTextCursor(cursor);
+            }
+            find_next();
+        });
+        connect(replace_all, &QPushButton::clicked, &dialog, [&] {
+            const auto needle = find_text->text();
+            if (needle.isEmpty()) return;
+            QTextCursor cursor(document());
+            cursor.beginEditBlock();
+            cursor.movePosition(QTextCursor::Start);
+            while (!(cursor = document()->find(needle, cursor, flags())).isNull())
+                cursor.insertText(replace_text->text());
+            cursor.endEditBlock();
+        });
+    }
+    connect(close, &QPushButton::clicked, &dialog, &QDialog::accept);
+    find_text->selectAll();
+    find_text->setFocus();
+    dialog.exec();
 }
 
 void CCodeEdit::enable_expand(std::function<void()> callback, const QString &tooltip) {
@@ -175,6 +295,15 @@ void CCodeEdit::insert_completion(const QString &completion) {
 }
 
 void CCodeEdit::keyPressEvent(QKeyEvent *event) {
+    if(event->key()==Qt::Key_F&&(event->modifiers()&Qt::ControlModifier)) {
+        show_search(false);event->accept();return;
+    }
+    if(event->key()==Qt::Key_H&&(event->modifiers()&Qt::ControlModifier)) {
+        show_search(true);event->accept();return;
+    }
+    if(event->key()==Qt::Key_F1) {
+        show_c_code_reference(this);event->accept();return;
+    }
     if (completer_->popup()->isVisible()) {
         switch (event->key()) {
         case Qt::Key_Enter:

@@ -23,6 +23,7 @@ struct SignalPreset {
 };
 
 const SignalPreset *signal_preset(int placement_id);
+std::vector<IconPrimitive> default_code_icon(int placement_id);
 CodeBlock make_signal_preset(const SignalPreset &preset, const std::string &name, double x, double y);
 
 } // namespace pds::desktop

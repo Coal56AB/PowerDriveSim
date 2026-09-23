@@ -44,6 +44,7 @@ class QPainter;
 namespace pds::desktop {
 QIcon component_icon(int id, bool framed = true);
 void paint_component_symbol(QPainter &painter, int id, bool framed = true);
+std::vector<IconPrimitive> editable_component_icon(int id);
 int definition_icon_id(const std::string &id);
 bool bundled_example(const QString &path);
 inline constexpr int wire_segment_role = 3; // 1-based path edge; zero selects the whole wire.
@@ -256,7 +257,7 @@ class Scope : public QWidget {
     QPointer<QAction> trigger_level_label_action_, trigger_level_action_, trigger_position_action_;
     QPointer<QLineEdit> time_span_edit_, trigger_level_edit_, trigger_position_edit_;
     std::string trigger_channel_;
-    bool trigger_armed_ = false;
+    bool trigger_enabled_ = false, trigger_armed_ = false;
     int trigger_edge_ = 0, trigger_mode_ = 1;
     double trigger_level_ = 0, trigger_after_ = 0, trigger_holdoff_ = 0, trigger_position_ = .2;
     std::optional<double> trigger_time_, trigger_capture_until_;
@@ -460,6 +461,7 @@ class EditorWindow : public QMainWindow {
     void compile_inspector_code();
     void open_full_code_editor();
     void edit_code_block(const std::string &id);
+    void edit_object_icon(const std::string &id);
     bool edit_text_at(QPoint position);
     void cancel_inline_edit();
     bool commit_inline_edit();

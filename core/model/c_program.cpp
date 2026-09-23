@@ -346,7 +346,7 @@ private:
         for(auto scope=scopes_.rbegin();scope!=scopes_.rend();++scope)if(auto found=scope->find(name);found!=scope->end()){if(constant)*constant=found->second;return true;}return false;
     }
     static std::optional<std::size_t> builtin_arity(const std::string &name) {
-        static const std::map<std::string,std::size_t> arities={{"abs",1},{"fabs",1},{"sqrt",1},{"sin",1},{"cos",1},{"tan",1},{"asin",1},{"acos",1},{"atan",1},{"atan2",2},{"exp",1},{"log",1},{"log10",1},{"floor",1},{"ceil",1},{"round",1},{"pow",2},{"fmod",2},{"min",2},{"fmin",2},{"max",2},{"fmax",2},{"clamp",3},{"ramp",4},{"pwm",3},{"square",3},{"phasepwm",3}};
+        static const std::map<std::string,std::size_t> arities={{"abs",1},{"fabs",1},{"sqrt",1},{"sin",1},{"cos",1},{"tan",1},{"asin",1},{"acos",1},{"atan",1},{"atan2",2},{"exp",1},{"log",1},{"log10",1},{"floor",1},{"ceil",1},{"round",1},{"pow",2},{"fmod",2},{"min",2},{"fmin",2},{"max",2},{"fmax",2},{"clamp",3},{"lerp",3},{"saturate",1},{"sign",1},{"step",2},{"smoothstep",3},{"deadband",2},{"wrap",2},{"ramp",4},{"pulse",2},{"pwm",3},{"square",3},{"phasepwm",3},{"saw",2},{"triangle",2}};
         if(auto found=arities.find(name);found!=arities.end())return found->second;return {};
     }
     void expression(const Expression &value) {
@@ -364,12 +364,11 @@ private:
             if(constant)error("Cannot modify const variable '"+target.text+"'");
         }
         if(value.kind==Expression::Kind::call) {
-            if(auto arity=builtin_arity(value.text)) {
+            if(auto found=functions_.find(value.text);found!=functions_.end()) {
+                if(found->second.parameters.size()!=value.children.size())error("Invalid argument count for '"+value.text+"'");
+            } else if(auto arity=builtin_arity(value.text)) {
                 if(*arity!=value.children.size())error("Invalid argument count for '"+value.text+"'");
-                if((value.text=="ramp"||value.text=="pwm"||value.text=="square"||value.text=="phasepwm")&&!options_.allow_gate_functions)
-                    error("Gate function '"+value.text+"' is not available here");
-            } else if(auto found=functions_.find(value.text);found==functions_.end())error("Unknown function '"+value.text+"'");
-            else if(found->second.parameters.size()!=value.children.size())error("Invalid argument count for '"+value.text+"'");
+            } else error("Unknown function '"+value.text+"'");
         }
         for(const auto &child:value.children)expression(*child);
     }
@@ -511,6 +510,14 @@ private:
     }
     double call(const std::string &name,const std::vector<double> &a) {
         auto count=[&](std::size_t n){if(a.size()!=n)error("Invalid argument count for '"+name+"'");};
+        if(const auto found=functions_.find(name);found!=functions_.end()) {
+            if(found->second.parameters.size()!=a.size())error("Invalid argument count for '"+name+"'");
+            if(++call_depth_>options_.call_depth_limit)error("C function call depth exceeded");
+            scopes_.emplace_back();for(std::size_t i=0;i<a.size();++i)scopes_.back().emplace(found->second.parameters[i],Binding{a[i],false,{}});
+            const auto result=execute(*found->second.body);scopes_.pop_back();--call_depth_;
+            if(result.flow==Flow::break_loop||result.flow==Flow::continue_loop)error("break/continue escaped a function");
+            return result.flow==Flow::returned?result.value:0;
+        }
         if(name=="abs"||name=="fabs"){count(1);return std::abs(a[0]);}if(name=="sqrt"){count(1);if(a[0]<0)error("sqrt domain error");return std::sqrt(a[0]);}
         if(name=="sin"){count(1);return std::sin(a[0]);}if(name=="cos"){count(1);return std::cos(a[0]);}if(name=="tan"){count(1);return std::tan(a[0]);}
         if(name=="asin"){count(1);return std::asin(a[0]);}if(name=="acos"){count(1);return std::acos(a[0]);}if(name=="atan"){count(1);return std::atan(a[0]);}if(name=="atan2"){count(2);return std::atan2(a[0],a[1]);}
@@ -519,13 +526,16 @@ private:
         if(name=="pow"){count(2);return std::pow(a[0],a[1]);}if(name=="fmod"){count(2);if(a[1]==0)error("Division by zero");return std::fmod(a[0],a[1]);}
         if(name=="min"||name=="fmin"){count(2);return std::min(a[0],a[1]);}if(name=="max"||name=="fmax"){count(2);return std::max(a[0],a[1]);}
         if(name=="clamp"){count(3);if(a[1]>a[2])error("clamp minimum exceeds maximum");return std::clamp(a[0],a[1],a[2]);}
-        if(name=="ramp"){if(!options_.allow_gate_functions)error("Function 'ramp' is not available here");count(4);if(a[1]<=a[0])error("Ramp end time must exceed start time");const auto k=std::clamp((time_-a[0])/(a[1]-a[0]),0.0,1.0);return a[2]+(a[3]-a[2])*k;}
+        if(name=="lerp"){count(3);return a[0]+(a[1]-a[0])*a[2];}if(name=="saturate"){count(1);return std::clamp(a[0],0.0,1.0);}if(name=="sign"){count(1);return (a[0]>0)-(a[0]<0);}
+        if(name=="step"){count(2);return a[1]>=a[0];}if(name=="smoothstep"){count(3);if(a[1]<=a[0])error("smoothstep upper edge must exceed lower edge");const auto x=std::clamp((a[2]-a[0])/(a[1]-a[0]),0.0,1.0);return x*x*(3-2*x);}
+        if(name=="deadband"){count(2);if(a[1]<0)error("deadband width must be non-negative");return std::abs(a[0])<=a[1]?0:a[0]-std::copysign(a[1],a[0]);}if(name=="wrap"){count(2);if(a[1]<=0)error("wrap period must be positive");return a[0]-std::floor(a[0]/a[1])*a[1];}
+        if(name=="ramp"){count(4);if(a[1]<=a[0])error("Ramp end time must exceed start time");const auto k=std::clamp((time_-a[0])/(a[1]-a[0]),0.0,1.0);return a[2]+(a[3]-a[2])*k;}
+        if(name=="pulse"){count(2);if(a[1]<0)error("Pulse duration must be non-negative");return time_>=a[0]&&time_<a[0]+a[1];}
         if(name=="pwm"||name=="square"||name=="phasepwm"){
-            if(!options_.allow_gate_functions)error("Gate functions are not available here");count(3);if(a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Invalid PWM arguments");if(a[1]==0)return 0;if(a[1]==1)return 1;
+            count(3);if(a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Invalid PWM arguments");if(a[1]==0)return 0;if(a[1]==1)return 1;
             const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];if(delay<0)delay+=period;if(name!="phasepwm"&&time_<delay)return 0;double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;const double boundary=a[1]*period;const double tolerance=64*std::numeric_limits<double>::epsilon()*std::max({period,std::abs(time_),std::abs(delay)});if(phase>period-tolerance)phase=0;return phase<boundary-tolerance;}
-        const auto found=functions_.find(name);if(found==functions_.end())error("Unknown function '"+name+"'");if(found->second.parameters.size()!=a.size())error("Invalid argument count for '"+name+"'");
-        if(++call_depth_>options_.call_depth_limit)error("C function call depth exceeded");scopes_.emplace_back();for(std::size_t i=0;i<a.size();++i)scopes_.back().emplace(found->second.parameters[i],Binding{a[i],false,{}});
-        const auto result=execute(*found->second.body);scopes_.pop_back();--call_depth_;if(result.flow==Flow::break_loop||result.flow==Flow::continue_loop)error("break/continue escaped a function");return result.flow==Flow::returned?result.value:0;
+        if(name=="saw"||name=="triangle"){count(2);if(a[0]<=0)error("Wave frequency must be positive");const auto period=1.0/a[0];double phase=std::fmod(time_-a[1],period);if(phase<0)phase+=period;const auto unit=phase/period;return name=="saw"?unit:1-4*std::abs(unit-.5);}
+        error("Unknown function '"+name+"'");
     }
     Outcome execute(const Statement &s) {
         tick();switch(s.kind){
@@ -613,7 +623,7 @@ private:
             expression(*e.children[0]);const auto no=emit(ByteOp::jump_false);expression(*e.children[1]);
             const auto end=emit(ByteOp::jump);patch(no,program_.code.size());expression(*e.children[2]);patch(end,program_.code.size());return;}
         case Expression::Kind::call:
-            if(auto function=functions_.find(e.text);function!=functions_.end()&&!builtin(e.text)){inline_call(e.text,function->second,e);return;}
+            if(auto function=functions_.find(e.text);function!=functions_.end()){inline_call(e.text,function->second,e);return;}
             for(const auto &child:e.children)expression(*child);emit(ByteOp::call,e.children.size(),0,0,e.text);return;
         case Expression::Kind::binary:
             expression(*e.children[0]);
@@ -669,7 +679,7 @@ private:
         }
     }
     bool builtin(const std::string &name) const {
-        static const std::set<std::string> names={"abs","fabs","sqrt","sin","cos","tan","asin","acos","atan","atan2","exp","log","log10","floor","ceil","round","pow","fmod","min","fmin","max","fmax","clamp","ramp","pwm","square","phasepwm"};
+        static const std::set<std::string> names={"abs","fabs","sqrt","sin","cos","tan","asin","acos","atan","atan2","exp","log","log10","floor","ceil","round","pow","fmod","min","fmin","max","fmax","clamp","lerp","saturate","sign","step","smoothstep","deadband","wrap","ramp","pulse","pwm","square","phasepwm","saw","triangle"};
         return names.contains(name);
     }
     std::optional<double> constant(const Expression &e) const {
@@ -803,8 +813,13 @@ private:
         if(name=="sin"){count(1);return std::sin(a[0]);}if(name=="cos"){count(1);return std::cos(a[0]);}if(name=="tan"){count(1);return std::tan(a[0]);}if(name=="asin"){count(1);return std::asin(a[0]);}if(name=="acos"){count(1);return std::acos(a[0]);}if(name=="atan"){count(1);return std::atan(a[0]);}if(name=="atan2"){count(2);return std::atan2(a[0],a[1]);}
         if(name=="exp"){count(1);return std::exp(a[0]);}if(name=="log"){count(1);return std::log(a[0]);}if(name=="log10"){count(1);return std::log10(a[0]);}if(name=="floor"){count(1);return std::floor(a[0]);}if(name=="ceil"){count(1);return std::ceil(a[0]);}if(name=="round"){count(1);return std::round(a[0]);}
         if(name=="pow"){count(2);return std::pow(a[0],a[1]);}if(name=="fmod"){count(2);if(a[1]==0)error("Division by zero");return std::fmod(a[0],a[1]);}if(name=="min"||name=="fmin"){count(2);return std::min(a[0],a[1]);}if(name=="max"||name=="fmax"){count(2);return std::max(a[0],a[1]);}if(name=="clamp"){count(3);if(a[1]>a[2])error("clamp minimum exceeds maximum");return std::clamp(a[0],a[1],a[2]);}
+        if(name=="lerp"){count(3);return a[0]+(a[1]-a[0])*a[2];}if(name=="saturate"){count(1);return std::clamp(a[0],0.0,1.0);}if(name=="sign"){count(1);return (a[0]>0)-(a[0]<0);}
+        if(name=="step"){count(2);return a[1]>=a[0];}if(name=="smoothstep"){count(3);if(a[1]<=a[0])error("smoothstep upper edge must exceed lower edge");const auto x=std::clamp((a[2]-a[0])/(a[1]-a[0]),0.0,1.0);return x*x*(3-2*x);}
+        if(name=="deadband"){count(2);if(a[1]<0)error("deadband width must be non-negative");return std::abs(a[0])<=a[1]?0:a[0]-std::copysign(a[1],a[0]);}if(name=="wrap"){count(2);if(a[1]<=0)error("wrap period must be positive");return a[0]-std::floor(a[0]/a[1])*a[1];}
         if(name=="ramp"){count(4);if(a[1]<=a[0])error("Ramp end time must exceed start time");const auto k=std::clamp((time_-a[0])/(a[1]-a[0]),0.0,1.0);return a[2]+(a[3]-a[2])*k;}
+        if(name=="pulse"){count(2);if(a[1]<0)error("Pulse duration must be non-negative");return time_>=a[0]&&time_<a[0]+a[1];}
         if(name=="pwm"||name=="square"||name=="phasepwm"){count(3);if(a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Invalid PWM arguments");if(a[1]==0)return 0;if(a[1]==1)return 1;const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];if(delay<0)delay+=period;if(name!="phasepwm"&&time_<delay)return 0;double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;const double boundary=a[1]*period;const double tolerance=64*std::numeric_limits<double>::epsilon()*std::max({period,std::abs(time_),std::abs(delay)});if(phase>period-tolerance)phase=0;return phase<boundary-tolerance;}
+        if(name=="saw"||name=="triangle"){count(2);if(a[0]<=0)error("Wave frequency must be positive");const auto period=1.0/a[0];double phase=std::fmod(time_-a[1],period);if(phase<0)phase+=period;const auto unit=phase/period;return name=="saw"?unit:1-4*std::abs(unit-.5);}
         error("Unknown function '"+name+"'");
     }
     const CProgramOptions &options_;const ByteProgram &program_;double time_;CProgramState *state_;ByteWorkspace owned_;ByteWorkspace &workspace_;std::vector<double> &values_;std::vector<bool> &initialized_;std::vector<std::vector<double>> &arrays_;std::vector<double> &stack_;std::size_t instructions_=0;

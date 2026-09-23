@@ -297,6 +297,8 @@ bool same_simulation(const Project& a,const Project& b) {
         auto strip_tags=[](auto& objects){for(auto& o:objects){o.x=0;o.y=0;o.orientation={};o.listed=true;o.connection_name.clear();o.scope_path.clear();}};
         auto schematic=[&](Schematic& s){
             strip(s.components);strip(s.nodes);strip_tags(s.tags);strip(s.patterns);strip(s.plots);strip(s.code_blocks);strip(s.instances);
+            for(auto &block:s.code_blocks)block.icon.clear();
+            s.object_icons.clear();
             for(auto& w:s.wires){w.bends.clear();w.color.clear();w.width=2;w.line=WireLine::automatic;}
             for(auto& g:s.patterns)g.pin_positions.clear();
             for(auto& g:s.plots){g.begin=0;g.end=-1;g.cursor_a=-1;g.cursor_b=-1;g.pin_positions.clear();}
@@ -406,6 +408,7 @@ Project Document::copy(const std::vector<std::string>& list) const {
     for(const auto& w:project().wires)if(ids.count(w.from.object)&&ids.count(w.to.object))result.wires.push_back(w);
     for(const auto& e:project().events)if(ids.count(e.target))result.events.push_back(e);
     for(const auto& expression:project().parameter_expressions)if(ids.count(expression.object))result.parameter_expressions.push_back(expression);
+    for(const auto& appearance:project().object_icons)if(ids.count(appearance.object))result.object_icons.push_back(appearance);
     if(!result.parameter_expressions.empty())result.initialization_code=project().initialization_code;
     const auto fragment=flatten(result);
     const auto source=flatten(current_);
@@ -466,6 +469,7 @@ std::vector<std::string> Document::paste(const Project& source,double dx,double 
         auto copy=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;object.name=next_name(object.name,names);names.insert(object.name);to.push_back(std::move(object));}};
         auto copy_tags=[&](const auto& from,auto& to){for(auto object:from){auto old=object.id;object.id=new_uuid();ids[old]=object.id;added.push_back(object.id);object.x+=dx;object.y+=dy;to.push_back(std::move(object));}};
         copy(fragment.components,p.components);copy(fragment.nodes,p.nodes);copy_tags(fragment.tags,p.tags);copy(fragment.patterns,p.patterns);copy(fragment.plots,p.plots);copy(fragment.code_blocks,p.code_blocks);copy(fragment.instances,p.instances);
+        for(auto appearance:fragment.object_icons)if(ids.count(appearance.object)){appearance.object=ids.at(appearance.object);p.object_icons.push_back(std::move(appearance));}
         for(auto wire:fragment.wires){if(!ids.count(wire.from.object)||!ids.count(wire.to.object))continue;wire.id=new_uuid();wire.from.object=ids.at(wire.from.object);wire.to.object=ids.at(wire.to.object);for(auto& point:wire.bends){point.x+=dx;point.y+=dy;}p.wires.push_back(std::move(wire));}
         for(auto event:fragment.events)if(ids.count(event.target)){event.target=ids.at(event.target);p.events.push_back(event);}
         const bool compatible_initialization=p.initialization_code.empty()||p.initialization_code==fragment.initialization_code;
@@ -575,6 +579,7 @@ void Document::erase(const std::vector<std::string>& list) {
             std::any_of(p.instances.begin(),p.instances.end(),[&](const Instance& i){return ids.count(i.id);});
         std::erase_if(p.labels,[&](const LabelLayout& l){return ids.count(l.object);});
         std::erase_if(p.view_options,[&](const ViewOptions& o){return ids.count(o.plot);});
+        std::erase_if(p.object_icons,[&](const ObjectIcon& appearance){return ids.count(appearance.object);});
         std::erase_if(p.components,[&](const Component& c){return ids.count(c.id);});
         std::erase_if(p.nodes,[&](const Node& n){return ids.count(n.id);});
         std::erase_if(p.tags,[&](const ConnectionTag& t){return ids.count(t.id);});

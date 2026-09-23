@@ -42,6 +42,32 @@ const SignalPreset *signal_preset(int placement_id) {
     return nullptr;
 }
 
+std::vector<IconPrimitive> default_code_icon(int placement_id) {
+    auto line=[](std::initializer_list<Point> points, IconColor color=IconColor::foreground) {
+        return IconPrimitive{points.size()>2?IconPrimitiveKind::polyline:IconPrimitiveKind::line,
+                             color,false,{},std::vector<Point>(points)};
+    };
+    auto text=[](const char *value, double size=13) {
+        return IconPrimitive{IconPrimitiveKind::text,IconColor::foreground,false,value,{{16,16},{size,0}}};
+    };
+    switch(placement_id) {
+    case 109:return {text("1")};
+    case 110:return {line({{4,24},{13,24},{13,8},{28,8}},IconColor::signal)};
+    case 111:return {line({{4,25},{27,7}},IconColor::signal)};
+    case 112:return {line({{3,16},{6,10},{9,7},{12,10},{16,22},{20,25},{23,22},{29,10}},IconColor::signal)};
+    case 113:return {text("+")};
+    case 114:return {line({{3,24},{9,24},{23,8},{29,8}},IconColor::signal)};
+    case 115:return {text(">=")};
+    case 116:return {text("AND",8)};
+    case 117:return {text("INT",8)};
+    case 118:return {text("z^-1",7)};
+    case 119:return {line({{3,24},{10,8},{17,24},{24,8},{29,20}},IconColor::signal)};
+    case 120:return {line({{3,23},{8,23},{8,9},{15,9},{15,23},{22,23},{22,9},{29,9}},IconColor::gate)};
+    case 121:return {text("S/H",8)};
+    default:return {text("{C}",8)};
+    }
+}
+
 CodeBlock make_signal_preset(const SignalPreset &preset, const std::string &name, double x, double y) {
     CodeBlock block;
     block.id = new_uuid();
@@ -50,6 +76,7 @@ CodeBlock make_signal_preset(const SignalPreset &preset, const std::string &name
     block.y = y;
     block.period = preset.period;
     block.code = preset.code;
+    block.icon = default_code_icon(preset.placement_id);
     for (const auto &port : preset.inputs)
         block.inputs.push_back({new_uuid(), port.name, "", port.type, 0});
     for (const auto &port : preset.outputs)

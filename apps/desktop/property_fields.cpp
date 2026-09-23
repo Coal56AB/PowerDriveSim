@@ -545,12 +545,24 @@ void EditorWindow::fill_inspector() {
             properties_->insertRow(3, button);
             connect(button, &QPushButton::clicked, this,
                     [this, id = selected_block->id] { edit_code_block(id); });
+            auto *icon = new QPushButton(text("edit_object_icon"));
+            icon->setObjectName("edit_object_icon");
+            properties_->insertRow(4, icon);
+            connect(icon, &QPushButton::clicked, this,
+                    [this, id = selected_block->id] { edit_object_icon(id); });
         } else {
             inspector_hint_->setText(text("code_block_single_selection"));
             inspector_hint_->show();
         }
         publish();
         return;
+    }
+    if(targets.size()==1&&atoms_.count(targets.front())&&
+       std::none_of(project().nodes.begin(),project().nodes.end(),[&](const Node &node){return node.id==targets.front();})) {
+        auto *icon=new QPushButton(text("edit_object_icon"));
+        icon->setObjectName("edit_object_icon");
+        properties_->insertRow(3,icon);
+        connect(icon,&QPushButton::clicked,this,[this,id=targets.front()]{edit_object_icon(id);});
     }
     std::map<QString, QJsonObject> common;
     std::vector<QString> field_order;

@@ -38,6 +38,19 @@ bool parse_complete_quoted_text(const std::string &source,std::string &value) {
     input>>std::ws;
     return input.eof();
 }
+bool valid_icon_primitive(const IconPrimitive &primitive) {
+    if(unsigned(primitive.kind)>unsigned(IconPrimitiveKind::text) ||
+       unsigned(primitive.color)>unsigned(IconColor::accent) ||
+       primitive.points.size()>max_icon_points ||
+       std::any_of(primitive.points.begin(),primitive.points.end(),[](const Point &point) {
+           return !std::isfinite(point.x)||!std::isfinite(point.y)||
+                  point.x<0||point.x>32||point.y<0||point.y>32;
+       }))
+        return false;
+    if(primitive.kind==IconPrimitiveKind::text)
+        return !primitive.text.empty() && !primitive.points.empty();
+    return primitive.points.size()>=2;
+}
 void migrate_builtin_three_phase_source(Definition &definition) {
     if (definition.id != builtin_three_phase_y && definition.id != builtin_three_phase_delta)
         return;
@@ -254,6 +267,43 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                std::any_of(block->pin_positions.begin(),block->pin_positions.end(),[&](const PinPosition &prior){return prior.port==pin.port;}))
                 throw Diagnostic("parse_error",std::to_string(number),"Invalid code-block pin layout");
             block->pin_positions.push_back(std::move(pin));continue;
+        }
+        if(tag=="x-code-icon" && p.schema>=26) {
+            std::string block_id,encoded;unsigned kind=0,color=0;int filled=-1;size_t count=0;
+            row>>std::quoted(block_id)>>kind>>color>>filled>>std::quoted(encoded)>>count;
+            IconPrimitive primitive;
+            primitive.kind=IconPrimitiveKind(kind);primitive.color=IconColor(color);primitive.filled=filled==1;
+            primitive.text=unhex_text(encoded,block_id);
+            if(count>max_icon_points)row.setstate(std::ios::failbit);
+            for(size_t index=0;index<count&&!row.fail();++index) {
+                Point point;row>>point.x>>point.y;primitive.points.push_back(point);
+            }
+            const bool parsed=!row.fail();row>>std::ws;
+            auto block=std::find_if(p.code_blocks.begin(),p.code_blocks.end(),[&](const CodeBlock &candidate){return candidate.id==block_id;});
+            if(!parsed||!row.eof()||block==p.code_blocks.end()||(filled!=0&&filled!=1)||
+               block->icon.size()>=max_icon_primitives||!valid_icon_primitive(primitive))
+                throw Diagnostic("parse_error",std::to_string(number),"Invalid code-block icon primitive");
+            block->icon.push_back(std::move(primitive));continue;
+        }
+        if(tag=="x-object-icon" && p.schema>=27) {
+            std::string object,encoded;unsigned kind=0,color=0;int filled=-1;size_t count=0;
+            row>>std::quoted(object)>>kind>>color>>filled>>std::quoted(encoded)>>count;
+            IconPrimitive primitive;
+            primitive.kind=IconPrimitiveKind(kind);primitive.color=IconColor(color);primitive.filled=filled==1;
+            primitive.text=unhex_text(encoded,object);
+            if(count>max_icon_points)row.setstate(std::ios::failbit);
+            for(size_t index=0;index<count&&!row.fail();++index) {
+                Point point;row>>point.x>>point.y;primitive.points.push_back(point);
+            }
+            const bool parsed=!row.fail();row>>std::ws;
+            auto appearance=std::find_if(p.object_icons.begin(),p.object_icons.end(),[&](const ObjectIcon &candidate){return candidate.object==object;});
+            if(appearance==p.object_icons.end()) {
+                p.object_icons.push_back({object,{}});appearance=std::prev(p.object_icons.end());
+            }
+            if(!parsed||!row.eof()||object.empty()||(filled!=0&&filled!=1)||
+               appearance->primitives.size()>=max_icon_primitives||!valid_icon_primitive(primitive))
+                throw Diagnostic("parse_error",std::to_string(number),"Invalid object icon primitive");
+            appearance->primitives.push_back(std::move(primitive));continue;
         }
         if(tag.rfind("x-",0)==0) { p.extensions.push_back(line); continue; }
         if(tag=="project" && !identity) {
@@ -498,6 +548,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
         bool found=false;auto apply=[&](auto& objects){for(auto& object:objects)if(object.id==id){object.orientation=orientation;found=true;}};apply(p.nodes);apply(p.components);apply(p.tags);apply(p.patterns);apply(p.plots);apply(p.code_blocks);apply(p.instances);
         if(!found)throw Diagnostic("missing_orientation_target",id,"Orientation target does not exist");
     }
+    for(const auto &appearance:p.object_icons) {
+        bool found=false;auto scan=[&](const auto &objects){for(const auto &object:objects)found|=object.id==appearance.object;};
+        scan(p.components);scan(p.patterns);scan(p.plots);scan(p.code_blocks);scan(p.instances);scan(p.tags);
+        if(!found)throw Diagnostic("missing_icon_target",appearance.object,"Object icon target does not exist");
+    }
     for(const auto& [id,source]:sources) {
         auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
         if(c==p.components.end())throw Diagnostic("missing_source_target",id,"Source waveform component does not exist");
@@ -612,6 +667,28 @@ void write_project(const Project& p, std::ostream& out) {
         for(const auto& pin:block.pin_positions)
             if(!port_ids.contains(pin.port)||!positioned.insert(pin.port).second||!std::isfinite(pin.x)||!std::isfinite(pin.y))
                 throw Diagnostic("invalid_signal_port",block.id,"Code block pin layout is invalid");
+        if(block.icon.size()>max_icon_primitives)
+            throw Diagnostic("invalid_code_icon",block.id,"Code block icon has too many primitives");
+        for(const auto& primitive:block.icon) {
+            check_text(primitive.text,block.id);
+            if(!valid_icon_primitive(primitive))
+                throw Diagnostic("invalid_code_icon",block.id,"Code block icon primitive is incomplete");
+        }
+    }
+    std::set<std::string> icon_targets;
+    auto collect_icon_targets=[&](const auto &objects){for(const auto &object:objects)icon_targets.insert(object.id);};
+    collect_icon_targets(p.components);collect_icon_targets(p.patterns);collect_icon_targets(p.plots);
+    collect_icon_targets(p.code_blocks);collect_icon_targets(p.instances);collect_icon_targets(p.tags);
+    std::set<std::string> decorated;
+    for(const auto &appearance:p.object_icons) {
+        check_text(appearance.object,p.id);
+        if(!icon_targets.contains(appearance.object)||!decorated.insert(appearance.object).second||appearance.primitives.empty()||appearance.primitives.size()>max_icon_primitives)
+            throw Diagnostic("invalid_object_icon",appearance.object,"Object icon target or primitive count is invalid");
+        for(const auto &primitive:appearance.primitives) {
+            check_text(primitive.text,appearance.object);
+            if(!valid_icon_primitive(primitive))
+                throw Diagnostic("invalid_object_icon",appearance.object,"Object icon primitive is invalid");
+        }
     }
     for(const auto& instance:p.instances){check_text(instance.id,instance.id);check_text(instance.name,instance.id);check_text(instance.definition,instance.id);for(const auto& [key,value]:instance.parameters){(void)value;check_text(key,instance.id);}}
     for(const auto& v:p.view_options){check_text(v.plot,p.id);check_text(v.cursor_channel_a,p.id);check_text(v.cursor_channel_b,p.id);for(const auto& binding:v.signal_displays)check_text(binding.first,p.id);for(const auto& multiplier:v.curve_multipliers)check_text(multiplier.first,p.id);}
@@ -670,6 +747,18 @@ void write_project(const Project& p, std::ostream& out) {
         for(const auto& port:block.inputs)out<<"code_input "<<std::quoted(block.id)<<' '<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.unit)<<' '<<unsigned(port.type)<<' '<<port.initial<<'\n';
         for(const auto& port:block.outputs)out<<"code_output "<<std::quoted(block.id)<<' '<<std::quoted(port.id)<<' '<<std::quoted(port.name)<<' '<<std::quoted(port.unit)<<' '<<unsigned(port.type)<<' '<<port.initial<<'\n';
         for(const auto& pin:block.pin_positions)out<<"x-code-pin "<<std::quoted(block.id)<<' '<<std::quoted(pin.port)<<' '<<pin.x<<' '<<pin.y<<'\n';
+        for(const auto& primitive:block.icon) {
+            out<<"x-code-icon "<<std::quoted(block.id)<<' '<<unsigned(primitive.kind)<<' '<<unsigned(primitive.color)<<' '
+               <<primitive.filled<<' '<<std::quoted(hex_text(primitive.text))<<' '<<primitive.points.size();
+            for(const auto& point:primitive.points)out<<' '<<point.x<<' '<<point.y;
+            out<<'\n';
+        }
+    }
+    for(const auto &appearance:p.object_icons)for(const auto &primitive:appearance.primitives) {
+        out<<"x-object-icon "<<std::quoted(appearance.object)<<' '<<unsigned(primitive.kind)<<' '<<unsigned(primitive.color)<<' '
+           <<primitive.filled<<' '<<std::quoted(hex_text(primitive.text))<<' '<<primitive.points.size();
+        for(const auto &point:primitive.points)out<<' '<<point.x<<' '<<point.y;
+        out<<'\n';
     }
     out<<"scope_enabled "<<p.scope_enabled<<'\n';
     out << "scopeview " << p.scope_begin << ' ' << p.scope_end << ' ' << p.cursor_a << ' ' << p.cursor_b << '\n';

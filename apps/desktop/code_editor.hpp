@@ -7,12 +7,15 @@
 class QCompleter;
 class QMouseEvent;
 class QPaintEvent;
+class QWidget;
 
 namespace pds::desktop {
 
+void show_c_code_reference(QWidget *parent = nullptr);
+
 class CCodeEdit final : public QPlainTextEdit {
   public:
-    explicit CCodeEdit(bool gate_functions, QWidget *parent = nullptr);
+    explicit CCodeEdit(bool time_context, QWidget *parent = nullptr);
 
     void format_code();
     void enable_expand(std::function<void()> callback, const QString &tooltip);
@@ -33,6 +36,7 @@ class CCodeEdit final : public QPlainTextEdit {
     QString completion_prefix() const;
     void insert_completion(const QString &completion);
     void update_completions();
+    void show_search(bool replace);
     QRect expand_rect() const;
 };
 

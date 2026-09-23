@@ -221,7 +221,7 @@ int main(int argc, char **argv) {
         check(scripted_restored.patterns.back().script&&scripted_restored.patterns.back().code.find("// formatted source\nreturn pwm")!=std::string::npos,"Multiline gate script roundtrip");
         check(scripted_roundtrip.str().find("// formatted source")==std::string::npos,"Gate script source is encoded on one project-file line");
         std::string legacy_script=scripted_roundtrip.str();
-        legacy_script.replace(0,std::string("PowerDriveSim 23").size(),"PowerDriveSim 22");
+        legacy_script.replace(0,legacy_script.find('\n'),"PowerDriveSim 22");
         const auto gate_begin=legacy_script.find("gate_script ");
         const auto gate_end=legacy_script.find('\n',gate_begin);
         std::ostringstream legacy_record;

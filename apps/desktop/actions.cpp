@@ -1,6 +1,8 @@
 #include "apps/desktop/theme.hpp"
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/code_editor.hpp"
+#include "apps/desktop/code_icon_editor.hpp"
+#include "apps/desktop/signal_presets.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
 #include "core/model/c_program.hpp"
@@ -38,6 +40,65 @@
 #include <set>
 #include <sstream>
 namespace pds::desktop {
+void EditorWindow::edit_object_icon(const std::string &id) {
+    if(!editing_allowed())return;
+    std::vector<IconPrimitive> builtin;
+    if(auto component=std::find_if(project().components.begin(),project().components.end(),
+            [&](const Component &candidate){return candidate.id==id;});component!=project().components.end())
+        builtin=editable_component_icon(int(component->kind));
+    else if(auto gate=std::find_if(project().patterns.begin(),project().patterns.end(),
+            [&](const GatePattern &candidate){return candidate.id==id;});gate!=project().patterns.end())
+        builtin={{IconPrimitiveKind::text,IconColor::gate,false,
+                  gate->script?"Code":gate->pwm?"PWM":"Gate",{{16,16},{8,0}}}};
+    else if(auto plot=std::find_if(project().plots.begin(),project().plots.end(),
+            [&](const PlotBlock &candidate){return candidate.id==id;});plot!=project().plots.end())
+        builtin=editable_component_icon(plot->differential?107:103);
+    else if(auto tag=std::find_if(project().tags.begin(),project().tags.end(),
+            [&](const ConnectionTag &candidate){return candidate.id==id;});tag!=project().tags.end())
+        builtin={{IconPrimitiveKind::text,tag->domain==Domain::gate?IconColor::gate:IconColor::foreground,
+                  false,tag->domain==Domain::gate?"G":"N",{{16,16},{10,0}}}};
+    else if(auto instance=std::find_if(project().instances.begin(),project().instances.end(),
+            [&](const Instance &candidate){return candidate.id==id;});instance!=project().instances.end()) {
+        const auto definition_it=std::find_if(project().definitions.begin(),project().definitions.end(),
+            [&](const Definition &candidate){return candidate.id==instance->definition;});
+        if(definition_it!=project().definitions.end()) {
+            const int symbol=definition_it->appearance.symbol>=0?definition_it->appearance.symbol:
+                             definition_icon_id(definition_it->id);
+            builtin=editable_component_icon(symbol);
+        }
+    }
+    if(builtin.empty())builtin=default_code_icon(108);
+    std::vector<IconPrimitive> original=builtin;
+    const auto block=std::find_if(project().code_blocks.begin(),project().code_blocks.end(),
+                                  [&](const CodeBlock &candidate){return candidate.id==id;});
+    if(block!=project().code_blocks.end())original=block->icon.empty()?default_code_icon(108):block->icon;
+    else if(auto appearance=std::find_if(project().object_icons.begin(),project().object_icons.end(),
+                    [&](const ObjectIcon &candidate){return candidate.object==id;});appearance!=project().object_icons.end())
+        original=appearance->primitives;
+    QDialog dialog(this);dialog.setObjectName("object_icon_dialog");dialog.setWindowTitle(text("edit_object_icon"));dialog.resize(760,620);
+    auto *layout=new QVBoxLayout(&dialog);
+    auto *editor=new CodeIconEditor(original,&dialog);layout->addWidget(editor,1);
+    auto *hint=new QLabel(text("object_icon_hint"));hint->setWordWrap(true);layout->addWidget(hint);
+    auto *buttons=new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel);
+    auto *standard=buttons->addButton(text("restore_standard_icon"),QDialogButtonBox::ResetRole);
+    standard->setObjectName("restore_standard_icon");layout->addWidget(buttons);
+    connect(standard,&QPushButton::clicked,&dialog,[editor,builtin]{editor->set_icon(builtin);});
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);
+    connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if(dialog.exec()!=QDialog::Accepted)return;
+    const auto edited=editor->icon();
+    const auto icon=edited==builtin?std::vector<IconPrimitive>{}:edited;
+    document_->apply("Edit object icon",[&](Project &p) {
+        if(auto target=std::find_if(p.code_blocks.begin(),p.code_blocks.end(),
+                [&](const CodeBlock &candidate){return candidate.id==id;});target!=p.code_blocks.end()) {
+            target->icon=icon;return;
+        }
+        std::erase_if(p.object_icons,[&](const ObjectIcon &appearance){return appearance.object==id;});
+        if(!icon.empty())p.object_icons.push_back({id,icon});
+    });
+    refresh_canvas(false,false);
+}
+
 void EditorWindow::edit_code_block(const std::string &id) {
     if (!editing_allowed())
         return;
@@ -49,7 +110,9 @@ void EditorWindow::edit_code_block(const std::string &id) {
     QDialog dialog(this);
     dialog.setObjectName("code_block_dialog");
     dialog.setWindowTitle(text("edit_code_block"));
-    dialog.resize(900, 720);
+    dialog.setWindowFlag(Qt::WindowMaximizeButtonHint, true);
+    dialog.setWindowFlag(Qt::WindowMinimizeButtonHint, true);
+    dialog.resize(1000, 760);
     auto *layout = new QVBoxLayout(&dialog);
     auto *form = new QFormLayout;
     auto *name = new QLineEdit(QString::fromStdString(original.name));
@@ -66,6 +129,11 @@ void EditorWindow::edit_code_block(const std::string &id) {
     layout->addLayout(form);
 
     auto *tabs = new QTabWidget;
+    tabs->setObjectName("code_block_tabs");
+    auto *editor = new CCodeEdit(true, &dialog);
+    editor->setObjectName("code_block_code");
+    editor->setPlainText(QString::fromStdString(original.code));
+    tabs->addTab(editor, text("code_block_code_tab"));
     struct PortTable { QTableWidget *table = nullptr; bool input = false; };
     auto make_table = [&](const std::vector<CodePort> &ports, bool input) {
         auto *page = new QWidget;
@@ -158,11 +226,9 @@ void EditorWindow::edit_code_block(const std::string &id) {
     };
     const auto inputs = make_table(original.inputs, true);
     const auto outputs = make_table(original.outputs, false);
-    layout->addWidget(tabs, 2);
-    auto *editor = new CCodeEdit(false, &dialog);
-    editor->setObjectName("code_block_code");
-    editor->setPlainText(QString::fromStdString(original.code));
-    layout->addWidget(editor, 3);
+    auto *icon_editor = new CodeIconEditor(original.icon.empty() ? default_code_icon(108) : original.icon);
+    tabs->addTab(icon_editor, text("code_block_icon"));
+    layout->addWidget(tabs, 1);
     auto *status = new QLabel;
     status->setObjectName("code_block_status");
     status->setWordWrap(true);
@@ -170,13 +236,27 @@ void EditorWindow::edit_code_block(const std::string &id) {
     auto *bottom = new QHBoxLayout;
     auto *format = new QPushButton(text("format_code"));
     auto *compile_button = new QPushButton(text("compile_code"));
+    auto *help = new QPushButton(text("functions_help"));
+    auto *maximize = new QPushButton(text("maximize_window"));
     format->setObjectName("format_code_block");
     compile_button->setObjectName("compile_code_block");
-    bottom->addWidget(format); bottom->addWidget(compile_button); bottom->addStretch();
+    help->setObjectName("code_block_functions_help");
+    maximize->setObjectName("maximize_code_block_dialog");
+    bottom->addWidget(format); bottom->addWidget(compile_button); bottom->addWidget(help); bottom->addWidget(maximize); bottom->addStretch();
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     bottom->addWidget(buttons);
     layout->addLayout(bottom);
     connect(format, &QPushButton::clicked, editor, &CCodeEdit::format_code);
+    connect(help,&QPushButton::clicked,&dialog,[&dialog]{show_c_code_reference(&dialog);});
+    connect(maximize,&QPushButton::clicked,&dialog,[&dialog,maximize] {
+        if(dialog.isMaximized()||dialog.isFullScreen()) {
+            dialog.showNormal();
+            maximize->setText(text("maximize_window"));
+        } else {
+            dialog.showMaximized();
+            maximize->setText(text("restore_window"));
+        }
+    });
 
     auto read_ports = [&](const PortTable &source) {
         std::vector<CodePort> result;
@@ -203,6 +283,7 @@ void EditorWindow::edit_code_block(const std::string &id) {
         block.period = parse_si(period->text().toStdString(), "s");
         block.phase = parse_si(phase->text().toStdString(), "s");
         block.code = editor->toPlainText().toStdString();
+        block.icon = icon_editor->icon();
         block.inputs = read_ports(inputs);
         block.outputs = read_ports(outputs);
         if (block.name.empty()) throw std::runtime_error(text("code_block_name_required").toStdString());

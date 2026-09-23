@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 25;
+inline constexpr unsigned project_schema = 27;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -135,6 +135,18 @@ struct CodePort {
     double initial = 0;
     bool operator==(const CodePort &) const = default;
 };
+enum class IconPrimitiveKind { line, rectangle, ellipse, polyline, text };
+enum class IconColor { foreground, signal, gate, accent };
+inline constexpr std::size_t max_icon_primitives = 64;
+inline constexpr std::size_t max_icon_points = 256;
+struct IconPrimitive {
+    IconPrimitiveKind kind = IconPrimitiveKind::line;
+    IconColor color = IconColor::foreground;
+    bool filled = false;
+    std::string text;
+    std::vector<Point> points;
+    bool operator==(const IconPrimitive &) const = default;
+};
 struct CodeBlock {
     std::string id, name;
     double x = 0, y = 0, period = 1e-6, phase = 0;
@@ -142,6 +154,7 @@ struct CodeBlock {
     Orientation orientation;
     std::vector<CodePort> inputs, outputs;
     std::vector<PinPosition> pin_positions;
+    std::vector<IconPrimitive> icon;
     bool operator==(const CodeBlock &) const = default;
 };
 struct LabelLayout {
@@ -219,6 +232,11 @@ struct ParameterExpression {
     std::string object, field, source;
     bool operator==(const ParameterExpression&) const = default;
 };
+struct ObjectIcon {
+    std::string object;
+    std::vector<IconPrimitive> primitives;
+    bool operator==(const ObjectIcon &) const = default;
+};
 struct Schematic {
     std::vector<Node> nodes;
     std::vector<Component> components;
@@ -230,6 +248,7 @@ struct Schematic {
     std::vector<GatePattern> patterns;
     std::vector<PlotBlock> plots;
     std::vector<CodeBlock> code_blocks;
+    std::vector<ObjectIcon> object_icons;
     std::vector<LabelLayout> labels;
     std::vector<ViewOptions> view_options;
     std::vector<Instance> instances;

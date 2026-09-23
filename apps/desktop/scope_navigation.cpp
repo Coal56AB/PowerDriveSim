@@ -246,7 +246,7 @@ QWidget *Scope::navigation() {
     connect(follow_action_, &QAction::triggered, this, [this](bool enabled) {
         follow_live_ = enabled;
         if (enabled) {
-            trigger_armed_ = false;
+            trigger_armed_ = trigger_enabled_;
             update_live_view(true);
             if (changed)
                 changed(begin, end, cursor_a, cursor_b);
@@ -284,10 +284,6 @@ QWidget *Scope::navigation() {
         }
     });
     bar->addSeparator();
-    trigger_arm_action_=bar->addAction(ui_icon(UiIcon::trigger),text("trigger_arm"));
-    trigger_arm_action_->setObjectName("trigger_arm_toolbar");
-    trigger_arm_action_->setToolTip(text("trigger_arm"));
-    connect(trigger_arm_action_,&QAction::triggered,this,&Scope::arm_trigger);
     trigger_stop_action_=bar->addAction(ui_icon(UiIcon::stop),text("trigger_stop"));
     trigger_stop_action_->setObjectName("trigger_stop_toolbar");
     trigger_stop_action_->setToolTip(text("trigger_stop"));
@@ -546,7 +542,7 @@ void Scope::update_cursor_panel() {
 }
 void Scope::notify_view() {
     follow_live_ = false;
-    trigger_armed_ = false;
+    trigger_armed_ = trigger_enabled_;
     trigger_time_.reset();
     trigger_capture_until_.reset();
     if (follow_action_)

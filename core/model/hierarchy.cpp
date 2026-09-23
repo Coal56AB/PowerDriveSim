@@ -345,6 +345,14 @@ FlattenedProject flatten(const Project &source) {
         objects(s.patterns, flat.patterns);
         objects(s.plots, flat.plots);
         objects(s.code_blocks, flat.code_blocks);
+        for(auto appearance:s.object_icons) {
+            if(std::any_of(s.instances.begin(),s.instances.end(),[&](const Instance &instance) {
+                return instance.id==appearance.object;
+            }))
+                continue; // Instances are recursively expanded and have no flat visual object.
+            appearance.object=id(appearance.object);
+            flat.object_icons.push_back(std::move(appearance));
+        }
         auto add = [&](const std::string &object, const std::string &port) {
             endpoints[endpoint_key({object, port})] = {id(object), port};
         };

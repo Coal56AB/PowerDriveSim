@@ -1,4 +1,6 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/code_editor.hpp"
+#include "apps/desktop/code_icon_editor.hpp"
 #include "apps/desktop/signal_presets.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include "tests/qt_test_main.hpp"
@@ -17,10 +19,12 @@
 #include <QPainterPath>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QProgressBar>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
@@ -36,6 +40,98 @@ using namespace pds::desktop;
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void code_editor_find_replace_and_help() {
+        init_language("en");
+        CCodeEdit editor(false);editor.resize(600,400);editor.setPlainText("alpha beta alpha");editor.show();editor.setFocus();
+        QTimer::singleShot(50,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QCOMPARE(dialog->objectName(),QString("code_find_dialog"));
+            dialog->findChild<QLineEdit *>("code_find_text")->setText("beta");
+            dialog->findChild<QPushButton *>("code_find_next")->click();
+            dialog->accept();
+        });
+        QKeyEvent find_event(QEvent::KeyPress,Qt::Key_F,Qt::ControlModifier);
+        QApplication::sendEvent(&editor,&find_event);
+        QCOMPARE(editor.textCursor().selectedText(),QString("beta"));
+        QTimer::singleShot(50,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QCOMPARE(dialog->objectName(),QString("code_replace_dialog"));
+            dialog->findChild<QLineEdit *>("code_find_text")->setText("alpha");
+            dialog->findChild<QLineEdit *>("code_replace_text")->setText("gamma");
+            dialog->findChild<QPushButton *>("code_replace_all")->click();
+            dialog->accept();
+        });
+        QKeyEvent replace_event(QEvent::KeyPress,Qt::Key_H,Qt::ControlModifier);
+        QApplication::sendEvent(&editor,&replace_event);
+        QCOMPARE(editor.toPlainText(),QString("gamma beta gamma"));
+        QTimer::singleShot(50,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            QCOMPARE(dialog->objectName(),QString("c_code_reference_dialog"));
+            QVERIFY(dialog->findChild<QTextBrowser *>("c_code_reference_view"));dialog->accept();
+        });
+        QKeyEvent help_event(QEvent::KeyPress,Qt::Key_F1,Qt::NoModifier);
+        QApplication::sendEvent(&editor,&help_event);
+    }
+
+    void icon_editor_previews_and_snaps_to_configurable_grid() {
+        init_language("en");CodeIconEditor editor({});editor.resize(640,520);editor.show();
+        auto *grid=editor.findChild<QSpinBox *>("code_icon_grid_step");QVERIFY(grid);grid->setValue(8);
+        auto *line=editor.findChild<QToolButton *>("icon_line");
+        QVERIFY(line);QTest::mouseClick(line,Qt::LeftButton);
+        const auto before=editor.grab().toImage();
+        QTest::mousePress(&editor,Qt::LeftButton,Qt::NoModifier,{120,90});
+        QTest::mouseMove(&editor,{500,390});QApplication::processEvents();
+        QVERIFY(editor.icon().empty());
+        const auto during=editor.grab().toImage();QVERIFY(during!=before);
+        QTest::mouseRelease(&editor,Qt::LeftButton,Qt::NoModifier,{500,390});
+        QCOMPARE(editor.icon().size(),size_t(1));
+        for(const auto &point:editor.icon().front().points) {
+            QCOMPARE(std::fmod(point.x,8.0),0.0);QCOMPARE(std::fmod(point.y,8.0),0.0);
+        }
+        std::vector<IconPrimitive> full(max_icon_primitives,
+            {IconPrimitiveKind::line,IconColor::foreground,false,{},{{0,0},{32,32}}});
+        editor.set_icon(full);
+        QTest::mousePress(&editor,Qt::LeftButton,Qt::NoModifier,{120,90});
+        QTest::mouseRelease(&editor,Qt::LeftButton,Qt::NoModifier,{500,390});
+        QCOMPARE(editor.icon().size(),max_icon_primitives);
+        editor.set_icon({});
+        auto *snap=editor.findChild<QCheckBox *>("code_icon_snap");QVERIFY(snap);snap->setChecked(false);
+        auto *freehand=editor.findChild<QToolButton *>("icon_freehand");
+        QVERIFY(freehand);QTest::mouseClick(freehand,Qt::LeftButton);
+        QTest::mousePress(&editor,Qt::LeftButton,Qt::NoModifier,{110,100});
+        for(int index=1;index<320;++index) {
+            const QPointF point(110+(index%50)*8,100+(index/50)*45);
+            QMouseEvent move(QEvent::MouseMove,point,editor.mapToGlobal(point.toPoint()),
+                             Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+            QApplication::sendEvent(&editor,&move);
+        }
+        QTest::mouseRelease(&editor,Qt::LeftButton,Qt::NoModifier,{262,370});
+        QCOMPARE(editor.icon().size(),size_t(1));
+        QCOMPARE(editor.icon().front().points.size(),max_icon_points);
+    }
+
+    void object_icons_are_editable_from_properties() {
+        QTemporaryDir temp;EditorWindow window("en",temp.path());window.show();
+        const auto resistor=window.add_component(Kind::resistor,{120,120});window.select_object(resistor);
+        auto *edit=window.findChild<QPushButton *>("edit_object_icon");QVERIFY(edit);
+        QTimer::singleShot(50,[&] {
+            auto *dialog=qobject_cast<QDialog *>(QApplication::activeModalWidget());QVERIFY(dialog);
+            auto *canvas=dynamic_cast<CodeIconEditor *>(dialog->findChild<QWidget *>("code_icon_canvas"));QVERIFY(canvas);
+            QCOMPARE(canvas->icon(),editable_component_icon(0));
+            auto *grid=dialog->findChild<QSpinBox *>("code_icon_grid_step");QVERIFY(grid);grid->setValue(2);
+            QVERIFY(dialog->findChild<QCheckBox *>("code_icon_snap")->isChecked());
+            canvas->set_icon({{IconPrimitiveKind::line,IconColor::accent,false,{},{{4,4},{28,28}}}});
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        edit->click();
+        QCOMPARE(window.project().object_icons.size(),size_t(1));
+        QCOMPARE(window.project().object_icons.front().object,resistor);
+        window.undo();QVERIFY(window.project().object_icons.empty());
+        window.redo();QCOMPARE(window.project().object_icons.size(),size_t(1));
+        const auto path=temp.filePath("object-icon.pds");QVERIFY(window.save_project(path));QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().object_icons.size(),size_t(1));
+    }
+
     void differential_plot_records_difference() {
         QTemporaryDir temp;
         Project project; project.id=new_uuid(); project.wired=true; project.profile={1e-4,1e-5};
@@ -673,6 +769,11 @@ class DesktopTests : public QObject {
         QTimer::singleShot(50, [&] {
             auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
             QVERIFY(dialog);
+            auto *tabs=dialog->findChild<QTabWidget *>("code_block_tabs");QVERIFY(tabs);
+            QCOMPARE(tabs->count(),4);QCOMPARE(tabs->tabText(0),QString("Code"));
+            QCOMPARE(tabs->tabText(1),QString("Inputs"));QCOMPARE(tabs->tabText(2),QString("Outputs"));
+            QCOMPARE(tabs->tabText(3),QString("Icon"));QCOMPARE(tabs->currentIndex(),0);
+            QVERIFY(dialog->windowFlags().testFlag(Qt::WindowMaximizeButtonHint));
             dialog->findChild<QLineEdit *>("code_block_name")->setText("Controller");
             auto *inputs = dialog->findChild<QTableWidget *>("code_block_inputs");
             QVERIFY(inputs && inputs->rowCount() == 2);
@@ -815,12 +916,15 @@ class DesktopTests : public QObject {
             {112, "out = sin(2 * PI * 50 * t);"},
         }};
         std::vector<std::string> blocks, outputs;
+        std::vector<std::vector<IconPrimitive>> icons;
+        std::vector<QImage> library_icons;
         for (size_t index = 0; index < presets.size(); ++index) {
             QTreeWidgetItem *entry = nullptr;
             for (QTreeWidgetItemIterator it(library); *it; ++it)
                 if ((*it)->data(0, Qt::UserRole).toInt() == presets[index].id)
                     entry = *it;
             QVERIFY(entry);
+            library_icons.push_back(entry->icon(0).pixmap(32,32).toImage());
             for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
             library->scrollToItem(entry);
             QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
@@ -835,9 +939,17 @@ class DesktopTests : public QObject {
             QCOMPARE(block.period, 100e-6);
             QCOMPARE(block.outputs.size(), size_t(1));
             QCOMPARE(block.outputs.front().type, SignalScalarType::real);
+            QVERIFY(!block.icon.empty());
             blocks.push_back(block.id);
             outputs.push_back(block.outputs.front().id);
+            icons.push_back(block.icon);
         }
+        for (size_t left = 0; left < icons.size(); ++left)
+            for (size_t right = left + 1; right < icons.size(); ++right)
+                QVERIFY(icons[left] != icons[right]);
+        for (size_t left = 0; left < library_icons.size(); ++left)
+            for (size_t right = left + 1; right < library_icons.size(); ++right)
+                QVERIFY(library_icons[left] != library_icons[right]);
 
         window.select_object(blocks.back());
         QTimer edit_safety;
@@ -850,6 +962,7 @@ class DesktopTests : public QObject {
         QTimer::singleShot(50, [&] {
             auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
             if (!dialog) return;
+            QVERIFY(dialog->findChild<QWidget *>("code_icon_canvas"));
             dialog->findChild<QLineEdit *>("code_block_name")->setText("Reference sine");
             auto *buttons = dialog->findChild<QDialogButtonBox *>();
             if (buttons) buttons->button(QDialogButtonBox::Ok)->click();

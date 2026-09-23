@@ -1,6 +1,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/theme.hpp"
 #include "apps/desktop/signal_presets.hpp"
+#include "apps/desktop/code_icon_editor.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "formats/project/project.hpp"
 #include <QAction>
@@ -133,6 +134,10 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         f.setBold(true);
         p.setFont(f);
         p.drawText(QRectF(3, 4, 26, 24), Qt::AlignCenter, "{C}");
+    } else if (id >= 109 && id <= 121) {
+        p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
+        p.drawLine(0,16,3,16);p.drawLine(29,16,32,16);
+        paint_code_icon(p,default_code_icon(id),QRectF(6,7,20,18));
     } else if (id == 7 || id == 8 || id == 3 || id == 4) {
         p.drawLine(1, 16, 6, 16);
         p.drawEllipse(QRectF(6, 6, 20, 20));
@@ -343,6 +348,68 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         p.drawPath(line);
     }
 }
+
+std::vector<IconPrimitive> editable_component_icon(int id) {
+    auto line=[](std::initializer_list<Point> points,IconColor color=IconColor::foreground) {
+        return IconPrimitive{points.size()>2?IconPrimitiveKind::polyline:IconPrimitiveKind::line,
+                             color,false,{},std::vector<Point>(points)};
+    };
+    auto rectangle=[](Point first,Point second) {
+        return IconPrimitive{IconPrimitiveKind::rectangle,IconColor::foreground,false,{},
+                             {first,second}};
+    };
+    auto ellipse=[](Point first,Point second) {
+        return IconPrimitive{IconPrimitiveKind::ellipse,IconColor::foreground,false,{},
+                             {first,second}};
+    };
+    auto label=[](const char *value,double size=9,IconColor color=IconColor::foreground) {
+        return IconPrimitive{IconPrimitiveKind::text,color,false,value,{{16,16},{size,0}}};
+    };
+    switch(id) {
+    case 0:return {rectangle({5,11},{27,21})};
+    case 1:return {line({{5,16},{12,16}}),line({{12,6},{12,26}}),
+                   line({{20,6},{20,26}}),line({{20,16},{27,16}})};
+    case 2:return {line({{3,20},{7,11},{11,20},{15,11},{19,20},{23,11},{29,20}})};
+    case 3:return {ellipse({5,5},{27,27}),label("V",11)};
+    case 4:return {ellipse({5,5},{27,27}),label("I",11)};
+    case 5:return {line({{3,21},{10,21}}),line({{10,21},{24,10}}),line({{24,21},{29,21}})};
+    case 6:return {line({{3,16},{8,16}}),line({{8,7},{24,16},{8,25},{8,7}}),
+                   line({{24,7},{24,25}}),line({{24,16},{29,16}})};
+    case 7:return {ellipse({5,5},{27,27}),label("V",10,IconColor::signal)};
+    case 8:return {ellipse({5,5},{27,27}),label("A",10,IconColor::signal)};
+    case 9:return {line({{3,16},{8,16}}),line({{8,7},{23,16},{8,25},{8,7}}),
+                   line({{24,7},{24,25}}),line({{24,16},{29,16}}),
+                   line({{16,29},{23,21}},IconColor::gate)};
+    case 10:return {line({{4,16},{10,16}}),line({{10,7},{10,25}}),
+                    line({{15,8},{15,24}}),line({{15,10},{25,5}}),
+                    line({{15,22},{25,27}}),line({{25,5},{25,27}})};
+    case 103:return {rectangle({3,4},{29,28}),
+                     line({{6,23},{10,20},{13,9},{17,12},{21,22},{26,14}},IconColor::signal)};
+    case 107:return {rectangle({3,4},{29,28}),
+                     line({{5,10},{11,10},{15,22},{21,22},{27,10}},IconColor::signal),
+                     line({{5,22},{11,22},{15,10},{21,10},{27,22}},IconColor::accent)};
+    case 106:return {line({{3,8},{21,8},{29,16},{21,24},{3,24},{3,8}},IconColor::gate),
+                     label("T",8,IconColor::gate)};
+    case 220:return {label("BUCK",6)};
+    case 221:return {label("BOOST",5)};
+    case 222:return {label("B/B",7)};
+    case 223:return {label("↔",12)};
+    case 230:return {label("HALF",6)};
+    case 231:return {label("FULL",6)};
+    case 240:return {label("PRE",7)};
+    case 241:return {label("DC",9)};
+    case 242:return {label("BRAKE",5)};
+    case 250:return {label("1~",9)};
+    case 251:return {label("3~",9)};
+    case 260:return {label("2L",9)};
+    case 261:return {label("3L",9)};
+    case 270:return {label("OEW",7)};
+    case 280:return {label("3Y",9)};
+    case 281:return {label("3Δ",9)};
+    case 282:return {label("3SW",7)};
+    default:return {rectangle({5,7},{13,15}),rectangle({19,17},{27,25}),line({{13,15},{19,17}})};
+    }
+}
 QIcon component_icon(int id, bool framed) {
     // Central component-symbol atlas. Library/toolbar icons are rasterized from
     // the same vector source that schematic blocks paint directly.
@@ -355,7 +422,7 @@ QIcon component_icon(int id, bool framed) {
 }
 void EditorWindow::refresh_component_icons() {
     for (const auto &[id, action] : component_actions_)
-        action->setIcon(component_icon(signal_preset(id) ? 108 : id));
+        action->setIcon(component_icon(id));
 }
 void EditorWindow::begin_placement(int id) {
     if (running())
@@ -414,7 +481,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         action->setProperty("fixed", entry.value("fixed").toBool());
         action->setProperty("template", spec.value("template").toString());
         action->setIconText(short_name);
-        action->setIcon(component_icon(signal_preset(id) ? 108 : id));
+        action->setIcon(component_icon(id));
         action->setProperty("description", description);
         action->setToolTip(text(label.constData()) + "\n\n" + description);
         connect(action, &QAction::triggered, this, [this, id = id] { begin_placement(id); });
@@ -456,7 +523,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
             category = group_item;
         }
         auto *item = new QTreeWidgetItem(category, {text(label.constData())});
-        item->setIcon(0, component_icon(signal_preset(id) ? 108 : id));
+        item->setIcon(0, component_icon(id));
         item->setData(0, Qt::UserRole, id);
         item->setToolTip(0, description);
     }

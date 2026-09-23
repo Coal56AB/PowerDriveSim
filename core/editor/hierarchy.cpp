@@ -273,6 +273,9 @@ std::string Document::create_definition(const std::vector<std::string> &selected
             for(const auto &expression:p.parameter_expressions)
                 if(ids.count(expression.object))d.parameter_expressions.push_back(expression);
             std::erase_if(p.parameter_expressions,[&](const ParameterExpression &expression){return ids.count(expression.object);});
+            for(const auto &appearance:p.object_icons)
+                if(ids.count(appearance.object))d.object_icons.push_back(appearance);
+            std::erase_if(p.object_icons,[&](const ObjectIcon &appearance){return ids.count(appearance.object);});
             if(!d.parameter_expressions.empty())d.initialization_code=p.initialization_code;
             p.instances.push_back({instance, name, d.id, x, y});
             p.definitions.push_back(std::move(d));
@@ -400,12 +403,14 @@ void Document::expand_instance(const std::string &id) {
         append(p.wires, expanded.project.wires);
         append(p.events, expanded.project.events);
         append(p.labels, expanded.project.labels);
+        append(p.object_icons, expanded.project.object_icons);
         for (const auto &view : expanded.project.view_options)
             if (std::none_of(p.view_options.begin(), p.view_options.end(),
                              [&](const auto &prior) { return prior.plot == view.plot; }))
                 p.view_options.push_back(view);
         std::erase_if(p.instances, [&](const auto &i) { return i.id == id; });
         std::erase_if(p.labels, [&](const auto &l) { return l.object == id; });
+        std::erase_if(p.object_icons,[&](const ObjectIcon &appearance){return appearance.object==id;});
     });
 }
 } // namespace pds
