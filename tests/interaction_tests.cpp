@@ -1411,6 +1411,53 @@ class InteractionTests : public QObject {
         });
         QVERIFY(component != flat.components.end());
         QCOMPARE(component->value, 3000.);
+
+        auto deep = w.root_project();
+        const auto leaf_parameter = definition(deep, definition_id).parameters.front().id;
+        Definition middle;
+        middle.id = new_uuid();
+        middle.name = "Middle mask";
+        middle.wired = true;
+        const auto leaf_instance = new_uuid();
+        const auto middle_parameter = new_uuid();
+        middle.instances = {{leaf_instance, "Leaf", definition_id, 0, 0}};
+        middle.parameters = {{middle_parameter, "Middle resistance", "Ohm", leaf_instance,
+                              leaf_parameter, 2000., "Deep mask", true, 1500., false, 0.}};
+        Definition top;
+        top.id = new_uuid();
+        top.name = "Top mask";
+        top.wired = true;
+        const auto middle_instance = new_uuid();
+        const auto top_parameter = new_uuid();
+        top.instances = {{middle_instance, "Middle", middle.id, 0, 0}};
+        top.parameters = {{top_parameter, "Top resistance", "Ohm", middle_instance,
+                           middle_parameter, 2000., "Deep mask"}};
+        deep.definitions.push_back(middle);
+        deep.definitions.push_back(top);
+        const auto top_instance = new_uuid();
+        deep.instances.push_back({top_instance, "Deep instance", top.id, 300, 200});
+        w.set_project(std::move(deep));
+        ready(w);
+        w.select_object(top_instance);
+        auto *deep_parameter =
+            w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(top_parameter));
+        QVERIFY(deep_parameter && deep_parameter->isVisible());
+        const auto before_invalid = encoded(w.root_project());
+        deep_parameter->setText("4.5 kOhm");
+        QTest::keyClick(deep_parameter, Qt::Key_Return);
+        QCOMPARE(encoded(w.root_project()), before_invalid);
+        QVERIFY(!w.findChild<QLabel *>("property_error")->text().isEmpty());
+        deep_parameter->setText("1.2 kOhm");
+        QTest::keyClick(deep_parameter, Qt::Key_Return);
+        QCOMPARE(encoded(w.root_project()), before_invalid);
+        deep_parameter->setText("2.5 kOhm");
+        QTest::keyClick(deep_parameter, Qt::Key_Return);
+        const auto applied = std::find_if(w.project().instances.begin(), w.project().instances.end(),
+                                          [&](const Instance &instance) { return instance.id == top_instance; });
+        QVERIFY(applied != w.project().instances.end());
+        const std::vector<std::pair<std::string, double>> expected_parameters{{top_parameter, 2500.}};
+        QCOMPARE(applied->parameters, expected_parameters);
+        QVERIFY(w.findChild<QLabel *>("property_error")->text().isEmpty());
     }
     void connection_tag_scope_and_suggestion_visibility() {
         try {

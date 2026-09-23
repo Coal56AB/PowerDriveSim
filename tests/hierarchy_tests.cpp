@@ -1,4 +1,5 @@
 #include "core/editor/document.hpp"
+#include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/model/expression.hpp"
 #include "core/solver/reference/reference.hpp"
@@ -129,6 +130,67 @@ int main() try {
     const auto resolved_expressions=resolve_parameter_expressions(expressed);
     require(resolved_expressions.definitions[0].components[1].value==2e-6,
             "Definition-local variables resolve before hierarchy flattening");
+    {
+        auto expandable = nested();
+        expandable.initialization_code = "double setting = 2500;";
+        expandable.parameter_expressions = {
+            {id(20), "parameter/" + id(17), "setting"}};
+        expandable.definitions[0].initialization_code = "double setting = 2e-6;";
+        expandable.definitions[0].parameter_expressions = {
+            {id(13), "value", "setting"}};
+        const auto before = execute(compile(expandable));
+        Document expressions(expandable);
+        expressions.expand_instance(id(20));
+        const auto expanded_resistor = expanded_uuid({id(20), id(31)}, id(12));
+        const auto expanded_capacitor = expanded_uuid({id(20), id(31)}, id(13));
+        const auto after_expand = expressions.root_project();
+        require(std::none_of(after_expand.parameter_expressions.begin(),
+                             after_expand.parameter_expressions.end(),
+                             [&](const ParameterExpression &binding) {
+                                 return binding.object == id(20);
+                             }),
+                "Expansion leaves no expression bound to the removed instance");
+        require(after_expand.parameter_expressions ==
+                    std::vector<ParameterExpression>{{expanded_resistor, "value", "setting"}},
+                "Parent expression remains live on the expanded atomic property");
+        require(std::get<double>(read_property(after_expand, expanded_resistor, "value")) == 2500 &&
+                    std::get<double>(read_property(after_expand, expanded_capacitor, "value")) == 2e-6,
+                "Expansion evaluates stale parent overrides and materializes the local Init scope");
+        require(execute(compile(after_expand)).samples.back().values == before.samples.back().values,
+                "Expression-aware expansion preserves the complete numerical result");
+        expressions.undo();
+        require(expressions.root_project() == expandable,
+                "Expression-aware expansion is one undoable transaction");
+        expressions.redo();
+        require(expressions.root_project() == after_expand,
+                "Redo restores remapped expressions and materialized values");
+        expressions.apply("Change parent Init", [](Project &project) {
+            project.initialization_code = "double setting = 3000;";
+        });
+        const auto changed = resolve_parameter_expressions(expressions.root_project());
+        require(std::get<double>(read_property(changed, expanded_resistor, "value")) == 3000 &&
+                    std::get<double>(read_property(changed, expanded_capacitor, "value")) == 2e-6,
+                "Parent expression stays live without capturing the child variable of the same name");
+        std::ostringstream serialized;
+        write_project(expressions.root_project(), serialized);
+        std::istringstream stored(serialized.str());
+        require(read_project(stored) == expressions.root_project(),
+                "Expanded parameter expressions survive project round trip");
+
+        auto fanout = fixture();
+        fanout.definitions[0].components.push_back(
+            {id(80), "Auxiliary source", Kind::voltage, "", "", 1});
+        fanout.definitions[0].parameters.push_back(
+            {id(81), "All source values", "V", "*", "value", 1});
+        fanout.initialization_code = "double setting = 2;";
+        fanout.parameter_expressions = {
+            {id(20), "parameter/" + id(81), "setting"}};
+        Document unsupported(fanout);
+        error("unsupported_parameter_expression_expansion",
+              [&] { unsupported.expand_instance(id(20)); });
+        require(unsupported.root_project() == fanout && !unsupported.can_undo(),
+                "Unsupported fan-out expression leaves the document and history unchanged");
+    }
     auto flat = flatten(p);
     require(flat.project.components.size() == 5 && flat.project.instances.empty() &&
                 flat.project.definitions.empty(),
@@ -249,6 +311,21 @@ int main() try {
         const auto expected = 10 - 8 * std::exp(-valid_nested_binding.profile.stop / .003);
         require(std::abs(output(nested_result, first_output) - expected) < 1e-5,
                 "Valid nested public parameter binding preserves the numerical value");
+
+        auto transitive_binding = valid_nested_binding;
+        Definition outer;
+        outer.id = id(70);
+        outer.name = "Deep nested RC";
+        outer.wired = true;
+        outer.instances = {{id(71), "Middle", id(30), 0, 0}};
+        outer.parameters = {{id(72), "Deep resistance", "Ohm", id(71), id(17), 6000}};
+        transitive_binding.definitions.push_back(outer);
+        error("invalid_public_parameter_value", [&] { validate_hierarchy(transitive_binding); });
+        transitive_binding.definitions.back().parameters[0].value = 3000;
+        validate_hierarchy(transitive_binding);
+        transitive_binding.instances.push_back({id(73), "Deep", id(70), 0, 0});
+        transitive_binding.instances.back().parameters = {{id(72), 6000}};
+        error("invalid_public_parameter_value", [&] { validate_hierarchy(transitive_binding); });
     }
     bad = p;
     bad.definitions[0].parameters[0].has_minimum = false;

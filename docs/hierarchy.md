@@ -32,8 +32,11 @@ Schema 21 extends the existing `PublicParameter` mask metadata with an optional
 group and inclusive minimum/maximum values. The interface editor stores these
 constraints with the definition, the instance inspector renders group headings,
 and both direct property edits and flattening reject overrides outside the
-configured range. Older projects load with an empty group and no additional
-range; the bound atomic property still performs its own physical validation.
+effective intersection of every range in a nested public-parameter chain and the
+atomic property range. Definitions are checked transitively even when they have
+no root instance, so an invalid deep default cannot remain dormant in a saved
+catalog. Older projects load with an empty group and no additional range; the
+bound atomic property still performs its own physical validation.
 
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 

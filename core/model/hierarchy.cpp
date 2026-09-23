@@ -138,6 +138,11 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
             if (!public_parameter_accepts(*target, value))
                 throw Diagnostic("invalid_public_parameter_value", p.id,
                                  "Public parameter value is outside the nested parameter range");
+            // The nested parameter may itself expose a parameter of another
+            // instance. Validate the complete binding chain even when this
+            // definition is not instantiated by the root schematic.
+            Schematic nested = d;
+            parameter_value(nested, catalog, *target, value);
             auto v = std::find_if(i.parameters.begin(), i.parameters.end(),
                                   [&](const auto &v) { return v.first == p.field; });
             if (v == i.parameters.end())
@@ -188,6 +193,8 @@ void validate_schematic(const Project &p) {
                 !public_parameter_accepts(*parameter, value))
                 throw Diagnostic("invalid_instance_parameter", i.id,
                                  "Unknown, duplicate or out-of-range parameter override");
+            Schematic nested = d;
+            parameter_value(nested, p, *parameter, value);
         }
     }
     if (!p.instances.empty() && !p.wired)

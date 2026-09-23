@@ -61,25 +61,43 @@ void EditorWindow::update_instance_specs() {
     bool changed = false;
     std::function<QJsonObject(const Definition &, const PublicParameter &)> binding_field;
     binding_field = [&](const Definition &d, const PublicParameter &p) {
+        QJsonObject field;
         for (const auto &child : d.instances)
             if (child.id == p.object) {
                 const auto &nested = definition(root_project(), child.definition);
                 for (const auto &parameter : nested.parameters)
                     if (parameter.id == p.field)
-                        return binding_field(nested, parameter);
+                        field = binding_field(nested, parameter);
             }
-        std::string type;
-        for (const auto &c : d.components)
-            if (c.id == p.object)
-                type = kind_name(c.kind);
-        for (const auto &g : d.patterns)
-            if (g.id == p.object)
-                type = "pattern";
-        if (component_specs_.count(type))
-            for (const auto &entry : component_specs_.at(type).value("fields").toArray())
-                if (entry.toObject().value("key").toString() == QString::fromStdString(p.field))
-                    return entry.toObject();
-        return QJsonObject{};
+        if (field.isEmpty()) {
+            std::string type;
+            for (const auto &c : d.components)
+                if (c.id == p.object)
+                    type = kind_name(c.kind);
+            for (const auto &g : d.patterns)
+                if (g.id == p.object)
+                    type = "pattern";
+            if (component_specs_.count(type))
+                for (const auto &entry : component_specs_.at(type).value("fields").toArray())
+                    if (entry.toObject().value("key").toString() == QString::fromStdString(p.field))
+                        field = entry.toObject();
+        }
+        if (field.isEmpty())
+            return field;
+        const double scale = field.value("scale").toDouble(1);
+        if (p.has_minimum) {
+            const double minimum = p.minimum * scale;
+            if (!field.contains("min") || minimum > field.value("min").toDouble()) {
+                field["min"] = minimum;
+                field.remove("exclusiveMin");
+            }
+        }
+        if (p.has_maximum) {
+            const double maximum = p.maximum * scale;
+            if (!field.contains("max") || maximum < field.value("max").toDouble())
+                field["max"] = maximum;
+        }
+        return field;
     };
     for (const auto &d : root_project().definitions) {
         QJsonArray fields{
@@ -121,11 +139,6 @@ void EditorWindow::update_instance_specs() {
             field["displayLabel"] = QString::fromStdString(p.name);
             field["unit"] = QString::fromStdString(p.unit);
             field["group"] = QString::fromStdString(p.group);
-            const double scale = field.value("scale").toDouble(1);
-            if (p.has_minimum)
-                field["min"] = p.minimum * scale;
-            if (p.has_maximum)
-                field["max"] = p.maximum * scale;
             fields.append(field);
         }
         QJsonObject spec{{"fields", fields}};

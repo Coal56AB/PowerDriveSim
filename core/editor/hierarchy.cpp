@@ -1,8 +1,10 @@
 #include "core/model/hierarchy.hpp"
+#include "core/model/expression.hpp"
 #include "core/editor/document.hpp"
 #include "core/editor/properties.hpp"
 #include <algorithm>
 #include <set>
+#include <string_view>
 namespace pds {
 namespace {
 std::string definition_at(const Project &p, const std::vector<std::string> &path) {
@@ -17,6 +19,37 @@ std::string definition_at(const Project &p, const std::vector<std::string> &path
         level = &definition(p, id);
     }
     return id;
+}
+struct ExpandedParameterTarget {
+    std::string object;
+    std::string field;
+};
+ExpandedParameterTarget expanded_parameter_target(const Project &catalog, const Instance &instance,
+                                                  const std::string &parameter) {
+    const Definition *target = &definition(catalog, instance.definition);
+    auto current = parameter;
+    std::vector<std::string> path{instance.id};
+    for (;;) {
+        const auto binding = std::find_if(target->parameters.begin(), target->parameters.end(),
+                                          [&](const PublicParameter &candidate) {
+                                              return candidate.id == current;
+                                          });
+        if (binding == target->parameters.end())
+            throw Diagnostic("invalid_parameter_binding", instance.id,
+                             "Missing parameter while expanding instance");
+        if (binding->object == "*")
+            throw Diagnostic("unsupported_parameter_expression_expansion", instance.id,
+                             "A fan-out public parameter cannot remain an expression after expansion");
+        const auto child = std::find_if(target->instances.begin(), target->instances.end(),
+                                        [&](const Instance &candidate) {
+                                            return candidate.id == binding->object;
+                                        });
+        if (child == target->instances.end())
+            return {expanded_uuid(path, binding->object), binding->field};
+        path.push_back(child->id);
+        current = binding->field;
+        target = &definition(catalog, child->definition);
+    }
 }
 } // namespace
 std::string Document::current_definition() const {
@@ -349,12 +382,18 @@ void Document::expand_instance(const std::string &id) {
             std::find_if(p.instances.begin(), p.instances.end(), [&](const auto &i) { return i.id == id; });
         if (instance == p.instances.end())
             throw Diagnostic("missing_instance", id, "Subcircuit no longer exists");
+        const auto resolved = resolve_parameter_expressions(p);
+        const auto resolved_instance =
+            std::find_if(resolved.instances.begin(), resolved.instances.end(),
+                         [&](const Instance &candidate) { return candidate.id == id; });
+        if (resolved_instance == resolved.instances.end())
+            throw Diagnostic("missing_instance", id, "Subcircuit no longer exists");
         Project part;
         part.id = p.id;
         part.profile = p.profile;
         part.wired = true;
-        part.definitions = p.definitions;
-        part.instances.push_back(*instance);
+        part.definitions = resolved.definitions;
+        part.instances.push_back(*resolved_instance);
         auto expanded = flatten(part);
         for (auto &parent : p.definitions)
             if (parent.id == current_definition()) {
@@ -363,29 +402,21 @@ void Document::expand_instance(const std::string &id) {
                         port.terminal = expanded.terminals.at(endpoint_key(port.terminal));
                 for (auto &param : parent.parameters)
                     if (param.object == id) {
-                        const Definition *target = &definition(p, instance->definition);
-                        auto parameter = param.field;
-                        std::vector<std::string> path{id};
-                        for (;;) {
-                            const auto binding =
-                                std::find_if(target->parameters.begin(), target->parameters.end(),
-                                             [&](const auto &v) { return v.id == parameter; });
-                            if (binding == target->parameters.end())
-                                throw Diagnostic("invalid_parameter_binding", param.id,
-                                                 "Missing parameter while expanding instance");
-                            const auto child =
-                                std::find_if(target->instances.begin(), target->instances.end(),
-                                             [&](const auto &i) { return i.id == binding->object; });
-                            if (child == target->instances.end()) {
-                                param.object = expanded_uuid(path, binding->object);
-                                param.field = binding->field;
-                                break;
-                            }
-                            path.push_back(child->id);
-                            parameter = binding->field;
-                            target = &definition(p, child->definition);
-                        }
+                        const auto target = expanded_parameter_target(p, *instance, param.field);
+                        param.object = target.object;
+                        param.field = target.field;
                     }
+            }
+        for (auto &expression : p.parameter_expressions)
+            if (expression.object == id) {
+                constexpr std::string_view prefix = "parameter/";
+                if (!expression.field.starts_with(prefix))
+                    throw Diagnostic("invalid_parameter_expression", id,
+                                     "Instance expressions must target a public parameter");
+                const auto target = expanded_parameter_target(
+                    p, *instance, expression.field.substr(prefix.size()));
+                expression.object = target.object;
+                expression.field = target.field;
             }
         for (auto &wire : p.wires)
             for (auto *endpoint : {&wire.from, &wire.to})
