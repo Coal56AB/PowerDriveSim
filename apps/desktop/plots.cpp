@@ -152,10 +152,11 @@ void EditorWindow::sync_scope() {
     scope_hint_->setVisible(!project().scope_enabled);
     scope_fit_->hide();
     if (!project().scope_enabled) {
-        delete scope_content_;
+        auto *old_content = scope_content_;
         scope_content_ = nullptr;
         scope_ = nullptr;
         channels_ = nullptr;
+        delete old_content;
         update_wires();
         scope_export_->setEnabled(false);
         return;

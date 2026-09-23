@@ -2148,10 +2148,11 @@ void EditorWindow::set_project(Project p) {
     clear_result();
     continuation_.reset();
     document_ = std::make_unique<Document>(std::move(p));
-    delete scope_content_;
+    auto *old_scope_content = scope_content_;
     scope_content_ = nullptr;
     scope_ = nullptr;
     channels_ = nullptr;
+    delete old_scope_content;
     stop_->setModified(false);
     step_->setModified(false);
     selected_.clear();

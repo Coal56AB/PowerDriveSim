@@ -3320,6 +3320,28 @@ class InteractionTests : public QObject {
         QVERIFY(updated_editor->code_completer()->completionCount()>0);
         QVERIFY(!w.findChild<QLineEdit *>("property_script_step"));
     }
+    void scope_teardown_clears_channel_list_before_events() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto wire = w.project().wires.front().id;
+        auto check_teardown = [&](const std::function<void()> &remove_scope) {
+            w.observe_object(wire);
+            auto *channels = w.findChild<QListWidget *>("channels");
+            QVERIFY(channels);
+            bool event_during_destruction = false;
+            connect(channels, &QObject::destroyed, &w, [&] {
+                QEvent focus(QEvent::FocusIn);
+                QCoreApplication::sendEvent(w.canvas()->viewport(), &focus);
+                event_during_destruction = true;
+            });
+            remove_scope();
+            QVERIFY(event_during_destruction);
+        };
+        check_teardown([&] { w.set_project(w.root_project()); });
+        check_teardown([&] { w.set_scope_enabled(false); });
+    }
     void simulation_snapshots_and_step() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());
