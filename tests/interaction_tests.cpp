@@ -2020,6 +2020,13 @@ class InteractionTests : public QObject {
             QCOMPARE(second, first + 1);
             QCOMPARE(table->item(1, 0)->text(), QString("parameter3"));
         });
+        project.definitions.front().parameters = {
+            {new_uuid(), "Phase", "", source.id, "source_phase_deg", 90}};
+        inspect([&](QDialog *dialog) {
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            QCOMPARE(table->rowCount(), 1);
+            QCOMPARE(table->item(0, 4)->text(), QString::fromUtf8("°"));
+        });
     }
     void connection_tags_distinguish_domains_on_canvas() {
         QTemporaryDir dir;

@@ -85,7 +85,7 @@
       "key": "source_phase_deg",
       "editor": "number",
       "label": "source_phase_deg",
-      "unit": "",
+      "unit": "°",
       "when": {
         "source_mode": [
           1
