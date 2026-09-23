@@ -153,10 +153,15 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     };
     auto connect_driver=[&](const Endpoint& input,const Endpoint& output){
         if(code_input(input)) {
-            if(!signal_drivers.emplace(endpoint_key(input),output).second)
+            const auto [found,inserted]=signal_drivers.emplace(endpoint_key(input),output);
+            if(!inserted&&found->second!=output)
                 throw Diagnostic("multiple_signal_drivers",input.object,"Each code-block input accepts one driver");
-        } else if(!drivers.emplace(input.object,endpoint_key(output)).second)
-            throw Diagnostic("multiple_gate_drivers",input.object,"A gate input accepts exactly one driver");
+        } else {
+            const auto source=endpoint_key(output);
+            const auto [found,inserted]=drivers.emplace(input.object,source);
+            if(!inserted&&found->second!=source)
+                throw Diagnostic("multiple_gate_drivers",input.object,"A gate input accepts exactly one driver");
+        }
     };
     std::set<std::string> plot_inputs;
     std::set<std::pair<std::string,std::string>> pairs;
@@ -181,7 +186,8 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
                 const auto type=port_type(p,other);
                 const auto key=root(endpoint_key({tag->id,"io"}));
                 if(type.direction==Direction::output) {
-                    if(!tag_drivers.emplace(key,endpoint_key(other)).second)
+                    const auto [found,inserted]=tag_drivers.emplace(key,endpoint_key(other));
+                    if(!inserted&&found->second!=endpoint_key(other))
                         throw Diagnostic("multiple_gate_drivers",tag->id,"A tag group accepts exactly one driver");
                 } else if(type.direction==Direction::input) tag_inputs[key].push_back(other);
                 else throw Diagnostic("incompatible_port",w.id,"Non-electrical tags connect outputs to inputs");

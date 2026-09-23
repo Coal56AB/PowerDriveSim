@@ -25,6 +25,8 @@ tag joins every matching tag in the model regardless of path. There is no implic
 lexical shadowing: every scope-compatible match is unioned, and conflicting directed
 drivers are diagnosed after that union. The `listed` flag controls name completion
 only and never changes connectivity; manual entry always remains available.
+Several paths from the same gate or signal output to one tag group count as one
+driver. A second, distinct output is still diagnosed as a conflicting driver.
 
 Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Instance overrides may use expressions evaluated from the project's safe initialization program; unresolved names, non-finite results and invalid target fields are diagnosed before compilation.
 

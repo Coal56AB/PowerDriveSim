@@ -482,6 +482,37 @@ int main(int argc,char** argv) {
         auto gate_ir=compile(gate_tagged.project());
         check(std::count_if(gate_ir.events.begin(),gate_ir.events.end(),[&](const GateEvent& e){return e.target==gate_switch;})>=4,
               "Gate tags distribute PWM edges to switch inputs");
+        const auto gate_tx_copy=derived_uuid("gate-tag-tx-copy");
+        gate_tagged.apply("Add a second tag for the same source",[&](Project& project){
+            project.tags.push_back({gate_tx_copy,"Q1",100,-40,Domain::gate});
+        });
+        gate_tagged.connect({gate_source,"out"},{gate_tx_copy,"io"});
+        check(compile(gate_tagged.project()).events==gate_ir.events,
+              "Repeated connection of one Gate source to a tag group keeps the same gate events");
+        const auto other_gate_source=gate_tagged.add_pattern(0,-120);
+        error("multiple_gate_drivers",[&]{
+            gate_tagged.connect({other_gate_source,"out"},{gate_tx_copy,"io"});
+        });
+        Project signal_project; signal_project.id=new_uuid(); signal_project.wired=true;
+        CodeBlock signal_source, signal_sink;
+        signal_source.id=new_uuid(); signal_source.name="Source"; signal_source.code="out = 1;";
+        signal_source.outputs={{new_uuid(),"out","",SignalScalarType::real,0}};
+        signal_sink.id=new_uuid(); signal_sink.name="Sink"; signal_sink.code="out = in;";
+        signal_sink.inputs={{new_uuid(),"in","",SignalScalarType::real,0}};
+        signal_sink.outputs={{new_uuid(),"out","",SignalScalarType::real,0}};
+        const auto duplicate_signal_tx=derived_uuid("duplicate-signal-tag-tx");
+        const auto duplicate_signal_rx=derived_uuid("duplicate-signal-tag-rx");
+        signal_project.code_blocks={signal_source,signal_sink};
+        signal_project.tags={{duplicate_signal_tx,"SIGNAL",80,0,Domain::signal},
+                             {duplicate_signal_rx,"SIGNAL",160,0,Domain::signal}};
+        Document signal_tagged(signal_project);
+        const Endpoint source_output{signal_source.id,signal_source.outputs[0].id};
+        const Endpoint sink_input{signal_sink.id,signal_sink.inputs[0].id};
+        signal_tagged.connect(source_output,sink_input);
+        signal_tagged.connect(source_output,{duplicate_signal_tx,"io"});
+        signal_tagged.connect({duplicate_signal_rx,"io"},sink_input);
+        check(resolve_connections(signal_tagged.project()).signal_drivers.at(endpoint_key(sink_input))==source_output,
+              "A code-block input accepts repeated routes from its one source");
         std::cout<<"PASS editor model: wiring, probes, undo, SI, schema4, migration, gates\n";
         return 0;
     } catch(const Diagnostic& d) { std::cerr<<d.code<<" "<<d.object<<": "<<d.what()<<'\n'; return 1;
