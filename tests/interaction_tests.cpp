@@ -1695,7 +1695,11 @@ class InteractionTests : public QObject {
                 return;
             auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
             dialog->findChild<QPushButton *>("public_parameters_add")->click();
-            auto *nested_default = qobject_cast<QLineEdit *>(parameters->cellWidget(1, 2));
+            QCOMPARE(parameters->rowCount(), 1);
+            parameters->selectRow(0);
+            dialog->findChild<QPushButton *>("public_parameters_delete")->click();
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            auto *nested_default = qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2));
             QVERIFY(nested_default);
             QCOMPARE(parse_si(nested_default->text().toStdString(), "Ohm"), 3000.);
             nested_default_checked = true;
@@ -1971,6 +1975,17 @@ class InteractionTests : public QObject {
             auto *binding = qobject_cast<QComboBox *>(table->cellWidget(0, 1));
             QVERIFY(binding->count() > 1);
             QVERIFY(binding->findText("V / Frequency, Hz") >= 0);
+        });
+        project.definitions.front().parameters.push_back(
+            {new_uuid(), "Voltage", "V", source.id, "value", 10});
+        inspect([&](QDialog *dialog) {
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            QCOMPARE(table->rowCount(), 1);
+            const auto first = qobject_cast<QComboBox *>(table->cellWidget(0, 1))->currentIndex();
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            QCOMPARE(table->rowCount(), 2);
+            const auto second = qobject_cast<QComboBox *>(table->cellWidget(1, 1))->currentIndex();
+            QCOMPARE(second, first + 1);
         });
     }
     void connection_tags_distinguish_domains_on_canvas() {

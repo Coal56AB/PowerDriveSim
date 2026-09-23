@@ -791,8 +791,20 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             add_port({{}, "port" + std::to_string(ports.rowCount() + 1), terminals.front().endpoint});
     });
     page(parameters, text("public_parameters"), [&] {
-        if (!bindings.empty()) {
-            auto b = bindings.front();
+        auto same_field = [](const Binding &a, const Binding &b) {
+            return public_parameter_binding_key(a.object, a.field) ==
+                   public_parameter_binding_key(b.object, b.field);
+        };
+        auto available = std::find_if(bindings.begin(), bindings.end(), [&](const Binding &candidate) {
+            for (int row = 0; row < parameters.rowCount(); ++row) {
+                auto *combo = qobject_cast<QComboBox *>(parameters.cellWidget(row, 1));
+                if (combo && same_field(candidate, bindings.at(size_t(combo->currentIndex()))))
+                    return false;
+            }
+            return true;
+        });
+        if (available != bindings.end()) {
+            const auto &b = *available;
             add_parameter({{},
                            "parameter" + std::to_string(parameters.rowCount() + 1),
                            b.unit,
