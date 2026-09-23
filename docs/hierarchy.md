@@ -54,6 +54,10 @@ The complete catalog is checked for missing definitions, invalid local UUIDs, in
 
 The desktop uses the same transactions for grouping, insertion, detach and expansion. Breadcrumbs and the hierarchy tree navigate between levels. Opening internals initially shows a read-only shared definition; Edit definition enables changes affecting all linked instances. Public ports and numeric parameter bindings are editable in a dialog. Instance parameter overrides are shown in the Inspector. Run, save and autosave always operate on the complete root project, including when an internal level is open. Browsing levels does not create undo entries or discard redo. Undo/redo reverses an edit and restores the level where that edit was made.
 
+The public-port chooser includes each input and output of a code block by its
+stable port UUID and every output of a multi-output Gate C block. Display names
+follow the current port names; changing a name does not change the binding.
+
 Grouping inside a definition preserves its enclosing public ports and parameter bindings. Expanded UUIDs compose from the leaf outward, so replacing a nested instance with atoms preserves result identities. Recording subscriptions are remapped for all linked instances when grouping changes object paths.
 
 Deletion is dependency-aware across hierarchy levels. Removing an atom or an

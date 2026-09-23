@@ -541,9 +541,11 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         PortType type;
     };
     std::vector<Terminal> terminals;
-    auto terminal = [&](const std::string &id, const std::string &name, const std::string &port) {
+    auto terminal = [&](const std::string &id, const std::string &name, const std::string &port,
+                        const std::string &label = {}) {
         Endpoint e{id, port};
-        terminals.push_back({QString::fromStdString(name + " / " + port), e, port_type(body, e)});
+        terminals.push_back({QString::fromStdString(name + " / " + (label.empty() ? port : label)),
+                             e, port_type(body, e)});
     };
     for (const auto &n : body.nodes)
         terminal(n.id, n.name, "node");
@@ -556,7 +558,14 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             terminal(c.id, c.name, "out");
     }
     for (const auto &g : body.patterns)
-        terminal(g.id, g.name, "out");
+        for (unsigned output = 0; output < g.outputs; ++output)
+            terminal(g.id, g.name, output == 0 ? "out" : "out" + std::to_string(output));
+    for (const auto &block : body.code_blocks) {
+        for (const auto &input : block.inputs)
+            terminal(block.id, block.name, input.id, input.name);
+        for (const auto &output : block.outputs)
+            terminal(block.id, block.name, output.id, output.name);
+    }
     for (const auto &plot : body.plots)
         for (unsigned input = 1; input <= plot.inputs; ++input)
             if (plot.differential) {
@@ -566,8 +575,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                 terminal(plot.id, plot.name, "in" + std::to_string(input));
     for (const auto &i : body.instances)
         for (const auto &port : definition(body, i.definition).ports) {
-            terminal(i.id, i.name, port.id);
-            terminals.back().name = QString::fromStdString(i.name + " / " + port.name);
+            terminal(i.id, i.name, port.id, port.name);
         }
     struct Binding {
         QString name;

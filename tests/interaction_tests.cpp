@@ -1388,6 +1388,83 @@ class InteractionTests : public QObject {
             QVERIFY(w.grab().save(screenshot));
         }
     }
+    void public_interface_exposes_code_and_all_gate_outputs() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        Definition body;
+        body.id = new_uuid();
+        body.name = "Signal subsystem";
+        body.wired = true;
+        CodeBlock block;
+        block.id = new_uuid();
+        block.name = "Logic";
+        block.code = "gate = sense > 0;";
+        block.inputs.push_back({new_uuid(), "sense", "V", SignalScalarType::real, 0});
+        block.outputs.push_back({new_uuid(), "gate", "", SignalScalarType::boolean, 0});
+        body.code_blocks.push_back(block);
+        GatePattern pattern;
+        pattern.id = new_uuid();
+        pattern.name = "Gate C";
+        pattern.script = true;
+        pattern.outputs = 3;
+        pattern.code = "IN[0] = 0; IN[1] = 0; IN[2] = 0;";
+        body.patterns.push_back(pattern);
+        project.definitions.push_back(body);
+        const auto instance = new_uuid();
+        project.instances.push_back({instance, "Signals", body.id, 0, 0});
+        EditorWindow w("en", dir.path());
+        w.set_project(project);
+        ready(w);
+        w.select_object(instance);
+        bool visited = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            QVERIFY(dialog);
+            auto *ports = dialog->findChild<QTableWidget *>("public_ports");
+            auto *add = dialog->findChild<QPushButton *>("public_ports_add");
+            QVERIFY(ports && add);
+            const auto expose = [&](const QString &name, const QString &label) {
+                add->click();
+                const int row = ports->rowCount() - 1;
+                ports->item(row, 0)->setText(name);
+                auto *binding = qobject_cast<QComboBox *>(ports->cellWidget(row, 1));
+                QCOMPARE(binding->count(), 5);
+                const int index = binding->findText(label);
+                QVERIFY(index >= 0);
+                binding->setCurrentIndex(index);
+            };
+            expose("sense", "Logic / sense");
+            expose("gate", "Logic / gate");
+            expose("third", "Gate C / out2");
+            visited = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        QTimer::singleShot(2000, &w, [&] {
+            if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog"))
+                dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(visited);
+        const auto ports = definition(w.root_project(), body.id).ports;
+        QCOMPARE(ports.size(), size_t(3));
+        QCOMPARE(ports[0].terminal, (Endpoint{block.id, block.inputs[0].id}));
+        QCOMPARE(ports[0].domain, Domain::signal);
+        QCOMPARE(ports[0].direction, Direction::input);
+        QCOMPARE(ports[1].terminal, (Endpoint{block.id, block.outputs[0].id}));
+        QCOMPARE(ports[1].domain, Domain::gate);
+        QCOMPARE(ports[1].direction, Direction::output);
+        QCOMPARE(ports[2].terminal, (Endpoint{pattern.id, "out2"}));
+        QCOMPARE(ports[2].domain, Domain::gate);
+        validate_hierarchy(w.root_project());
+        std::istringstream saved(encoded(w.root_project()));
+        QCOMPARE(definition(read_project(saved), body.id).ports, ports);
+        w.undo();
+        QVERIFY(definition(w.root_project(), body.id).ports.empty());
+        w.redo();
+        QCOMPARE(definition(w.root_project(), body.id).ports, ports);
+    }
     void public_interface_and_instance_parameters() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
