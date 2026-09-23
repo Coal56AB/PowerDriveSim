@@ -302,8 +302,11 @@ void validate_hierarchy(const Project &p) {
         names.clear();
         for (const auto &param : d.parameters) {
             const double default_value=public_parameter_default_value(d,param);
+            // Both phase fields address the same stored value; exposing them twice
+            // would make the effective phase depend on mask row order.
+            const auto binding_field = param.field == "source_phase_deg" ? "source_phase" : param.field;
             if (!valid_uuid(param.id) || !ids.insert(param.id).second || param.name.empty() ||
-                !names.insert(param.name).second || !bindings.insert(param.object + "/" + param.field).second ||
+                !names.insert(param.name).second || !bindings.insert(param.object + "/" + binding_field).second ||
                 (param.has_minimum && !std::isfinite(param.minimum)) ||
                 (param.has_maximum && !std::isfinite(param.maximum)) ||
                 (param.has_minimum && param.has_maximum && param.minimum > param.maximum) ||

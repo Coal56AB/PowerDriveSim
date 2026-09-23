@@ -163,6 +163,14 @@ int main(int argc, char **argv) try {
         near(flatten(masked).project.components.front().source.phase, std::numbers::pi, 1e-12,
              "Instance override in degrees reaches the sine source");
         roundtrip(masked);
+        auto duplicate_phase = masked;
+        duplicate_phase.definitions.front().parameters.push_back(
+            {id(59), "Phase in radians", "rad", id(10), "source_phase", std::numbers::pi / 2});
+        error("invalid_public_parameter", [&] { validate_hierarchy(duplicate_phase); });
+        std::ostringstream duplicate_phase_output;
+        write_project(duplicate_phase, duplicate_phase_output);
+        std::istringstream duplicate_phase_input(duplicate_phase_output.str());
+        error("invalid_public_parameter", [&] { read_project(duplicate_phase_input); });
         masked.definitions.front().parameters.push_back(
             {id(54), "Frequency", "Hz", id(10), "source_frequency", 50});
         masked.instances.front().parameters.push_back({id(54), 0});
