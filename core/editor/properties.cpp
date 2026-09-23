@@ -1,5 +1,6 @@
 #include "core/editor/properties.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/model/expression.hpp"
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
 #include <algorithm>
@@ -62,7 +63,7 @@ double instance_parameter_value(const Project &p, const Instance &i, const std::
             return value;
     for (const auto &param : definition(p, i.definition).parameters)
         if (param.id == parameter)
-            return param.value;
+            return public_parameter_default_value(definition(p,i.definition),param);
     throw Diagnostic("unknown_property", i.id, "Unsupported property: parameter/" + parameter);
 }
 double instance_parameter_value_or(const Project &p, const Instance &i, const std::string &parameter, double fallback) {
@@ -194,7 +195,7 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
             }
             for(const auto& param:definition(p,i.definition).parameters)if(param.id==parameter) {
                 for(const auto& override:i.parameters)if(override.first==parameter)return override.second;
-                return param.value;
+                return public_parameter_default_value(definition(p,i.definition),param);
             }
             if (synthetic_instance_parameter(parameter))
                 throw Diagnostic("unknown_property", id, "Unsupported property: " + key);

@@ -131,6 +131,151 @@ int main() try {
     require(resolved_expressions.definitions[0].components[1].value==2e-6,
             "Definition-local variables resolve before hierarchy flattening");
     {
+        auto defaults = nested();
+        auto &leaf = defaults.definitions[0];
+        leaf.initialization_code = "double resistance = 1000;";
+        leaf.parameters[0].value = 9;
+        leaf.parameters[0].default_expression = "resistance";
+        leaf.parameters[0].has_minimum = true;
+        leaf.parameters[0].minimum = 100;
+        auto &wrapper = defaults.definitions[1];
+        wrapper.initialization_code = "double resistance = 3000;";
+        wrapper.parameters[0].value = 17; // Deliberately stale editor cache.
+        wrapper.parameters[0].default_expression = "resistance";
+        const auto source = defaults;
+        const auto resolved = resolve_parameter_expressions(defaults);
+        require(defaults == source && resolved.definitions[0].parameters[0].value == 1000 &&
+                    resolved.definitions[1].parameters[0].value == 3000,
+                "Public defaults resolve in isolated local scopes and ignore stale numeric caches");
+        auto other_cache=defaults;
+        other_cache.definitions[1].parameters[0].value=123456;
+        require(same_simulation(defaults,other_cache),
+                "Simulation identity ignores a stale cache when the default expression is unchanged");
+        const auto direct = flatten(defaults).project;
+        const auto first_resistor = expanded_uuid({id(20), id(31)}, id(12));
+        const auto second_resistor = expanded_uuid({id(21), id(31)}, id(12));
+        require(std::get<double>(read_property(direct, first_resistor, "value")) == 3000 &&
+                    std::get<double>(read_property(direct, second_resistor, "value")) == 2000,
+                "Direct flatten uses the expression default while an instance override still wins");
+        auto permuted = defaults;
+        std::reverse(permuted.definitions.begin(), permuted.definitions.end());
+        require(execute(compile(permuted)).samples.back().values ==
+                    execute(compile(defaults)).samples.back().values,
+                "Default expressions are independent of definition catalog order");
+
+        auto invalid = defaults;
+        invalid.definitions[1].parameters[0].has_maximum = true;
+        invalid.definitions[1].parameters[0].maximum = 2500;
+        error("invalid_public_parameter", [&] { validate_hierarchy(invalid); });
+        invalid = defaults;
+        invalid.definitions[1].parameters[0].default_expression = "missing_name";
+        error("invalid_parameter_expression", [&] { validate_hierarchy(invalid); });
+
+        Document internal_edit(defaults);
+        internal_edit.navigate({id(20)});
+        internal_edit.apply("Move nested instance", [&](Project &view) {
+            auto nested_instance = std::find_if(view.instances.begin(), view.instances.end(),
+                                                [&](const Instance &candidate) {
+                                                    return candidate.id == id(31);
+                                                });
+            require(nested_instance != view.instances.end(), "Nested instance is visible for editing");
+            nested_instance->x += 1;
+        });
+        require(definition(internal_edit.root_project(), id(30)).instances[0].x == 41 &&
+                    definition(internal_edit.root_project(), id(30)).parameters[0].default_expression ==
+                        "resistance",
+                "Merging an internal edit restores the effective default instead of the stale cache");
+
+        Document regrouped(defaults);
+        regrouped.navigate({id(20)});
+        const auto grouped_instance = regrouped.create_definition({id(31)}, "Grouped inner RC");
+        const auto &grouped_outer = definition(regrouped.root_project(), id(30));
+        const auto inserted = std::find_if(grouped_outer.instances.begin(), grouped_outer.instances.end(),
+                                           [&](const Instance &candidate) {
+                                               return candidate.id == grouped_instance;
+                                           });
+        require(inserted != grouped_outer.instances.end(),
+                "Grouping replaces the selected nested instance");
+        const auto &grouped_definition = definition(regrouped.root_project(), inserted->definition);
+        require(grouped_outer.parameters[0].default_expression == "resistance" &&
+                    grouped_definition.parameters[0].default_expression.empty() &&
+                    grouped_definition.parameters[0].value == 3000,
+                "Grouping keeps the expression in its original scope and materializes the pass-through");
+        auto resistor_values = [](const Project &project) {
+            std::vector<double> values;
+            for (const auto &component : flatten(project).project.components)
+                if (component.kind == Kind::resistor)
+                    values.push_back(component.value);
+            std::sort(values.begin(), values.end());
+            return values;
+        };
+        require(resistor_values(regrouped.root_project()) == resistor_values(defaults),
+                "Grouping a default expression preserves every effective bound value");
+        regrouped.undo();
+        require(regrouped.root_project() == defaults,
+                "Undo restores the hierarchy before expression-aware grouping");
+
+        Document materialized(defaults);
+        materialized.expand_instance(id(20));
+        const auto expanded = materialized.root_project();
+        require(std::get<double>(read_property(expanded, first_resistor, "value")) == 3000,
+                "Expand materializes a definition-local default expression");
+        require(definition(expanded, id(30)).parameters[0].default_expression == "resistance",
+                "Expand keeps the source on the shared definition used by other instances");
+        materialized.undo();
+        require(materialized.root_project() == defaults,
+                "Default-expression expansion is undoable without losing its source");
+        materialized.redo();
+        require(materialized.root_project() == expanded,
+                "Redo restores the materialized atoms and shared expression definition");
+
+        std::ostringstream serialized;
+        write_project(defaults, serialized);
+        std::istringstream stored(serialized.str());
+        require(read_project(stored) == defaults,
+                "Public parameter default expression survives project round trip");
+        std::ostringstream legacy_serialized;
+        write_project(resolve_parameter_expressions(defaults), legacy_serialized);
+        auto legacy_text = legacy_serialized.str();
+        legacy_text.replace(0, legacy_text.find('\n'), "PowerDriveSim 27");
+        std::istringstream legacy_lines(legacy_text);
+        std::string line, schema27;
+        while (std::getline(legacy_lines, line)) {
+            if (line.rfind("public_parameter ", 0) == 0) {
+                const auto tail = line.rfind(" \"");
+                require(tail != std::string::npos, "Schema 28 public parameter has an expression tail");
+                line.erase(tail);
+            }
+            schema27 += line + '\n';
+        }
+        std::istringstream legacy(schema27);
+        const auto migrated = read_project(legacy);
+        require(migrated.schema == project_schema &&
+                    std::all_of(migrated.definitions.begin(), migrated.definitions.end(),
+                                [](const Definition &definition) {
+                                    return std::all_of(definition.parameters.begin(),
+                                                       definition.parameters.end(),
+                                                       [](const PublicParameter &parameter) {
+                                                           return parameter.default_expression.empty();
+                                                       });
+                                }),
+                "Schema 27 public parameters migrate with numeric defaults");
+        auto malformed = serialized.str();
+        const auto encoded = malformed.find("\"726573697374616e6365\"");
+        require(encoded != std::string::npos, "Serialized default expression is hex encoded");
+        malformed.replace(encoded, 22, "\"zz\"");
+        error("parse_error", [&] {
+            std::istringstream input(malformed);
+            (void)read_project(input);
+        });
+        auto oversized = defaults;
+        oversized.definitions[1].parameters[0].default_expression.assign(1024 * 1024 + 1, 'x');
+        error("invalid_parameter_expression", [&] {
+            std::ostringstream output;
+            write_project(oversized, output);
+        });
+    }
+    {
         auto expandable = nested();
         expandable.initialization_code = "double setting = 2500;";
         expandable.parameter_expressions = {

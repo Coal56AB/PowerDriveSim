@@ -3,6 +3,7 @@
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/theme.hpp"
 #include "core/editor/properties.hpp"
+#include "core/model/expression.hpp"
 #include <QAction>
 #include <QApplication>
 #include <QBuffer>
@@ -545,6 +546,10 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         bool has_maximum = false;
         double maximum = 0;
     };
+    struct DefaultValue {
+        double value = 0;
+        std::string expression;
+    };
     std::vector<Binding> bindings;
     auto fields = [&](const auto &objects) {
         for (const auto &object : objects) {
@@ -572,10 +577,25 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     };
     fields(body.components);
     fields(body.patterns);
-    for (const auto &i : body.instances)
-        for (const auto &p : definition(body, i.definition).parameters)
+    for (const auto &i : body.instances) {
+        const auto &nested = definition(body, i.definition);
+        for (const auto &p : nested.parameters)
             bindings.push_back({QString::fromStdString(i.name + " / " + p.name), i.id, p.id, p.unit,
-                                p.value, 1, p.has_minimum, p.minimum, p.has_maximum, p.maximum});
+                                public_parameter_default_value(nested, p), 1,
+                                p.has_minimum, p.minimum, p.has_maximum, p.maximum});
+    }
+    auto default_value = [&](const QString &input, const Binding &binding,
+                             const std::string &parameter) -> DefaultValue {
+        try {
+            return {parse_si(input.toStdString(), binding.unit) / binding.scale, {}};
+        } catch (const std::exception &) {
+        }
+        const auto source = input.trimmed().toStdString();
+        PublicParameter candidate;
+        candidate.id = parameter;
+        candidate.default_expression = source;
+        return {public_parameter_default_value(edited, candidate), source};
+    };
     QDialog dialog(this);
     dialog.setObjectName("public_interface_dialog");
     dialog.setWindowTitle(text("public_interface") + " · " + QString::fromStdString(edited.name));
@@ -631,9 +651,11 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         int row = parameters.rowCount();
         parameters.insertRow(row);
         auto *name = new QTableWidgetItem(QString::fromStdString(p.name));
-        name->setData(Qt::UserRole, QString::fromStdString(p.id.empty() ? new_uuid() : p.id));
+        const auto parameter_id = p.id.empty() ? new_uuid() : p.id;
+        name->setData(Qt::UserRole, QString::fromStdString(parameter_id));
         parameters.setItem(row, 0, name);
         auto *combo = new QComboBox;
+        combo->setObjectName("public_parameter_binding/" + QString::fromStdString(parameter_id));
         int selected = 0;
         for (size_t n = 0; n < bindings.size(); ++n) {
             combo->addItem(bindings[n].name);
@@ -642,7 +664,11 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         }
         combo->setCurrentIndex(selected);
         parameters.setCellWidget(row, 1, combo);
-        auto *value = new QLineEdit(QString::number(p.value * bindings.at(size_t(selected)).scale, 'g', 12));
+        auto *value = new ExpressionLineEdit;
+        value->setObjectName("public_parameter_default/" + QString::fromStdString(parameter_id));
+        value->setText(p.default_expression.empty()
+                           ? QString::number(p.value * bindings.at(size_t(selected)).scale, 'g', 12)
+                           : QString::fromStdString(p.default_expression));
         normalize_decimal_point(value);
         parameters.setCellWidget(row, 2, value);
         parameters.setItem(row, 3, new QTableWidgetItem(QString::fromStdString(p.group)));
@@ -651,6 +677,8 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         parameters.setItem(row, 4, unit);
         auto *minimum = new QLineEdit;
         auto *maximum = new QLineEdit;
+        minimum->setObjectName("public_parameter_minimum/" + QString::fromStdString(parameter_id));
+        maximum->setObjectName("public_parameter_maximum/" + QString::fromStdString(parameter_id));
         normalize_decimal_point(minimum);
         normalize_decimal_point(maximum);
         const auto &selected_binding = bindings.at(size_t(selected));
@@ -664,6 +692,25 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                                              'g', 12));
         parameters.setCellWidget(row, 5, minimum);
         parameters.setCellWidget(row, 6, maximum);
+        auto update_default = [&, value, combo, parameter_id] {
+            try {
+                const auto parsed = default_value(value->text(), bindings.at(size_t(combo->currentIndex())),
+                                                  parameter_id);
+                if (parsed.expression.empty()) {
+                    value->set_calculated_value({});
+                    value->setToolTip({});
+                } else {
+                    const auto &binding = bindings.at(size_t(combo->currentIndex()));
+                    const auto calculated = engineering_value(parsed.value * binding.scale, binding.unit);
+                    value->set_calculated_value(calculated);
+                    value->setToolTip(text("parameter_expression").arg(calculated));
+                }
+            } catch (const std::exception &exception) {
+                value->set_calculated_value(QString::fromUtf8("—"));
+                value->setToolTip(QString::fromUtf8(exception.what()));
+            }
+        };
+        connect(value, &QLineEdit::textChanged, &dialog, update_default);
         connect(combo, &QComboBox::activated, &dialog, [&, row, value, minimum, maximum](int n) {
             const auto &binding = bindings.at(size_t(n));
             value->setText(QString::number(binding.value * binding.scale, 'g', 12));
@@ -675,6 +722,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                                  ? QString::number(binding.maximum * binding.scale, 'g', 12)
                                  : QString{});
         });
+        update_default();
     };
     page(ports, text("public_ports"), [&] {
         if (!terminals.empty())
@@ -708,6 +756,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
     parameters.setColumnWidth(5, 110);
     parameters.setColumnWidth(6, 110);
     auto *error = new QLabel;
+    error->setObjectName("public_interface_error");
     error->setWordWrap(true);
     auto *appearance_page = new QWidget;
     auto *appearance_layout = new QVBoxLayout(appearance_page);
@@ -813,8 +862,16 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             for (int row = 0; row < parameters.rowCount(); ++row) {
                 auto *combo = qobject_cast<QComboBox *>(parameters.cellWidget(row, 1));
                 auto b = bindings.at(size_t(combo->currentIndex()));
-                auto value = parse_si(
-                    qobject_cast<QLineEdit *>(parameters.cellWidget(row, 2))->text().toStdString(), b.unit);
+                const auto parameter_id =
+                    parameters.item(row, 0)->data(Qt::UserRole).toString().toStdString();
+                auto *value_editor = qobject_cast<QLineEdit *>(parameters.cellWidget(row, 2));
+                DefaultValue parsed;
+                try {
+                    parsed = default_value(value_editor->text(), b, parameter_id);
+                } catch (...) {
+                    value_editor->setFocus();
+                    throw;
+                }
                 auto limit = [&](int column) -> std::optional<double> {
                     const auto input = qobject_cast<QLineEdit *>(parameters.cellWidget(row, column))
                                            ->text().trimmed();
@@ -825,17 +882,18 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                 const auto minimum = limit(5);
                 const auto maximum = limit(6);
                 PublicParameter parameter;
-                parameter.id = parameters.item(row, 0)->data(Qt::UserRole).toString().toStdString();
+                parameter.id = parameter_id;
                 parameter.name = parameters.item(row, 0)->text().trimmed().toStdString();
                 parameter.unit = b.unit;
                 parameter.object = b.object;
                 parameter.field = b.field;
-                parameter.value = value / b.scale;
+                parameter.value = parsed.value;
                 parameter.group = parameters.item(row, 3)->text().trimmed().toStdString();
                 parameter.has_minimum = minimum.has_value();
                 parameter.minimum = minimum.value_or(0);
                 parameter.has_maximum = maximum.has_value();
                 parameter.maximum = maximum.value_or(0);
+                parameter.default_expression = std::move(parsed.expression);
                 updated.parameters.push_back(std::move(parameter));
             }
             document_->edit_definition(definition_id, [&](Definition &d) {

@@ -1329,8 +1329,10 @@ class InteractionTests : public QObject {
         QVERIFY(customized_definition != customized.definitions.end());
         customized_definition->appearance.image_png = custom_png.toBase64().toStdString();
         QVERIFY(same_simulation(w.root_project(), customized));
+        customized_definition->initialization_code = "double base_resistance = 1500;";
         w.set_project(customized);
         w.select_object(group);
+        const auto before_interface = w.root_project();
         bool handled = false;
         QTimer::singleShot(20, &w, [&] {
             auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
@@ -1346,15 +1348,37 @@ class InteractionTests : public QObject {
             QVERIFY(dialog->width() >= 1000);
             QVERIFY(parameters->columnWidth(1) >= 160);
             parameters->item(0, 0)->setText("DC-link precharge resistance");
-            qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->setText("2 kOhm");
+            const auto parameter_id = parameters->item(0, 0)->data(Qt::UserRole).toString();
+            auto *binding = qobject_cast<QComboBox *>(parameters->cellWidget(0, 1));
+            auto *parameter_default = qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2));
+            auto *minimum = qobject_cast<QLineEdit *>(parameters->cellWidget(0, 5));
+            auto *maximum = qobject_cast<QLineEdit *>(parameters->cellWidget(0, 6));
+            QCOMPARE(binding->objectName(), "public_parameter_binding/" + parameter_id);
+            QCOMPARE(parameter_default->objectName(), "public_parameter_default/" + parameter_id);
+            QCOMPARE(minimum->objectName(), "public_parameter_minimum/" + parameter_id);
+            QCOMPARE(maximum->objectName(), "public_parameter_maximum/" + parameter_id);
+            parameter_default->setText("2 kOhm");
+            auto *calculated = parameter_default->findChild<QLabel *>("calculated_value");
+            QVERIFY(calculated && !calculated->isVisible());
+            parameter_default->setText("missing_name * 2");
+            QVERIFY(calculated->isVisible() && calculated->text() == QString::fromUtf8("—"));
             parameters->item(0, 3)->setText("Electrical parameters of power stage");
-            qobject_cast<QLineEdit *>(parameters->cellWidget(0, 5))->setText("1 kOhm");
-            qobject_cast<QLineEdit *>(parameters->cellWidget(0, 6))->setText("4 kOhm");
+            minimum->setText("1 kOhm");
+            maximum->setText("4 kOhm");
             auto *symbol = dialog->findChild<QComboBox *>("public_symbol");
             QVERIFY(symbol);
             symbol->setCurrentIndex(symbol->findData(220));
             auto *image_preview = dialog->findChild<QLabel *>("public_image_preview");
             QVERIFY(image_preview && !image_preview->pixmap().isNull());
+            auto *error = dialog->findChild<QLabel *>("public_interface_error");
+            QVERIFY(error);
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+            QVERIFY(dialog->isVisible());
+            QVERIFY(!error->text().isEmpty());
+            QCOMPARE(w.root_project(), before_interface);
+            parameter_default->setText("base_resistance * 2");
+            QVERIFY(calculated && calculated->isVisible());
+            QVERIFY(calculated->text().contains("3") && calculated->text().contains("kOhm"));
             handled = true;
             dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
         });
@@ -1369,7 +1393,8 @@ class InteractionTests : public QObject {
         const auto &d = definition(w.root_project(), definition_id);
         QCOMPARE(d.ports[0].name, std::string("positive"));
         QCOMPARE(d.parameters.size(), size_t(1));
-        QCOMPARE(d.parameters[0].value, 2000.);
+        QCOMPARE(d.parameters[0].value, 3000.);
+        QCOMPARE(d.parameters[0].default_expression, std::string("base_resistance * 2"));
         QCOMPARE(d.parameters[0].name, std::string("DC-link precharge resistance"));
         QCOMPARE(d.parameters[0].group, std::string("Electrical parameters of power stage"));
         QVERIFY(d.parameters[0].has_minimum);
@@ -1378,42 +1403,75 @@ class InteractionTests : public QObject {
         QCOMPARE(d.parameters[0].maximum, 4000.);
         QCOMPARE(d.appearance.symbol, 220);
         QVERIFY(!d.appearance.image_png.empty());
+        const auto public_parameter_id = d.parameters[0].id;
+        const auto after_interface = w.root_project();
+        w.undo();
+        QCOMPARE(w.root_project(), before_interface);
+        w.redo();
+        QCOMPARE(w.root_project(), after_interface);
         std::ostringstream appearance_stream;
         write_project(w.root_project(), appearance_stream);
         std::istringstream appearance_input(appearance_stream.str());
         const auto restored_definition = definition(read_project(appearance_input), definition_id);
         QCOMPARE(restored_definition.appearance.symbol, 220);
+        QCOMPARE(restored_definition.parameters[0].default_expression,
+                 std::string("base_resistance * 2"));
         QCOMPARE(restored_definition.parameters[0].group,
                  std::string("Electrical parameters of power stage"));
+        w.select_object(group);
+        bool numeric_default_saved = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            if (!dialog)
+                return;
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            auto *parameter_default = qobject_cast<QLineEdit *>(table->cellWidget(0, 2));
+            QCOMPARE(parameter_default->text(), QString("base_resistance * 2"));
+            parameter_default->setText("2.5 kOhm");
+            numeric_default_saved = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(numeric_default_saved);
+        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 2500.);
+        QVERIFY(definition(w.root_project(), definition_id).parameters[0].default_expression.empty());
+        w.undo();
+        QCOMPARE(w.root_project(), after_interface);
         const auto labels = w.findChildren<QLabel *>();
         QVERIFY(std::any_of(labels.begin(), labels.end(), [](QLabel *label) {
             return label->isVisible() && label->text() == "Electrical parameters of power stage";
         }));
         auto *parameter =
-            w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(d.parameters[0].id));
+            w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(public_parameter_id));
         QVERIFY(parameter && parameter->isVisible());
         parameter->setFocus();
         parameter->selectAll();
-        QTest::keyClicks(parameter, "3 kOhm");
+        QTest::keyClicks(parameter, "3.5 kOhm");
         QTest::keyClick(parameter, Qt::Key_Return);
-        QCOMPARE(w.project().instances.front().parameters.front().second, 3000.);
-        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 2000.);
+        QCOMPARE(w.project().instances.front().parameters.front().second, 3500.);
+        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 3000.);
         w.open_subcircuit(group);
         w.select_object(resistor);
         w.findChild<QAction *>("edit_definition")->trigger();
         auto *value = w.findChild<QLineEdit *>("property_value");
         QVERIFY(value->isReadOnly());
-        QCOMPARE(parse_si(value->text().toStdString(), "Ohm"), 3000.);
-        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 2000.);
+        QCOMPARE(parse_si(value->text().toStdString(), "Ohm"), 3500.);
+        QCOMPARE(definition(w.root_project(), definition_id).parameters[0].value, 3000.);
         auto flat = flatten(w.root_project()).project;
         auto component = std::find_if(flat.components.begin(), flat.components.end(), [&](const auto &c) {
             return c.id == expanded_uuid({group}, resistor);
         });
         QVERIFY(component != flat.components.end());
-        QCOMPARE(component->value, 3000.);
+        QCOMPARE(component->value, 3500.);
 
         auto deep = w.root_project();
-        const auto leaf_parameter = definition(deep, definition_id).parameters.front().id;
+        auto leaf_definition = std::find_if(deep.definitions.begin(), deep.definitions.end(),
+                                             [&](const Definition &candidate) {
+                                                 return candidate.id == definition_id;
+                                             });
+        QVERIFY(leaf_definition != deep.definitions.end());
+        const auto leaf_parameter = leaf_definition->parameters.front().id;
+        leaf_definition->parameters.front().value = 1100.;
         Definition middle;
         middle.id = new_uuid();
         middle.name = "Middle mask";
@@ -1434,10 +1492,28 @@ class InteractionTests : public QObject {
                            middle_parameter, 2000., "Deep mask"}};
         deep.definitions.push_back(middle);
         deep.definitions.push_back(top);
+        const auto middle_preview_instance = new_uuid();
+        deep.instances.push_back({middle_preview_instance, "Middle preview", middle.id, 200, 200});
         const auto top_instance = new_uuid();
         deep.instances.push_back({top_instance, "Deep instance", top.id, 300, 200});
         w.set_project(std::move(deep));
         ready(w);
+        w.select_object(middle_preview_instance);
+        bool nested_default_checked = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            if (!dialog)
+                return;
+            auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
+            dialog->findChild<QPushButton *>("public_parameters_add")->click();
+            auto *nested_default = qobject_cast<QLineEdit *>(parameters->cellWidget(1, 2));
+            QVERIFY(nested_default);
+            QCOMPARE(parse_si(nested_default->text().toStdString(), "Ohm"), 3000.);
+            nested_default_checked = true;
+            dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(nested_default_checked);
         w.select_object(top_instance);
         auto *deep_parameter =
             w.findChild<QLineEdit *>("property_parameter/" + QString::fromStdString(top_parameter));

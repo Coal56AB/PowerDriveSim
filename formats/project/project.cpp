@@ -140,6 +140,11 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                         if((has_minimum!=0&&has_minimum!=1)||(has_maximum!=0&&has_maximum!=1))meta.setstate(std::ios::failbit);
                         param.has_minimum=has_minimum==1;param.has_maximum=has_maximum==1;
                     }
+                    if(p.schema>=28) {
+                        std::string encoded;
+                        meta>>std::quoted(encoded);
+                        if(!meta.fail())param.default_expression=unhex_text(encoded,param.id);
+                    }
                     d.parameters.push_back(param);
                     if(meta.fail())throw Diagnostic("parse_error",d.id,"Malformed definition metadata: "+line);
                     meta>>std::ws;if(!meta.eof())throw Diagnostic("parse_error",d.id,"Trailing definition metadata: "+line);
@@ -804,7 +809,10 @@ void write_project(const Project& p, std::ostream& out) {
         }
         for(const auto& v:d.parameters) {
             for(const auto* value:{&v.id,&v.name,&v.unit,&v.object,&v.field,&v.group})check_text(*value,d.id);
-            out<<"public_parameter "<<std::quoted(v.id)<<' '<<std::quoted(v.name)<<' '<<std::quoted(v.unit)<<' '<<std::quoted(v.object)<<' '<<std::quoted(v.field)<<' '<<v.value<<' '<<std::quoted(v.group)<<' '<<v.has_minimum<<' '<<v.minimum<<' '<<v.has_maximum<<' '<<v.maximum<<'\n';
+            if(v.default_expression.size()>1024*1024)
+                throw Diagnostic("invalid_parameter_expression",v.id,
+                                 "Public parameter default expression exceeds 1 MiB");
+            out<<"public_parameter "<<std::quoted(v.id)<<' '<<std::quoted(v.name)<<' '<<std::quoted(v.unit)<<' '<<std::quoted(v.object)<<' '<<std::quoted(v.field)<<' '<<v.value<<' '<<std::quoted(v.group)<<' '<<v.has_minimum<<' '<<v.minimum<<' '<<v.has_maximum<<' '<<v.maximum<<' '<<std::quoted(hex_text(v.default_expression))<<'\n';
         }
         if(d.appearance!=DefinitionAppearance{}) {
             check_text(d.appearance.image_png,d.id);

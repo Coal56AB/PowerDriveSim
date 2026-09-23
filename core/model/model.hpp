@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 27;
+inline constexpr unsigned project_schema = 28;
 enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
@@ -219,6 +219,7 @@ struct PublicParameter {
     double minimum=0;
     bool has_maximum=false;
     double maximum=0;
+    std::string default_expression;
     bool operator==(const PublicParameter&) const = default;
 };
 struct DefinitionAppearance {

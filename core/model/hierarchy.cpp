@@ -1,4 +1,5 @@
 #include "core/model/hierarchy.hpp"
+#include "core/model/expression.hpp"
 #include "core/model/waveform.hpp"
 #include "core/model/semiconductor.hpp"
 #include "core/model/connectivity.hpp"
@@ -268,15 +269,16 @@ void validate_hierarchy(const Project &p) {
         }
         names.clear();
         for (const auto &param : d.parameters) {
+            const double default_value=public_parameter_default_value(d,param);
             if (!valid_uuid(param.id) || !ids.insert(param.id).second || param.name.empty() ||
                 !names.insert(param.name).second || !bindings.insert(param.object + "/" + param.field).second ||
                 (param.has_minimum && !std::isfinite(param.minimum)) ||
                 (param.has_maximum && !std::isfinite(param.maximum)) ||
                 (param.has_minimum && param.has_maximum && param.minimum > param.maximum) ||
-                !public_parameter_accepts(param, param.value))
+                !public_parameter_accepts(param,default_value))
                 throw Diagnostic("invalid_public_parameter", param.id,
                                  "Public parameters require unique bindings and a valid value range");
-            parameter_value(body, p, param, param.value);
+            parameter_value(body,p,param,default_value);
         }
     }
 }
@@ -394,7 +396,9 @@ FlattenedProject flatten(const Project &source) {
                 auto override = std::find_if(i.parameters.begin(), i.parameters.end(),
                                              [&](const auto &v) { return v.first == param.id; });
                 parameter_value(body, source, param,
-                                override == i.parameters.end() ? param.value : override->second);
+                                override == i.parameters.end()
+                                    ? public_parameter_default_value(d, param)
+                                    : override->second);
             }
             auto child_path = path;
             child_path.push_back(i.id);

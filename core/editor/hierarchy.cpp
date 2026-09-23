@@ -71,7 +71,9 @@ void Document::rebuild_view() {
                 for (const auto &param : source.parameters) {
                     auto override = std::find_if(instance->parameters.begin(), instance->parameters.end(),
                         [&](const auto &value) { return value.first == param.id; });
-                    const double value = override == instance->parameters.end() ? param.value : override->second;
+                    const double value = override == instance->parameters.end()
+                                             ? public_parameter_default_value(source,param)
+                                             : override->second;
                     if (param.object != "*")
                         write_property(body, param.object,
                                        valid_uuid(param.field) ? "parameter/" + param.field : param.field,
@@ -128,7 +130,7 @@ Project Document::merge_view(const Project &view) const {
             if (previous != original.parameters.end() && param.object != "*")
                 write_property(canonical, param.object,
                                valid_uuid(param.field) ? "parameter/" + param.field : param.field,
-                               previous->value);
+                               public_parameter_default_value(original,*previous));
         }
         static_cast<Schematic &>(*d) = canonical;
         std::erase_if(d->view_options, [](const auto &options) { return options.plot.empty(); });
@@ -252,7 +254,10 @@ std::string Document::create_definition(const std::vector<std::string> &selected
                             port.terminal = expose(port.terminal);
                     for (auto &param : parent.parameters)
                         if (ids.count(param.object)) {
-                            d.parameters.push_back(param);
+                            auto child_parameter=param;
+                            child_parameter.value=public_parameter_default_value(parent,param);
+                            child_parameter.default_expression.clear();
+                            d.parameters.push_back(std::move(child_parameter));
                             param.object = instance;
                             param.field = d.parameters.back().id;
                         }

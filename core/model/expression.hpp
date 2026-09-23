@@ -5,6 +5,8 @@
 namespace pds {
 
 struct Project;
+struct Definition;
+struct PublicParameter;
 
 struct ExpressionProgram {
     std::map<std::string, std::string> variables;
@@ -26,6 +28,8 @@ double evaluate_expression(const std::string &expression,
                            const ExpressionOptions &options = {});
 bool expression_depends_on_time(const std::string &expression,
                                 const std::map<std::string, std::string> &variables = {});
+double public_parameter_default_value(const Definition &definition,
+                                      const PublicParameter &parameter);
 Project resolve_parameter_expressions(const Project &source);
 
 } // namespace pds

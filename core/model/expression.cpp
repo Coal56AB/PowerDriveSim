@@ -224,8 +224,8 @@ bool expression_depends_on_time(const std::string &expression,const std::map<std
 }
 
 namespace {
-void resolve_schematic(Project &body,const std::string &identity) {
-    const ExpressionOptions initialization_options{"invalid_initialization",identity,false,false};
+std::map<std::string,std::string> initialization_variables(const Schematic &body,
+                                                           const std::string &identity) {
     std::map<std::string,std::string> variables;
     if(!body.initialization_code.empty()) {
         CProgramOptions options;options.diagnostic_code="invalid_initialization";options.object=identity;
@@ -235,6 +235,18 @@ void resolve_schematic(Project &body,const std::string &identity) {
             variables.emplace(name,text.str());
         }
     }
+    return variables;
+}
+double evaluate_public_parameter_default(const PublicParameter &parameter,
+                                         const std::map<std::string,std::string> &variables) {
+    const ExpressionOptions options{"invalid_parameter_expression",parameter.id,false,false};
+    const double value=evaluate_expression(parameter.default_expression,variables,0,options);
+    if(!std::isfinite(value))
+        throw Diagnostic("invalid_parameter_expression",parameter.id,
+                         "Public parameter default expression must be finite");
+    return value;
+}
+void resolve_schematic(Project &body,const std::map<std::string,std::string> &variables) {
     std::set<std::pair<std::string,std::string>> bindings;
     for(const auto &binding:body.parameter_expressions) {
         if(binding.object.empty()||binding.field.empty()||binding.source.empty()||
@@ -257,17 +269,35 @@ void resolve_schematic(Project &body,const std::string &identity) {
 }
 } // namespace
 
+double public_parameter_default_value(const Definition &definition,
+                                      const PublicParameter &parameter) {
+    if(parameter.default_expression.empty())return parameter.value;
+    if(parameter.default_expression.size()>1024*1024)
+        throw Diagnostic("invalid_parameter_expression",parameter.id,
+                         "Public parameter default expression exceeds 1 MiB");
+    const auto variables=initialization_variables(definition,definition.id);
+    return evaluate_public_parameter_default(parameter,variables);
+}
+
 Project resolve_parameter_expressions(const Project &source) {
     Project result=source;
+    std::map<std::string,std::map<std::string,std::string>> definition_variables;
+    for(auto &definition:result.definitions) {
+        auto variables=initialization_variables(definition,definition.id);
+        for(auto &parameter:definition.parameters)
+            if(!parameter.default_expression.empty())
+                parameter.value=evaluate_public_parameter_default(parameter,variables);
+        definition_variables.emplace(definition.id,std::move(variables));
+    }
     for(auto &definition:result.definitions) {
         Project body;
         static_cast<Schematic&>(body)=definition;
         body.id=definition.id;body.name=definition.name;body.profile=result.profile;
         body.definitions=result.definitions;
-        resolve_schematic(body,definition.id);
+        resolve_schematic(body,definition_variables.at(definition.id));
         static_cast<Schematic&>(definition)=static_cast<const Schematic&>(body);
     }
-    resolve_schematic(result,result.id);
+    resolve_schematic(result,initialization_variables(result,result.id));
     return result;
 }
 } // namespace pds
