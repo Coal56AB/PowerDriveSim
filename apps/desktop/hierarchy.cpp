@@ -637,6 +637,18 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
                                 p.has_minimum, p.minimum, p.has_maximum, p.maximum});
         }
     }
+    // Keep existing bindings that are intentionally broader than a single
+    // component field (for example, one mask value for all source phases).
+    for (const auto &parameter : edited.parameters) {
+        const auto known = std::any_of(bindings.begin(), bindings.end(), [&](const Binding &binding) {
+            return binding.object == parameter.object && binding.field == parameter.field;
+        });
+        if (!known)
+            bindings.push_back({QString::fromStdString(parameter.name), parameter.object, parameter.field,
+                                parameter.unit, public_parameter_default_value(edited, parameter), 1,
+                                parameter.has_minimum, parameter.minimum,
+                                parameter.has_maximum, parameter.maximum});
+    }
     auto default_value = [&](const QString &input, const Binding &binding,
                              const std::string &parameter) -> DefaultValue {
         try {

@@ -1487,6 +1487,36 @@ class InteractionTests : public QObject {
         w.redo();
         QCOMPARE(definition(w.root_project(), body.id).ports, ports);
     }
+    void public_interface_preserves_shared_source_parameters() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/library/sources/three-phase-source-y.pds"));
+        ready(w);
+        const auto instance = w.project().instances.front();
+        const auto original = definition(w.root_project(), instance.definition).parameters;
+        w.select_object(instance.id);
+        bool accepted = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            QVERIFY(dialog);
+            auto *table = dialog->findChild<QTableWidget *>("public_parameters");
+            QCOMPARE(table->rowCount(), int(original.size()));
+            for (int row = 0; row < table->rowCount(); ++row) {
+                auto *binding = qobject_cast<QComboBox *>(table->cellWidget(row, 1));
+                QVERIFY(binding);
+                QCOMPARE(binding->currentText(), QString::fromStdString(original[size_t(row)].name));
+            }
+            accepted = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        QTimer::singleShot(2000, &w, [&] {
+            if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog"))
+                dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(accepted);
+        QCOMPARE(definition(w.root_project(), instance.definition).parameters, original);
+    }
     void public_interface_and_instance_parameters() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
