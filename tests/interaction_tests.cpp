@@ -1136,6 +1136,12 @@ class InteractionTests : public QObject {
                 QVERIFY(w.grab().save(folder + "/" + example + "-leg.png"));
             }
             w.navigate_hierarchy({});
+            for (auto *old_level : w.findChildren<QToolButton *>("hierarchy_level_2"))
+                QVERIFY(!old_level->isVisible());
+            QCoreApplication::processEvents();
+            const auto root_levels = w.findChildren<QToolButton *>("hierarchy_level_0");
+            QVERIFY(std::any_of(root_levels.begin(), root_levels.end(),
+                                [](auto *level) { return level->isVisible(); }));
             w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-50, -50, 50, 50),
                                   Qt::KeepAspectRatio);
             if (auto folder = qEnvironmentVariable("PDS_CONVERTER_SCREENSHOT_DIR"); !folder.isEmpty())

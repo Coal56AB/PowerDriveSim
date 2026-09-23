@@ -320,8 +320,10 @@ void EditorWindow::refresh_hierarchy() {
         if (item->widget()) {
             if (item->widget() == definition_button_)
                 item->widget()->setParent(nullptr);
-            else
+            else {
+                item->widget()->hide();
                 item->widget()->deleteLater();
+            }
         }
         delete item;
     }
