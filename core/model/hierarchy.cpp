@@ -10,6 +10,7 @@
 #include <numbers>
 #include <optional>
 #include <set>
+#include <utility>
 
 namespace pds {
 void remap_view_options(ViewOptions &view, const std::map<std::string, std::string> &identities) {
@@ -327,18 +328,27 @@ void validate_hierarchy(const Project &p) {
         std::any_of(p.definitions.begin(), p.definitions.end(), has_instance_expression))
         resolved = resolve_parameter_expressions(p);
     const Project &effective = resolved ? *resolved : p;
-    auto validate_instances = [&](const Schematic &schematic) {
-        for (const auto &instance : schematic.instances) {
+    std::function<void(const Instance &, std::vector<std::string>)> validate_instance =
+        [&](const Instance &instance, std::vector<std::string> path) {
             if (definition(effective, instance.definition).parameters.empty())
-                continue;
+                return;
+            Schematic body;
             try {
-                validate_effective_components(configured_instance_body(effective, instance));
+                body = configured_instance_body(effective, instance);
+                validate_effective_components(body);
             } catch (Diagnostic &diagnostic) {
-                if (diagnostic.path.empty())
-                    diagnostic.path = {instance.id};
+                diagnostic.path = path;
                 throw;
             }
-        }
+            for (const auto &child : body.instances) {
+                auto child_path = path;
+                child_path.push_back(child.id);
+                validate_instance(child, std::move(child_path));
+            }
+        };
+    auto validate_instances = [&](const Schematic &schematic) {
+        for (const auto &instance : schematic.instances)
+            validate_instance(instance, {instance.id});
     };
     validate_instances(effective);
     for (const auto &definition_body : effective.definitions)

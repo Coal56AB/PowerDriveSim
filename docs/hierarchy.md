@@ -59,6 +59,8 @@ instances after definition defaults and ranges have been validated. That order
 preserves the diagnostic for an invalid definition instead of reporting its
 stale numeric expression cache as an instance error. Instance parameter
 expressions are evaluated for this check; the saved source remains unchanged.
+The same check follows nested public bindings through mask-bearing definitions,
+so a transitive override cannot remain dormant until simulation.
 
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 

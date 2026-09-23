@@ -220,6 +220,17 @@ int main(int argc, char **argv) try {
                       diagnostic.path == (std::vector<std::string>{id(58), id(56)}),
                   "Nested override reports the complete instance path");
         }
+        std::ostringstream invalid_nested_output;
+        write_project(masked, invalid_nested_output);
+        std::istringstream invalid_nested_input(invalid_nested_output.str());
+        try {
+            (void)read_project(invalid_nested_input);
+            throw std::runtime_error("Invalid nested waveform project was loaded");
+        } catch (const Diagnostic &diagnostic) {
+            check(diagnostic.code == "invalid_waveform" &&
+                      diagnostic.path == (std::vector<std::string>{id(58), id(56)}),
+                  "Loader reports the complete nested instance path");
+        }
     }
     for (auto method : {Method::backward_euler, Method::trapezoidal}) {
         auto p = fixture();
