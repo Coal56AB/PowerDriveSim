@@ -1535,6 +1535,55 @@ class InteractionTests : public QObject {
         QCOMPARE(applied->parameters, expected_parameters);
         QVERIFY(w.findChild<QLabel *>("property_error")->text().isEmpty());
     }
+    void public_parameter_binding_after_row_removal() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        Definition body;
+        body.id = new_uuid();
+        body.name = "Editable mask";
+        body.wired = true;
+        Component resistor, capacitor;
+        resistor.id = new_uuid(); resistor.name = "R"; resistor.kind = Kind::resistor; resistor.value = 1000;
+        capacitor.id = new_uuid(); capacitor.name = "C"; capacitor.kind = Kind::capacitor; capacitor.value = 1e-6;
+        body.components = {resistor, capacitor};
+        body.parameters.push_back({new_uuid(), "Resistance", "Ohm", resistor.id, "value", 1000});
+        body.parameters.push_back({new_uuid(), "Capacitance", "F", capacitor.id, "value", 1e-6});
+        project.definitions.push_back(body);
+        const auto instance_id = new_uuid();
+        project.instances.push_back({instance_id, "Mask", body.id, 0, 0});
+        EditorWindow w("en", dir.path());
+        w.set_project(project);
+        ready(w);
+        w.select_object(instance_id);
+        bool checked = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            if (!dialog)
+                return;
+            auto *parameters = dialog->findChild<QTableWidget *>("public_parameters");
+            QVERIFY(parameters && parameters->rowCount() == 2);
+            parameters->selectRow(0);
+            dialog->findChild<QPushButton *>("public_parameters_delete")->click();
+            QCOMPARE(parameters->rowCount(), 1);
+            auto *binding = qobject_cast<QComboBox *>(parameters->cellWidget(0, 1));
+            QVERIFY(binding);
+            binding->setCurrentIndex(0);
+            QVERIFY(QMetaObject::invokeMethod(binding, "activated", Qt::DirectConnection, Q_ARG(int, 0)));
+            QCOMPARE(parameters->item(0, 4)->text(), QString("Ohm"));
+            QCOMPARE(qobject_cast<QLineEdit *>(parameters->cellWidget(0, 2))->text(), QString("1000"));
+            checked = true;
+            dialog->reject();
+        });
+        QTimer::singleShot(2000, &w, [&] {
+            if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog"))
+                dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(checked);
+        QCOMPARE(w.root_project(), project);
+    }
     void connection_tag_scope_and_suggestion_visibility() {
         try {
         QTemporaryDir dir;

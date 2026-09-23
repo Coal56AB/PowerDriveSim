@@ -620,6 +620,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
         auto *add = new QPushButton(text("add"));
         add->setObjectName(table.objectName() + "_add");
         auto *remove = new QPushButton(text("delete"));
+        remove->setObjectName(table.objectName() + "_delete");
         buttons->addWidget(add);
         buttons->addWidget(remove);
         buttons->addStretch();
@@ -711,7 +712,15 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             }
         };
         connect(value, &QLineEdit::textChanged, &dialog, update_default);
-        connect(combo, &QComboBox::activated, &dialog, [&, row, value, minimum, maximum](int n) {
+        connect(combo, &QComboBox::activated, &dialog, [&, combo, value, minimum, maximum](int n) {
+            int row = -1;
+            for (int current = 0; current < parameters.rowCount(); ++current)
+                if (parameters.cellWidget(current, 1) == combo) {
+                    row = current;
+                    break;
+                }
+            if (row < 0)
+                return;
             const auto &binding = bindings.at(size_t(n));
             value->setText(QString::number(binding.value * binding.scale, 'g', 12));
             parameters.item(row, 4)->setText(QString::fromStdString(binding.unit));
