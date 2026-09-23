@@ -1,4 +1,6 @@
 #include "apps/desktop/editor.hpp"
+#include "apps/desktop/signal_presets.hpp"
+#include "formats/snapshot/snapshot.hpp"
 #include "tests/qt_test_main.hpp"
 #include <QAction>
 #include <QCheckBox>
@@ -28,6 +30,7 @@
 #include <QtTest/QtTest>
 #include <array>
 #include <cmath>
+#include <sstream>
 using namespace pds;
 using namespace pds::desktop;
 class DesktopTests : public QObject {
@@ -954,6 +957,162 @@ class DesktopTests : public QObject {
         QCOMPARE(window.project().code_blocks.size(), presets.size());
         for (size_t index = 0; index < presets.size(); ++index)
             QCOMPARE(window.project().code_blocks[index].code, std::string(presets[index].code));
+    }
+    void signal_state_presets_are_causal_and_snapshot_safe() {
+        const auto *integrator_preset = signal_preset(117);
+        const auto *delay_preset = signal_preset(118);
+        QVERIFY(integrator_preset);
+        QVERIFY(delay_preset);
+
+        CodeBlock source;
+        source.id = new_uuid();
+        source.name = "Source";
+        source.period = 100e-6;
+        source.code = "out = 2;";
+        source.outputs = {{new_uuid(), "out", "", SignalScalarType::real, 0}};
+        auto integrator = make_signal_preset(*integrator_preset, "Discrete integrator", 180, 100);
+        auto delay = make_signal_preset(*delay_preset, "Delay 1 tick", 360, 100);
+
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        project.profile.step = 100e-6;
+        project.profile.stop = 400e-6;
+        const auto ground = new_uuid();
+        const auto supply_node = new_uuid();
+        project.nodes = {{ground, "GND", true}, {supply_node, "supply"}};
+        Component supply;
+        supply.id = new_uuid();
+        supply.name = "V1";
+        supply.kind = Kind::voltage;
+        supply.value = 1;
+        project.components = {supply};
+        project.code_blocks = {source, integrator, delay};
+        project.wires = {
+            {new_uuid(), {supply.id, "p"}, {supply_node, "node"}},
+            {new_uuid(), {supply.id, "n"}, {ground, "node"}},
+            {new_uuid(), {source.id, source.outputs[0].id}, {integrator.id, integrator.inputs[0].id}},
+            {new_uuid(), {source.id, source.outputs[0].id}, {delay.id, delay.inputs[0].id}},
+        };
+        SimulationIR ir;
+        try {
+            ir = compile(project);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+        QCOMPARE(ir.signal.tasks.size(), size_t(3));
+        Result complete;
+        try {
+            complete = execute(ir);
+        } catch (const std::exception &error) {
+            QFAIL(error.what());
+        }
+        const auto integrator_key = endpoint_key({integrator.id, integrator.outputs[0].id});
+        const auto delay_key = endpoint_key({delay.id, delay.outputs[0].id});
+        const auto integrator_found = std::find_if(complete.channels.begin(), complete.channels.end(),
+                                                   [&](const Channel &channel) { return channel.object == integrator_key; });
+        const auto delay_found = std::find_if(complete.channels.begin(), complete.channels.end(),
+                                              [&](const Channel &channel) { return channel.object == delay_key; });
+        QVERIFY(integrator_found != complete.channels.end());
+        QVERIFY(delay_found != complete.channels.end());
+        const auto integrator_channel = size_t(integrator_found - complete.channels.begin());
+        const auto delay_channel = size_t(delay_found - complete.channels.begin());
+        auto sample_at = [&](double time) -> const Sample * {
+            const auto found = std::find_if(complete.samples.begin(), complete.samples.end(),
+                                            [&](const Sample &sample) { return std::abs(sample.time - time) < 1e-15; });
+            return found == complete.samples.end() ? nullptr : &*found;
+        };
+        const auto *initial = sample_at(0);
+        const auto *first = sample_at(100e-6);
+        const auto *second = sample_at(200e-6);
+        QVERIFY(initial);
+        QVERIFY(first);
+        QVERIFY(second);
+        QCOMPARE(initial->values[integrator_channel], 0.0);
+        QCOMPARE(initial->values[delay_channel], 0.0);
+        QCOMPARE(first->values[integrator_channel], 200e-6);
+        QCOMPARE(first->values[delay_channel], 0.0);
+        QCOMPARE(second->values[integrator_channel], 400e-6);
+        QCOMPARE(second->values[delay_channel], 2.0);
+
+        ExecutionOptions snapshot_options;
+        snapshot_options.capture_snapshot = true;
+        snapshot_options.max_steps = 2;
+        const auto partial = execute(ir, nullptr, nullptr, nullptr, nullptr, {}, &snapshot_options);
+        QVERIFY(partial.snapshot);
+        QCOMPARE(partial.last_time, 200e-6);
+        QCOMPARE(partial.snapshot->signal_tasks.at(integrator.id).next_tick, std::uint64_t(3));
+        QCOMPARE(partial.snapshot->signal_tasks.at(delay.id).next_tick, std::uint64_t(3));
+        QCOMPARE(partial.snapshot->signal_tasks.at(integrator.id).outputs.at("out"), 400e-6);
+        QCOMPARE(partial.snapshot->signal_tasks.at(delay.id).outputs.at("out"), 2.0);
+        std::ostringstream saved;
+        write_snapshot(*partial.snapshot, saved);
+        std::istringstream input(saved.str());
+        const auto restored = read_snapshot(input);
+        QCOMPARE(restored, *partial.snapshot);
+        ExecutionOptions continuation;
+        continuation.resume = &restored;
+        const auto resumed = execute(ir, nullptr, nullptr, nullptr, nullptr, {}, &continuation);
+        QCOMPARE(resumed.samples.size(), complete.samples.size() - partial.accepted_steps);
+        for (size_t index = 0; index < resumed.samples.size(); ++index) {
+            QCOMPARE(resumed.samples[index].time, complete.samples[partial.accepted_steps + index].time);
+            QCOMPARE(resumed.samples[index].values, complete.samples[partial.accepted_steps + index].values);
+            QCOMPARE(resumed.samples[index].gates, complete.samples[partial.accepted_steps + index].gates);
+        }
+
+        auto disconnected = project;
+        std::erase_if(disconnected.wires, [&](const Wire &wire) {
+            return wire.to == Endpoint{integrator.id, integrator.inputs[0].id};
+        });
+        try {
+            (void)compile(disconnected);
+            QFAIL("Unconnected preset input compiled");
+        } catch (const Diagnostic &diagnostic) {
+            QCOMPARE(diagnostic.code, std::string("missing_signal_source"));
+            QCOMPARE(diagnostic.object, integrator.id);
+        }
+
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        for (const auto *preset : {integrator_preset, delay_preset}) {
+            QTreeWidgetItem *entry = nullptr;
+            for (QTreeWidgetItemIterator it(library); *it; ++it)
+                if ((*it)->data(0, Qt::UserRole).toInt() == preset->placement_id)
+                    entry = *it;
+            QVERIFY(entry);
+            for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
+            library->scrollToItem(entry);
+            QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              library->visualItemRect(entry).center());
+            QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               library->visualItemRect(entry).center());
+            QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              window.canvas()->mapFromScene(QPointF(140 + 220 * window.project().code_blocks.size(), 100)));
+            const auto &block = window.project().code_blocks.back();
+            QCOMPARE(block.code, std::string(preset->code));
+            QCOMPARE(block.period, 100e-6);
+            QCOMPARE(block.inputs.size(), size_t(1));
+            QCOMPARE(block.outputs.size(), size_t(1));
+            QCOMPARE(block.inputs[0].name, std::string("in"));
+            QCOMPARE(block.outputs[0].name, std::string("out"));
+            QCOMPARE(block.inputs[0].type, SignalScalarType::real);
+            QCOMPARE(block.outputs[0].type, SignalScalarType::real);
+            QVERIFY(!block.inputs[0].id.empty());
+            QVERIFY(!block.outputs[0].id.empty());
+        }
+        window.undo();
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        window.redo();
+        QCOMPARE(window.project().code_blocks.size(), size_t(2));
+        const auto path = temp.filePath("signal-state-presets.pds");
+        QVERIFY(window.save_project(path));
+        QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().code_blocks.size(), size_t(2));
+        QCOMPARE(window.project().code_blocks[0].code, std::string(integrator_preset->code));
+        QCOMPARE(window.project().code_blocks[1].code, std::string(delay_preset->code));
     }
 };
 int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }

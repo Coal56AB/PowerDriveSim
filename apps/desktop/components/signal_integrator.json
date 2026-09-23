@@ -1,0 +1,12 @@
+{
+  "type": "signal_integrator",
+  "fields": [],
+  "palette": {
+    "id": 117,
+    "label": "signal_integrator",
+    "category": "signals",
+    "short": "∫",
+    "fixed": false,
+    "hidden": false
+  }
+}

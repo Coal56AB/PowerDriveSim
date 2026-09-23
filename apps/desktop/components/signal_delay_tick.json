@@ -1,0 +1,12 @@
+{
+  "type": "signal_delay_tick",
+  "fields": [],
+  "palette": {
+    "id": 118,
+    "label": "signal_delay_tick",
+    "category": "signals",
+    "short": "z⁻¹",
+    "fixed": false,
+    "hidden": false
+  }
+}

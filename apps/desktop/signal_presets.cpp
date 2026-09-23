@@ -12,7 +12,7 @@ constexpr std::array<SignalPortPreset, 2> boolean_pair{{
     {"a", SignalScalarType::boolean}, {"b", SignalScalarType::boolean},
 }};
 
-constexpr std::array<SignalPreset, 8> presets{{
+constexpr std::array<SignalPreset, 10> presets{{
     {109, "out = 1;", 100e-6, {}, real_output},
     {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6, {}, real_output},
     {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6, {}, real_output},
@@ -21,6 +21,8 @@ constexpr std::array<SignalPreset, 8> presets{{
     {114, "out = clamp(in, -1, 1);", 100e-6, real_input, real_output},
     {115, "out = a >= b;", 100e-6, real_pair, boolean_output},
     {116, "out = a && b;", 100e-6, boolean_pair, boolean_output},
+    {117, "static double integral = 0;\nintegral += in * dt;\nout = integral;", 100e-6, real_input, real_output},
+    {118, "static double previous = 0;\nout = previous;\nprevious = in;", 100e-6, real_input, real_output},
 }};
 } // namespace
 
