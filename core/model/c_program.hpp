@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 
 namespace pds {
@@ -26,10 +27,20 @@ struct CProgramOptions {
     std::set<std::string> writable_arrays;
 };
 
+class CProgram;
+
 struct CProgramState {
     std::map<std::size_t, double> static_values;
     std::map<std::size_t, bool> initialized;
-    bool operator==(const CProgramState &) const = default;
+    CProgramState() = default;
+    CProgramState(const CProgramState &other):static_values(other.static_values),initialized(other.initialized) {}
+    CProgramState &operator=(const CProgramState &other) {static_values=other.static_values;initialized=other.initialized;transient.reset();return *this;}
+    CProgramState(CProgramState &&) noexcept = default;
+    CProgramState &operator=(CProgramState &&) noexcept = default;
+    bool operator==(const CProgramState &other) const {return static_values==other.static_values&&initialized==other.initialized;}
+private:
+    std::shared_ptr<void> transient;
+    friend std::optional<double> execute_c_program_array(const CProgram &, double, CProgramState *, std::span<double>);
 };
 
 struct CProgramResult {
@@ -50,11 +61,15 @@ private:
     friend CProgram compile_c_program(const std::string &, const CProgramOptions &);
     friend CProgramResult execute_c_program(const CProgram &, double, CProgramState *,
                                              const std::map<std::string, double> &);
+    friend std::optional<double> execute_c_program_array(const CProgram &, double, CProgramState *,
+                                                         std::span<double>);
 };
 
 CProgram compile_c_program(const std::string &source, const CProgramOptions &options = {});
 CProgramResult execute_c_program(const CProgram &program, double time = 0,
                                  CProgramState *state = nullptr,
                                  const std::map<std::string, double> &inputs = {});
+std::optional<double> execute_c_program_array(const CProgram &program, double time,
+                                              CProgramState *state, std::span<double> values);
 
 } // namespace pds

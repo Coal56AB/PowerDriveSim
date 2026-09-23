@@ -2,6 +2,7 @@
 #include "core/model/model.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -521,7 +522,7 @@ private:
         if(name=="ramp"){if(!options_.allow_gate_functions)error("Function 'ramp' is not available here");count(4);if(a[1]<=a[0])error("Ramp end time must exceed start time");const auto k=std::clamp((time_-a[0])/(a[1]-a[0]),0.0,1.0);return a[2]+(a[3]-a[2])*k;}
         if(name=="pwm"||name=="square"||name=="phasepwm"){
             if(!options_.allow_gate_functions)error("Gate functions are not available here");count(3);if(a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Invalid PWM arguments");if(a[1]==0)return 0;if(a[1]==1)return 1;
-            const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];if(delay<0)delay+=period;if(name!="phasepwm"&&time_<delay)return 0;double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;const double boundary=a[1]*period;const double tolerance=64*std::numeric_limits<double>::epsilon()*std::max({period,std::abs(time_),std::abs(delay)});return phase<boundary-tolerance;}
+            const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];if(delay<0)delay+=period;if(name!="phasepwm"&&time_<delay)return 0;double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;const double boundary=a[1]*period;const double tolerance=64*std::numeric_limits<double>::epsilon()*std::max({period,std::abs(time_),std::abs(delay)});if(phase>period-tolerance)phase=0;return phase<boundary-tolerance;}
         const auto found=functions_.find(name);if(found==functions_.end())error("Unknown function '"+name+"'");if(found->second.parameters.size()!=a.size())error("Invalid argument count for '"+name+"'");
         if(++call_depth_>options_.call_depth_limit)error("C function call depth exceeded");scopes_.emplace_back();for(std::size_t i=0;i<a.size();++i)scopes_.back().emplace(found->second.parameters[i],Binding{a[i],false,{}});
         const auto result=execute(*found->second.body);scopes_.pop_back();--call_depth_;if(result.flow==Flow::break_loop||result.flow==Flow::continue_loop)error("break/continue escaped a function");return result.flow==Flow::returned?result.value:0;
@@ -543,12 +544,278 @@ private:
     const CProgramOptions &options_;const std::map<std::string,Function> &functions_;double time_;CProgramState *state_;
     std::vector<std::map<std::string,Binding>> scopes_;std::map<std::string,std::vector<Binding>> arrays_;std::size_t instructions_=0,call_depth_=0;
 };
+
+enum class ByteOp { push, load, load_array, assign, assign_array, unary, binary, call,
+                    jump, jump_false, jump_true, pop, return_value, return_zero, static_load };
+struct ByteInstruction { ByteOp op; std::size_t a=0,b=0; double number=0; std::string text; };
+struct ByteSlot { std::string name; bool result=false,initial=false; std::optional<std::size_t> persistent; };
+struct ByteProgram {
+    std::vector<ByteInstruction> code;
+    std::vector<ByteSlot> slots;
+    std::map<std::string,std::size_t> arrays;
+    std::map<std::string,std::size_t> array_sizes;
+};
+struct BytecodeUnsupported {};
+
+class ByteCompiler {
+public:
+    ByteCompiler(const CProgramOptions &options,const std::map<std::string,Function> &functions,
+                 const std::vector<std::unique_ptr<Statement>> &statements)
+        : options_(options),functions_(functions) {
+        scopes_.emplace_back();
+        add("true",true,{},true);add("false",true,{},true);
+        for(const auto *name:{"M_PI","PI","M_E","E"})add(name,true,{},true);
+        if(options.allow_time){add("t",false,{},true);add("stime",false,{},true);}
+        for(const auto &name:options.external_variables)add(name,true,{},true);
+        for(const auto &[name,size]:options.external_arrays) {
+            program_.arrays[name]=program_.arrays.size();program_.array_sizes[name]=size;
+        }
+        for(const auto &statement:statements)if(statement->kind==Statement::Kind::declaration)
+            for(const auto &declaration:statement->declarations)add(declaration.name,true,declaration.persistent?std::optional<std::size_t>(declaration.identity):std::nullopt);
+    }
+    ByteProgram compile(const std::vector<std::unique_ptr<Statement>> &statements) {
+        for(const auto &statement:statements)statement_code(*statement,true);
+        emit(ByteOp::return_zero);return std::move(program_);
+    }
+private:
+    struct Loop { std::vector<std::size_t> breaks,continues; std::size_t continue_target=0; };
+    std::size_t emit(ByteOp op,std::size_t a=0,std::size_t b=0,double number=0,std::string text={}) {
+        program_.code.push_back({op,a,b,number,std::move(text)});return program_.code.size()-1;
+    }
+    void patch(std::size_t instruction,std::size_t target){program_.code[instruction].a=target;}
+    std::size_t add(const std::string &name,bool result=false,std::optional<std::size_t> persistent={},bool initial=false) {
+        if(auto found=scopes_.back().find(name);found!=scopes_.back().end())return found->second;
+        const auto slot=program_.slots.size();program_.slots.push_back({name,result,initial,persistent});scopes_.back()[name]=slot;return slot;
+    }
+    std::size_t slot(const std::string &name) const {
+        for(auto scope=scopes_.rbegin();scope!=scopes_.rend();++scope)if(auto found=scope->find(name);found!=scope->end())return found->second;
+        fail(options_,"Unknown variable '"+name+"'");
+    }
+    void target(const Expression &e,const std::string &operation,bool postfix=false) {
+        if(e.kind==Expression::Kind::variable){emit(ByteOp::assign,slot(e.text),postfix?1:0,0,operation);return;}
+        if(e.kind!=Expression::Kind::subscript)fail(options_,"Assignment target must be a variable or array element");
+        expression(*e.children.front());emit(ByteOp::assign_array,program_.arrays.at(e.text),postfix?1:0,0,operation);
+    }
+    void expression(const Expression &e) {
+        if(const auto folded=constant(e)){emit(ByteOp::push,0,0,*folded);return;}
+        switch(e.kind) {
+        case Expression::Kind::number:emit(ByteOp::push,0,0,e.number);return;
+        case Expression::Kind::variable:emit(ByteOp::load,slot(e.text));return;
+        case Expression::Kind::subscript:expression(*e.children.front());emit(ByteOp::load_array,program_.arrays.at(e.text));return;
+        case Expression::Kind::unary:expression(*e.children[0]);emit(ByteOp::unary,0,0,0,e.text);return;
+        case Expression::Kind::prefix:
+            emit(ByteOp::push,0,0,e.text=="++"?1:-1);target(*e.children[0],"+=");return;
+        case Expression::Kind::postfix:
+            emit(ByteOp::push,0,0,e.text=="++"?1:-1);target(*e.children[0],"+=",true);return;
+        case Expression::Kind::assignment:
+            expression(*e.children[1]);target(*e.children[0],e.text);return;
+        case Expression::Kind::conditional:{
+            expression(*e.children[0]);const auto no=emit(ByteOp::jump_false);expression(*e.children[1]);
+            const auto end=emit(ByteOp::jump);patch(no,program_.code.size());expression(*e.children[2]);patch(end,program_.code.size());return;}
+        case Expression::Kind::call:
+            if(auto function=functions_.find(e.text);function!=functions_.end()&&!builtin(e.text)){inline_call(e.text,function->second,e);return;}
+            for(const auto &child:e.children)expression(*child);emit(ByteOp::call,e.children.size(),0,0,e.text);return;
+        case Expression::Kind::binary:
+            expression(*e.children[0]);
+            if(e.text=="&&"||e.text=="||") {
+                const auto shortcut=emit(e.text=="&&"?ByteOp::jump_false:ByteOp::jump_true);
+                expression(*e.children[1]);emit(ByteOp::unary,0,0,0,"cast_bool");
+                const auto end=emit(ByteOp::jump);patch(shortcut,program_.code.size());emit(ByteOp::push,0,0,e.text=="&&"?0:1);patch(end,program_.code.size());return;
+            }
+            expression(*e.children[1]);emit(ByteOp::binary,0,0,0,e.text);return;
+        }
+    }
+    void declaration(const Declaration &d,bool top_level) {
+        const auto variable=top_level?slot(d.name):add(d.name,false,d.persistent?std::optional<std::size_t>(d.identity):std::nullopt);
+        std::size_t loaded=std::numeric_limits<std::size_t>::max();
+        if(d.persistent)loaded=emit(ByteOp::static_load,variable,0,double(d.identity));
+        if(d.initializer) {
+            if(d.constant)if(const auto folded=constant(*d.initializer))constants_[variable]=*folded;
+            expression(*d.initializer);
+        } else emit(ByteOp::push,0,0,0);
+        emit(ByteOp::assign,variable,0,0,"=");emit(ByteOp::pop);
+        if(d.persistent)program_.code[loaded].b=program_.code.size();
+    }
+    void statement_code(const Statement &s,bool top_level=false) {
+        switch(s.kind) {
+        case Statement::Kind::empty:return;
+        case Statement::Kind::expression:if(s.first){expression(*s.first);emit(ByteOp::pop);}return;
+        case Statement::Kind::declaration:for(const auto &d:s.declarations)declaration(d,top_level);return;
+        case Statement::Kind::block:
+            scopes_.emplace_back();for(const auto &child:s.statements)statement_code(*child);scopes_.pop_back();return;
+        case Statement::Kind::if_statement:{
+            expression(*s.first);const auto alternative=emit(ByteOp::jump_false);statement_code(*s.body);
+            if(s.alternative){const auto end=emit(ByteOp::jump);patch(alternative,program_.code.size());statement_code(*s.alternative);patch(end,program_.code.size());}
+            else patch(alternative,program_.code.size());return;}
+        case Statement::Kind::while_statement:{
+            const auto condition=program_.code.size();expression(*s.first);const auto end=emit(ByteOp::jump_false);
+            loops_.push_back({{}, {}, condition});statement_code(*s.body);emit(ByteOp::jump,condition);const auto after=program_.code.size();patch(end,after);
+            for(auto p:loops_.back().breaks)patch(p,after);for(auto p:loops_.back().continues)patch(p,condition);loops_.pop_back();return;}
+        case Statement::Kind::do_statement:{
+            const auto body=program_.code.size();loops_.push_back({});statement_code(*s.body);const auto condition=program_.code.size();
+            expression(*s.first);emit(ByteOp::jump_true,body);const auto after=program_.code.size();
+            for(auto p:loops_.back().breaks)patch(p,after);for(auto p:loops_.back().continues)patch(p,condition);loops_.pop_back();return;}
+        case Statement::Kind::for_statement:{
+            scopes_.emplace_back();statement_code(*s.statements.front());const auto condition=program_.code.size();
+            std::size_t end=std::numeric_limits<std::size_t>::max();if(s.first){expression(*s.first);end=emit(ByteOp::jump_false);}
+            loops_.push_back({});statement_code(*s.body);const auto update=program_.code.size();if(s.second){expression(*s.second);emit(ByteOp::pop);}emit(ByteOp::jump,condition);
+            const auto after=program_.code.size();if(end!=std::numeric_limits<std::size_t>::max())patch(end,after);
+            for(auto p:loops_.back().breaks)patch(p,after);for(auto p:loops_.back().continues)patch(p,update);loops_.pop_back();scopes_.pop_back();return;}
+        case Statement::Kind::return_statement:
+            if(!function_returns_.empty()) {if(s.first)expression(*s.first);else emit(ByteOp::push,0,0,0);function_returns_.back().push_back(emit(ByteOp::jump));}
+            else if(s.first){expression(*s.first);emit(ByteOp::return_value);}else emit(ByteOp::return_zero);return;
+        case Statement::Kind::break_statement:loops_.back().breaks.push_back(emit(ByteOp::jump));return;
+        case Statement::Kind::continue_statement:loops_.back().continues.push_back(emit(ByteOp::jump));return;
+        }
+    }
+    bool builtin(const std::string &name) const {
+        static const std::set<std::string> names={"abs","fabs","sqrt","sin","cos","tan","asin","acos","atan","atan2","exp","log","log10","floor","ceil","round","pow","fmod","min","fmin","max","fmax","clamp","ramp","pwm","square","phasepwm"};
+        return names.contains(name);
+    }
+    std::optional<double> constant(const Expression &e) const {
+        if(e.kind==Expression::Kind::number)return e.number;
+        if(e.kind==Expression::Kind::variable){const auto variable=slot(e.text);if(auto found=constants_.find(variable);found!=constants_.end())return found->second;return {};}
+        if(e.kind==Expression::Kind::conditional){const auto condition=constant(*e.children[0]);if(!condition)return {};return constant(*e.children[*condition!=0?1:2]);}
+        if(e.kind==Expression::Kind::unary){const auto value=constant(*e.children[0]);if(!value)return {};if(e.text=="+")return *value;if(e.text=="-")return -*value;if(e.text=="!")return *value==0;if(e.text=="cast_bool")return *value!=0;if(e.text=="cast_real")return *value;if(e.text=="cast_integer")return double(static_cast<long long>(*value));return {};}
+        if(e.kind!=Expression::Kind::binary)return {};
+        const auto left=constant(*e.children[0]);if(!left)return {};
+        if(e.text=="&&"&&*left==0)return 0;if(e.text=="||"&&*left!=0)return 1;
+        const auto right=constant(*e.children[1]);if(!right)return {};
+        if(e.text=="+")return *left+*right;if(e.text=="-")return *left-*right;if(e.text=="*")return *left**right;
+        if(e.text=="/"){if(*right==0)return {};return *left / *right;}if(e.text=="%"){if(*right==0)return {};return std::fmod(*left,*right);}
+        if(e.text=="==")return *left==*right;if(e.text=="!=")return *left!=*right;if(e.text=="<")return *left<*right;if(e.text==">")return *left>*right;if(e.text=="<=")return *left<=*right;if(e.text==">=")return *left>=*right;
+        return {};
+    }
+    void inline_call(const std::string &name,const Function &function,const Expression &call) {
+        if(std::find(call_stack_.begin(),call_stack_.end(),name)!=call_stack_.end())throw BytecodeUnsupported{};
+        for(const auto &argument:call.children)expression(*argument);
+        scopes_.emplace_back();
+        std::vector<std::size_t> parameters;
+        for(const auto &parameter:function.parameters)parameters.push_back(add(parameter));
+        for(std::size_t index=parameters.size();index>0;--index){emit(ByteOp::assign,parameters[index-1],0,0,"=");emit(ByteOp::pop);}
+        call_stack_.push_back(name);function_returns_.emplace_back();const auto loops=loops_.size();
+        statement_code(*function.body);emit(ByteOp::push,0,0,0);const auto end=program_.code.size();
+        for(auto instruction:function_returns_.back())patch(instruction,end);
+        function_returns_.pop_back();call_stack_.pop_back();loops_.resize(loops);scopes_.pop_back();
+    }
+    const CProgramOptions &options_;const std::map<std::string,Function> &functions_;ByteProgram program_;
+    std::vector<std::map<std::string,std::size_t>> scopes_;std::vector<Loop> loops_;std::vector<std::string> call_stack_;
+    std::vector<std::vector<std::size_t>> function_returns_;std::map<std::size_t,double> constants_;
+};
+
+struct ByteWorkspace {std::vector<double> values;std::vector<bool> initialized;std::vector<std::vector<double>> arrays;std::vector<double> stack;};
+
+class ByteRuntime {
+public:
+    ByteRuntime(const CProgramOptions &options,const ByteProgram &program,double time,CProgramState *state,
+                const std::map<std::string,double> &inputs)
+        : options_(options),program_(program),time_(time),state_(state),workspace_(owned_),values_(workspace_.values),initialized_(workspace_.initialized),arrays_(workspace_.arrays),stack_(workspace_.stack) {
+        prepare();
+        for(const auto &[name,value]:inputs)if(!options.external_variables.contains(name)&&!array_input(name))error("Undeclared external variable '"+name+"'");
+        for(std::size_t i=0;i<program.slots.size();++i) {
+            initialized_[i]=program.slots[i].initial;
+            const auto &name=program.slots[i].name;
+            if(name=="true")values_[i]=1;else if(name=="M_PI"||name=="PI")values_[i]=3.1415926535897932384626433832795;
+            else if(name=="M_E"||name=="E")values_[i]=2.7182818284590452353602874713527;
+            else if(name=="t"||name=="stime")values_[i]=time;
+            else if(auto found=inputs.find(name);found!=inputs.end())values_[i]=found->second;
+        }
+        for(const auto &[name,index]:program.arrays) {
+            auto &array=arrays_[index];
+            for(std::size_t item=0;item<array.size();++item)if(auto found=inputs.find(name+"["+std::to_string(item)+"]");found!=inputs.end())array[item]=found->second;
+        }
+    }
+    ByteRuntime(const CProgramOptions &options,const ByteProgram &program,double time,CProgramState *state,
+                ByteWorkspace &workspace,std::span<const double> values)
+        : options_(options),program_(program),time_(time),state_(state),workspace_(workspace),values_(workspace_.values),initialized_(workspace_.initialized),arrays_(workspace_.arrays),stack_(workspace_.stack) {
+        prepare();
+        if(program.arrays.size()!=1)error("Gate bytecode requires one output array");
+        const auto array=program.arrays.begin()->second;if(arrays_[array].size()!=values.size())error("Gate output array size mismatch");
+        std::copy(values.begin(),values.end(),arrays_[array].begin());
+    }
+    CProgramResult run() {
+        const auto returned=run_code();
+        CProgramResult result;result.return_value=returned;
+        for(std::size_t i=0;i<program_.slots.size();++i)if(initialized_[i]&&program_.slots[i].result&&program_.slots[i].name!="t"&&program_.slots[i].name!="stime"&&program_.slots[i].name!="true"&&program_.slots[i].name!="false")result.variables[program_.slots[i].name]=values_[i];
+        for(const auto &[name,index]:program_.arrays)for(std::size_t item=0;item<arrays_[index].size();++item)result.variables[name+"["+std::to_string(item)+"]"]=arrays_[index][item];
+        return result;
+    }
+    std::optional<double> run_array(std::span<double> values) {
+        const auto returned=run_code();const auto array=program_.arrays.begin()->second;
+        std::copy(arrays_[array].begin(),arrays_[array].end(),values.begin());return returned;
+    }
+private:
+    void prepare() {
+        values_.assign(program_.slots.size(),0);initialized_.assign(program_.slots.size(),false);
+        arrays_.resize(program_.arrays.size());for(const auto &[name,index]:program_.arrays)arrays_[index].assign(program_.array_sizes.at(name),0);
+        stack_.clear();if(stack_.capacity()<64)stack_.reserve(64);instructions_=0;
+    }
+    std::optional<double> run_code() {
+        std::size_t pc=0;std::optional<double> returned;
+        while(pc<program_.code.size()) {
+            if(++instructions_>options_.instruction_budget)error("C program instruction budget exceeded");
+            const auto &instruction=program_.code[pc++];
+            switch(instruction.op) {
+            case ByteOp::push:stack_.push_back(instruction.number);break;
+            case ByteOp::load:if(!initialized_.at(instruction.a))error("Unknown variable '"+program_.slots[instruction.a].name+"'");stack_.push_back(values_.at(instruction.a));break;
+            case ByteOp::load_array:{const auto index=array_index(pop(),instruction.a);stack_.push_back(arrays_[instruction.a][index]);break;}
+            case ByteOp::assign:{const auto rhs=pop();const auto old=values_.at(instruction.a);const auto next=assigned(old,rhs,instruction.text);store(instruction.a,next);stack_.push_back(instruction.b?old:next);break;}
+            case ByteOp::assign_array:{const auto index=array_index(pop(),instruction.a);const auto rhs=pop();const auto old=arrays_[instruction.a][index];const auto next=assigned(old,rhs,instruction.text);arrays_[instruction.a][index]=next;stack_.push_back(instruction.b?old:next);break;}
+            case ByteOp::unary:{const auto value=pop();stack_.push_back(unary(instruction.text,value));break;}
+            case ByteOp::binary:{const auto right=pop(),left=pop();stack_.push_back(binary(instruction.text,left,right));break;}
+            case ByteOp::call:{std::array<double,4> args{};if(instruction.a>args.size())error("C function argument limit exceeded");for(std::size_t i=instruction.a;i>0;--i)args[i-1]=pop();stack_.push_back(call(instruction.text,{args.data(),instruction.a}));break;}
+            case ByteOp::jump:pc=instruction.a;break;
+            case ByteOp::jump_false:if(pop()==0)pc=instruction.a;break;
+            case ByteOp::jump_true:if(pop()!=0)pc=instruction.a;break;
+            case ByteOp::pop:(void)pop();break;
+            case ByteOp::return_value:returned=pop();pc=program_.code.size();break;
+            case ByteOp::return_zero:pc=program_.code.size();break;
+            case ByteOp::static_load:{const auto identity=std::size_t(instruction.number);if(state_&&state_->initialized[identity]){values_[instruction.a]=state_->static_values[identity];initialized_[instruction.a]=true;pc=instruction.b;}break;}
+            }
+        }
+        if(options_.require_return&&!returned)error("C program must return a value");
+        if(returned&&!std::isfinite(*returned))error("C program return value must be finite");
+        return returned;
+    }
+    [[noreturn]] void error(const std::string &message) const {fail(options_,message);}
+    bool array_input(const std::string &key) const {for(const auto &[name,size]:program_.array_sizes)for(std::size_t i=0;i<size;++i)if(key==name+"["+std::to_string(i)+"]")return true;return false;}
+    double pop(){if(stack_.empty())error("C bytecode stack underflow");const auto value=stack_.back();stack_.pop_back();return value;}
+    long long integer(double value) const {if(!std::isfinite(value)||value<double(std::numeric_limits<long long>::min())||value>=double(std::numeric_limits<long long>::max()))error("Integer conversion is out of range");return static_cast<long long>(value);}
+    unsigned shift(double value) const {const auto count=integer(value);if(count<0||count>=64)error("Shift count must be in range 0..63");return unsigned(count);}
+    std::size_t array_index(double raw,std::size_t array) const {const auto index=integer(raw);if(double(index)!=raw||index<0||std::size_t(index)>=arrays_[array].size())error("Array index is out of range");return std::size_t(index);}
+    void store(std::size_t slot,double value){if(!std::isfinite(value))error("C program result must be finite");values_[slot]=value;initialized_[slot]=true;if(program_.slots[slot].persistent&&state_){const auto identity=*program_.slots[slot].persistent;state_->initialized[identity]=true;state_->static_values[identity]=value;}}
+    double assigned(double old,double value,const std::string &op) const {
+        double next=value;if(op=="+=")next=old+value;else if(op=="-=")next=old-value;else if(op=="*=")next=old*value;
+        else if(op=="/="){if(value==0)error("Division by zero");next=old/value;}else if(op=="%="){if(value==0)error("Division by zero");next=std::fmod(old,value);}
+        else if(op=="&=")next=double(integer(old)&integer(value));else if(op=="|=")next=double(integer(old)|integer(value));else if(op=="^=")next=double(integer(old)^integer(value));
+        else if(op=="<<=")next=double(static_cast<unsigned long long>(integer(old))<<shift(value));else if(op==">>=")next=double(static_cast<unsigned long long>(integer(old))>>shift(value));
+        if(!std::isfinite(next))error("C program result must be finite");return next;
+    }
+    double unary(const std::string &op,double value) const {if(op=="+")return value;if(op=="-")return -value;if(op=="!")return value==0;if(op=="~")return double(~integer(value));if(op=="cast_bool")return value!=0;if(op=="cast_integer")return double(integer(value));if(op=="cast_real")return value;error("Unsupported C unary operation");}
+    double binary(const std::string &op,double left,double right) const {
+        if(op=="+")return left+right;if(op=="-")return left-right;if(op=="*")return left*right;if(op=="/"){if(right==0)error("Division by zero");return left/right;}if(op=="%"){if(right==0)error("Division by zero");return std::fmod(left,right);}
+        if(op=="==")return left==right;if(op=="!=")return left!=right;if(op=="<")return left<right;if(op==">")return left>right;if(op=="<=")return left<=right;if(op==">=")return left>=right;
+        if(op=="&")return double(integer(left)&integer(right));if(op=="|")return double(integer(left)|integer(right));if(op=="^")return double(integer(left)^integer(right));if(op=="<<")return double(static_cast<unsigned long long>(integer(left))<<shift(right));if(op==">>")return double(static_cast<unsigned long long>(integer(left))>>shift(right));error("Unsupported C binary operation");
+    }
+    double call(const std::string &name,std::span<const double> a) const {
+        auto count=[&](std::size_t n){if(a.size()!=n)error("Invalid argument count for '"+name+"'");};
+        if(name=="abs"||name=="fabs"){count(1);return std::abs(a[0]);}if(name=="sqrt"){count(1);if(a[0]<0)error("sqrt domain error");return std::sqrt(a[0]);}
+        if(name=="sin"){count(1);return std::sin(a[0]);}if(name=="cos"){count(1);return std::cos(a[0]);}if(name=="tan"){count(1);return std::tan(a[0]);}if(name=="asin"){count(1);return std::asin(a[0]);}if(name=="acos"){count(1);return std::acos(a[0]);}if(name=="atan"){count(1);return std::atan(a[0]);}if(name=="atan2"){count(2);return std::atan2(a[0],a[1]);}
+        if(name=="exp"){count(1);return std::exp(a[0]);}if(name=="log"){count(1);return std::log(a[0]);}if(name=="log10"){count(1);return std::log10(a[0]);}if(name=="floor"){count(1);return std::floor(a[0]);}if(name=="ceil"){count(1);return std::ceil(a[0]);}if(name=="round"){count(1);return std::round(a[0]);}
+        if(name=="pow"){count(2);return std::pow(a[0],a[1]);}if(name=="fmod"){count(2);if(a[1]==0)error("Division by zero");return std::fmod(a[0],a[1]);}if(name=="min"||name=="fmin"){count(2);return std::min(a[0],a[1]);}if(name=="max"||name=="fmax"){count(2);return std::max(a[0],a[1]);}if(name=="clamp"){count(3);if(a[1]>a[2])error("clamp minimum exceeds maximum");return std::clamp(a[0],a[1],a[2]);}
+        if(name=="ramp"){count(4);if(a[1]<=a[0])error("Ramp end time must exceed start time");const auto k=std::clamp((time_-a[0])/(a[1]-a[0]),0.0,1.0);return a[2]+(a[3]-a[2])*k;}
+        if(name=="pwm"||name=="square"||name=="phasepwm"){count(3);if(a[0]<=0||a[1]<0||a[1]>1||(name!="phasepwm"&&a[2]<0))error("Invalid PWM arguments");if(a[1]==0)return 0;if(a[1]==1)return 1;const auto period=1.0/a[0];double delay=name=="phasepwm"?std::fmod(a[2],period):a[2];if(delay<0)delay+=period;if(name!="phasepwm"&&time_<delay)return 0;double phase=std::fmod(time_-delay,period);if(phase<0)phase+=period;const double boundary=a[1]*period;const double tolerance=64*std::numeric_limits<double>::epsilon()*std::max({period,std::abs(time_),std::abs(delay)});if(phase>period-tolerance)phase=0;return phase<boundary-tolerance;}
+        error("Unknown function '"+name+"'");
+    }
+    const CProgramOptions &options_;const ByteProgram &program_;double time_;CProgramState *state_;ByteWorkspace owned_;ByteWorkspace &workspace_;std::vector<double> &values_;std::vector<bool> &initialized_;std::vector<std::vector<double>> &arrays_;std::vector<double> &stack_;std::size_t instructions_=0;
+};
 } // namespace
 
 struct CProgram::Implementation {
     CProgramOptions options;
     std::vector<std::unique_ptr<Statement>> statements;
     std::map<std::string, Function> functions;
+    std::optional<ByteProgram> bytecode;
 };
 
 CProgram compile_c_program(const std::string &source,const CProgramOptions &options) {
@@ -556,6 +823,12 @@ CProgram compile_c_program(const std::string &source,const CProgramOptions &opti
         auto implementation=std::make_shared<CProgram::Implementation>();implementation->options=options;
         SyntaxParser parser(lex(source,options),options);parser.parse(implementation->statements,implementation->functions);
         SemanticValidator(options,implementation->functions).validate(implementation->statements);
+        try {
+            implementation->bytecode=ByteCompiler(options,implementation->functions,implementation->statements).compile(implementation->statements);
+        } catch(const BytecodeUnsupported &) {
+            // Recursive user functions retain the bounded tree runtime. All
+            // non-recursive programs use the compact bytecode path.
+        }
         return CProgram(std::move(implementation));
     } catch(const Diagnostic &) { throw; }
     catch(const std::exception &error) { fail(options,std::string("C parser failure: ")+error.what()); }
@@ -565,8 +838,35 @@ CProgram compile_c_program(const std::string &source,const CProgramOptions &opti
 CProgramResult execute_c_program(const CProgram &program,double time,CProgramState *state,const std::map<std::string,double> &inputs) {
     if(!program.implementation_)throw Diagnostic("invalid_c_program","","C program is not compiled");
     const auto &implementation=*program.implementation_;
-    try { Runtime runtime(implementation.options,implementation.functions,time,state,inputs);return runtime.run(implementation.statements); }
+    try {
+        if(implementation.bytecode)return ByteRuntime(implementation.options,*implementation.bytecode,time,state,inputs).run();
+        Runtime runtime(implementation.options,implementation.functions,time,state,inputs);return runtime.run(implementation.statements);
+    }
     catch(const Diagnostic &) { throw; }
+    catch(const std::exception &error) { fail(implementation.options,std::string("C runtime failure: ")+error.what()); }
+    catch(...) { fail(implementation.options,"Unknown C runtime failure"); }
+}
+
+std::optional<double> execute_c_program_array(const CProgram &program,double time,CProgramState *state,
+                                              std::span<double> values) {
+    if(!program.implementation_)throw Diagnostic("invalid_c_program","","C program is not compiled");
+    const auto &implementation=*program.implementation_;
+    try {
+        if(implementation.bytecode) {
+            ByteWorkspace local;
+            ByteWorkspace *workspace=&local;
+            if(state) {
+                if(!state->transient)state->transient=std::make_shared<ByteWorkspace>();
+                workspace=static_cast<ByteWorkspace *>(state->transient.get());
+            }
+            return ByteRuntime(implementation.options,*implementation.bytecode,time,state,*workspace,values).run_array(values);
+        }
+        std::map<std::string,double> inputs;
+        for(std::size_t index=0;index<values.size();++index)inputs["IN["+std::to_string(index)+"]"]=values[index];
+        const auto result=execute_c_program(program,time,state,inputs);
+        for(std::size_t index=0;index<values.size();++index)values[index]=result.variables.at("IN["+std::to_string(index)+"]");
+        return result.return_value;
+    } catch(const Diagnostic &) { throw; }
     catch(const std::exception &error) { fail(implementation.options,std::string("C runtime failure: ")+error.what()); }
     catch(...) { fail(implementation.options,"Unknown C runtime failure"); }
 }
