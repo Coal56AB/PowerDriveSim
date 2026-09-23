@@ -472,6 +472,38 @@ int main() try {
         transitive_binding.instances.back().parameters = {{id(72), 6000}};
         error("invalid_public_parameter_value", [&] { validate_hierarchy(transitive_binding); });
     }
+    {
+        Project masked;
+        masked.id = new_uuid();
+        masked.wired = true;
+        Definition winding;
+        winding.id = new_uuid();
+        winding.name = "Winding";
+        winding.wired = true;
+        Component inductor;
+        inductor.id = new_uuid();
+        inductor.name = "L";
+        inductor.kind = Kind::inductor;
+        inductor.value = .01;
+        inductor.parallel_resistance_enabled = true;
+        inductor.parallel_resistance = 1000;
+        winding.components.push_back(inductor);
+        const auto loss_parameter = new_uuid();
+        winding.parameters.push_back({loss_parameter, "Winding loss", "Ohm", inductor.id,
+                                      "parallel_resistance", 2000});
+        masked.definitions.push_back(winding);
+        masked.instances.push_back({new_uuid(), "Coil", winding.id, 0, 0});
+        require(flatten(masked).project.components.front().parallel_resistance == 2000,
+                "Public inductor loss resistance applies its default");
+        masked.instances.front().parameters.push_back({loss_parameter, 4000});
+        require(flatten(masked).project.components.front().parallel_resistance == 4000,
+                "Public inductor loss resistance accepts an instance override");
+        std::ostringstream output;
+        write_project(masked, output);
+        std::istringstream input(output.str());
+        require(flatten(read_project(input)).project.components.front().parallel_resistance == 4000,
+                "Public inductor loss resistance survives project round-trip");
+    }
     bad = p;
     bad.definitions[0].parameters[0].has_minimum = false;
     bad.definitions[0].parameters[0].has_maximum = false;

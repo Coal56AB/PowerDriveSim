@@ -110,6 +110,10 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
                 c.initial = value;
                 return;
             }
+            if (c.kind == Kind::inductor && p.field == "parallel_resistance") {
+                c.parallel_resistance = value;
+                return;
+            }
             if ((c.kind == Kind::voltage || c.kind == Kind::current) &&
                 p.field == "source_phase_deg") {
                 c.source.phase = value * std::numbers::pi / 180.0;
