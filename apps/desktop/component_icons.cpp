@@ -392,8 +392,11 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         if (spec.contains("palette"))
             ordered.push_back(spec);
     std::sort(ordered.begin(), ordered.end(), [](const auto &a, const auto &b) {
-        return a.value("palette").toObject().value("id").toInt() <
-               b.value("palette").toObject().value("id").toInt();
+        const auto order = [](const QJsonObject &spec) {
+            const int id = spec.value("palette").toObject().value("id").toInt();
+            return id == 108 ? 101.5 : double(id); // Put the general code block before Gate.
+        };
+        return order(a) < order(b);
     });
     for (const auto &spec : ordered) {
         const auto entry = spec.value("palette").toObject();

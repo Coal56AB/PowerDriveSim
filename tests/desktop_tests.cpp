@@ -649,6 +649,12 @@ class DesktopTests : public QObject {
         EditorWindow window("en", temp.path());
         window.set_project(project);
         window.show();
+        QGraphicsItem *sink_item = nullptr;
+        for (auto *item : window.canvas()->scene()->items())
+            if (item->data(0).toString().toStdString() == sink.id && item->data(1).toString() == "atom")
+                sink_item = item;
+        QVERIFY(sink_item);
+        QCOMPARE(sink_item->shape().boundingRect().size(), QSizeF(140, 56));
         window.select_object(sink.id);
         const auto screenshot = qEnvironmentVariable("PDS_CODE_BLOCK_SCREENSHOT");
         if (!screenshot.isEmpty()) {
@@ -723,6 +729,7 @@ class DesktopTests : public QObject {
         for (QTreeWidgetItemIterator it(library); *it; ++it)
             if ((*it)->data(0, Qt::UserRole).toInt() == 108) entry = *it;
         QVERIFY(entry);
+        QCOMPARE(entry->parent()->child(0), entry);
         for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
         library->scrollToItem(entry);
         QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
@@ -735,7 +742,13 @@ class DesktopTests : public QObject {
         QCOMPARE(window.project().code_blocks.size(), size_t(1));
         const auto block = window.project().code_blocks.front().id;
         const auto output = window.project().code_blocks.front().outputs.front().id;
-        QCOMPARE(window.port_position({block, output}), QPointF(220, 100));
+        QCOMPARE(window.port_position({block, output}), QPointF(160, 100));
+        QGraphicsItem *block_item = nullptr;
+        for (auto *item : window.canvas()->scene()->items())
+            if (item->data(0).toString().toStdString() == block && item->data(1).toString() == "atom")
+                block_item = item;
+        QVERIFY(block_item);
+        QCOMPARE(block_item->shape().boundingRect().size(), QSizeF(76, 44));
         const auto plot = window.add_plot({420, 100});
         QVERIFY(window.connect_ports({block, output}, {plot, "in1"}));
         const auto voltage = window.add_component(Kind::voltage, {40, 300});
@@ -777,6 +790,16 @@ class DesktopTests : public QObject {
         QCOMPARE(window.result().samples.back().values[index], 0.0);
         window.open_plot(plot);
         QVERIFY(window.findChild<QDialog *>("plot_" + QString::fromStdString(plot)));
+        configured.code_blocks.front().outputs.front().type = SignalScalarType::boolean;
+        window.set_project(configured);
+        bool bool_port_found = false;
+        for (auto *item : window.canvas()->scene()->items())
+            if (item->data(0).toString().toStdString() == block &&
+                item->data(2).toString() == QString::fromStdString(output)) {
+                QCOMPARE(item->data(11).toString(), QString("#17866d"));
+                bool_port_found = true;
+            }
+        QVERIFY(bool_port_found);
     }
     void signal_presets_are_editable_code_blocks() {
         QTemporaryDir temp;

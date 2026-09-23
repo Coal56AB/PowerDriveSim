@@ -123,6 +123,12 @@ class PortDot final : public QGraphicsItem {
         setCursor(Qt::CrossCursor);
         setZValue(5);
     }
+    void setColor(QColor color) {
+        if (color_ != color) {
+            color_ = color;
+            update();
+        }
+    }
     QRectF boundingRect() const override { return {-7, -7, 14, 14}; }
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *) override {
         if (parentItem() && parentItem()->data(4).isValid())
@@ -339,9 +345,11 @@ class Atom final : public QGraphicsItem {
     double port_spacing() const {
         return input_count > 18 ? 14.0 : input_count > 12 ? 18.0 : input_count > 8 ? 22.0 : 28.0;
     }
+    double code_body_half_width() const { return input_count <= 1 ? 38.0 : 70.0; }
+    double code_port_distance() const { return input_count <= 1 ? 60.0 : 100.0; }
     double natural_body_half_height() const {
         if (type == 6)
-            return std::max(48.0, (std::max(1u, input_count) - 1) * 14.0 + 28.0);
+            return std::max(22.0, (std::max(1u, input_count) - 1) * 14.0 + 14.0);
         if (type == 4) {
             double extent = (std::max(1u, input_count) - 1) * port_spacing() / 2.0;
             for (const auto &[port_name, point] : public_ports) {
@@ -365,7 +373,8 @@ class Atom final : public QGraphicsItem {
     QRectF boundingRect() const override {
         if (type == 6) {
             const double h = natural_body_half_height();
-            return {-132, -h - 8, 264, 2 * h + 40};
+            const double w = code_body_half_width();
+            return {-w - 40, -h - 8, 2 * w + 80, 2 * h + 40};
         }
         if (type == 4) {
             double h = body_half_height();
@@ -387,7 +396,8 @@ class Atom final : public QGraphicsItem {
         QPainterPath path;
         if (type == 6) {
             const double h = natural_body_half_height();
-            path.addRoundedRect(QRectF(-110, -h, 220, 2 * h), 6, 6);
+            const double w = code_body_half_width();
+            path.addRoundedRect(QRectF(-w, -h, 2 * w, 2 * h), 6, 6);
             return path;
         }
         if (type == 4) {
@@ -654,12 +664,13 @@ class Atom final : public QGraphicsItem {
         p->setBrush(theme_colors().surface);
         if (type == 6) {
             const double h = natural_body_half_height();
+            const double w = code_body_half_width();
             p->setBrush(theme_colors().canvas);
-            p->drawRoundedRect(QRectF(-110, -h, 220, 2 * h), 6, 6);
+            p->drawRoundedRect(QRectF(-w, -h, 2 * w, 2 * h), 6, 6);
             auto title_font = p->font();
             title_font.setBold(true);
             p->setFont(title_font);
-            label(p, QRectF(-70, -18, 140, 36), Qt::AlignCenter, QString("{C}"));
+            label(p, QRectF(-18, -15, 36, 30), Qt::AlignCenter, QString("{C}"));
             title_font.setBold(false);
             title_font.setPointSize(8);
             p->setFont(title_font);
@@ -668,12 +679,15 @@ class Atom final : public QGraphicsItem {
                     continue;
                 const QPointF point = child->pos();
                 const bool left = point.x() < 0;
-                p->drawLine(point, QPointF(left ? -110 : 110, point.y()));
-                const auto caption = QFontMetricsF(title_font).elidedText(
-                    child->data(8).toString(), Qt::ElideRight, 100);
-                label(p, QRectF(left ? -104 : 4, point.y() - 10, 100, 20),
-                      left ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
-                      caption);
+                p->drawLine(point, QPointF(left ? -w : w, std::clamp(point.y(), -h, h)));
+                if (input_count > 1) {
+                    const double caption_width = w - 22.0;
+                    const auto caption = QFontMetricsF(title_font).elidedText(
+                        child->data(8).toString(), Qt::ElideRight, caption_width);
+                    label(p, QRectF(left ? -w + 4 : 18, point.y() - 9, caption_width, 18),
+                          left ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter,
+                          caption);
+                }
             }
             return;
         }
@@ -1167,7 +1181,8 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
                 const double y = (double(index) - double(ports.size() - 1) / 2.0) * 28.0;
                 const QString scalar = port.type == SignalScalarType::boolean ? QString("bool") : QString("double");
                 const QString unit = port.unit.empty() ? QString() : QString(" [") + q(port.unit) + "]";
-                a->port(q(port.id), {input ? -120.0 : 120.0, y},
+                const double x = a->code_port_distance();
+                a->port(q(port.id), {input ? -x : x, y},
                         port.type == SignalScalarType::boolean ? QColor("#17866d") : QColor("#8c67c8"),
                         q(port.name) + ": " + scalar + unit);
             }
@@ -2533,7 +2548,8 @@ void EditorWindow::rebuild_scene() {
             for (size_t index = 0; index < group.size(); ++index) {
                 const auto &port = group[index];
                 const double y = (double(index) - double(group.size() - 1) / 2.0) * 28.0;
-                QPointF point{input ? -120.0 : 120.0, y};
+                const double x = a->code_port_distance();
+                QPointF point{input ? -x : x, y};
                 if (auto stored = std::find_if(block.pin_positions.begin(), block.pin_positions.end(),
                                                [&](const PinPosition &pin) { return pin.port == port.id; });
                     stored != block.pin_positions.end())
@@ -2573,6 +2589,13 @@ void EditorWindow::rebuild_scene() {
                 child->setPos(entry.second);
                 child->setData(8, entry.first);
                 child->setToolTip(entry.first);
+                const auto &port = index <= block.inputs.size()
+                    ? block.inputs[index - 1]
+                    : block.outputs[index - block.inputs.size() - 1];
+                const QColor color = port.type == SignalScalarType::boolean
+                    ? QColor("#17866d") : QColor("#8c67c8");
+                static_cast<PortDot *>(child)->setColor(color);
+                child->setData(11, color.name(QColor::HexRgb));
             }
         }
     }
@@ -2690,7 +2713,7 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
                          : atom->type == 6 ? atom->natural_body_half_height()
                                            : std::max(40.0, atom->input_count * 20.0);
         const double vertical_edge_distance = atom->type == 6
-            ? std::abs(std::abs(local.x()) - 120.0)
+            ? std::abs(std::abs(local.x()) - atom->code_port_distance())
             : atom->type == 4 ? std::abs(std::abs(local.x()) - 100.0)
             : std::min(std::abs(local.x() + 60.0), std::abs(local.x() - 60.0));
         const double horizontal_edge_distance = atom->type == 4 || atom->type == 6
@@ -2762,7 +2785,8 @@ void EditorWindow::update_wires() {
             atom->mapRectToScene(atom->type == 4   ? QRectF(-90, -atom->body_half_height(), 180,
                                                             2 * atom->body_half_height())
                                  : atom->type == 3 ? QRectF(-46, -h, 104, 2 * h)
-                                 : atom->type == 6 ? QRectF(-110, -h, 220, 2 * h)
+                                 : atom->type == 6 ? QRectF(-atom->code_body_half_width(), -h,
+                                                            2 * atom->code_body_half_width(), 2 * h)
                                                    : QRectF(-38, -28, 76, 56));
         obstacles.push_back(box);
         next_boxes[id] = box;
