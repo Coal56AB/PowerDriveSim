@@ -91,6 +91,52 @@ int main() {
         chain_emissions = run_signal_tasks(chain, chain_state, .1, current);
         near(output(consumer.id), 20, 0, "Consumer reads the last committed producer frame");
 
+        SignalTaskIR slow;
+        slow.id = derived_uuid("signal-multirate-slow");
+        slow.period = .2;
+        slow.phase = .05;
+        slow.code = "out = t;";
+        slow.outputs = {port("signal-multirate-slow-out", "out", "s")};
+        SignalTaskIR fast;
+        fast.id = derived_uuid("signal-multirate-fast");
+        fast.period = .1;
+        fast.code = "seen = input;";
+        fast.inputs = {{port("signal-multirate-fast-in", "input", "s",
+                             SignalScalarType::real, -1), {slow.id, slow.outputs[0].id}}};
+        fast.outputs = {port("signal-multirate-fast-out", "seen", "s")};
+        SignalIR multirate{{fast, slow}};
+        auto multirate_state = initialize_signal_runtime(multirate);
+        const auto multirate_emissions = run_signal_tasks(multirate, multirate_state, .3, {});
+        check(multirate_emissions.size() == 6, "Multirate tasks execute on their own phase and period");
+        std::vector<std::pair<double, double>> fast_samples;
+        for (const auto &emission : multirate_emissions)
+            if (emission.endpoint.object == fast.id)
+                fast_samples.emplace_back(emission.value.time, emission.value.value);
+        check(fast_samples.size() == 4, "Fast task executes four times through 0.3 s");
+        for (std::size_t index = 0; index < fast_samples.size(); ++index)
+            near(fast_samples[index].first, .1 * static_cast<double>(index), 1e-14,
+                 "Fast task tick uses exact schedule");
+        near(fast_samples[0].second, -1, 0, "Fast task reads initial value before slow task starts");
+        near(fast_samples[1].second, .05, 1e-14, "Fast task reads first accepted slow output");
+        near(fast_samples[2].second, .05, 1e-14, "Fast task holds slow output between ticks");
+        near(fast_samples[3].second, .25, 1e-14, "Fast task reads second slow output");
+
+        SignalTaskIR failing = slow;
+        failing.phase = .35;
+        failing.code = "out = 1 / 0;";
+        auto failing_state = initialize_signal_runtime({{failing}});
+        try {
+            (void)run_signal_tasks({{failing}}, failing_state, .35, {});
+            throw std::runtime_error("Expected runtime diagnostic from code block");
+        } catch (const Diagnostic &diagnostic) {
+            check(diagnostic.code == "invalid_code_block" && diagnostic.object == failing.id &&
+                      std::abs(diagnostic.time - .35) < 1e-14,
+                  "Runtime failure identifies the block and its scheduled tick");
+        }
+        failing.code = "while (true) {}";
+        failing_state = initialize_signal_runtime({{failing}});
+        error("invalid_code_block", [&] { (void)run_signal_tasks({{failing}}, failing_state, .35, {}); });
+
         auto invalid = ir;
         invalid.tasks[0].code = "error = 1;";
         error("invalid_code_block", [&] { (void)initialize_signal_runtime(invalid); });
