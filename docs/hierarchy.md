@@ -46,6 +46,11 @@ no root instance, so an invalid deep default cannot remain dormant in a saved
 catalog. Older projects load with an empty group and no additional range; the
 bound atomic property still performs its own physical validation.
 
+Definition-local public defaults are also checked against the resulting source
+waveform, semiconductor and inductor loss constraints after they are applied.
+An invalid default is rejected during project loading or flattening, including
+when that definition has no root instance.
+
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 
 ## Editor transactions

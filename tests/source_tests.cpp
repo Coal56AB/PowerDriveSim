@@ -162,6 +162,15 @@ int main(int argc, char **argv) try {
         near(flatten(masked).project.components.front().source.phase, std::numbers::pi, 1e-12,
              "Instance override in degrees reaches the sine source");
         roundtrip(masked);
+        masked.definitions.front().parameters.push_back(
+            {id(54), "Frequency", "Hz", id(10), "source_frequency", 0});
+        error("invalid_waveform", [&] { validate_hierarchy(masked); });
+        masked.instances.clear();
+        error("invalid_waveform", [&] { flatten(masked); });
+        std::ostringstream invalid_output;
+        write_project(masked, invalid_output);
+        std::istringstream invalid_input(invalid_output.str());
+        error("invalid_waveform", [&] { read_project(invalid_input); });
     }
     for (auto method : {Method::backward_euler, Method::trapezoidal}) {
         auto p = fixture();

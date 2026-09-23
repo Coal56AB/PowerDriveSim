@@ -503,6 +503,8 @@ int main() try {
         std::istringstream input(output.str());
         require(flatten(read_project(input)).project.components.front().parallel_resistance == 4000,
                 "Public inductor loss resistance survives project round-trip");
+        masked.definitions.front().parameters.front().value = -1;
+        error("invalid_parameter", [&] { validate_hierarchy(masked); });
     }
     bad = p;
     bad.definitions[0].parameters[0].has_minimum = false;

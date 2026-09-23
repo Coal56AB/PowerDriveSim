@@ -165,6 +165,17 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
     throw Diagnostic("invalid_parameter_binding", p.id,
                      "Public parameter refers to an unsupported numeric field");
 }
+void validate_effective_components(const Schematic &schematic) {
+    for (const auto &component : schematic.components) {
+        validate_waveform(component);
+        validate_semiconductor(component);
+        if (component.parallel_resistance_enabled &&
+            (component.kind != Kind::inductor || !std::isfinite(component.parallel_resistance) ||
+             component.parallel_resistance <= 0))
+            throw Diagnostic("invalid_parameter", component.id,
+                             "Parallel resistance must be a positive inductor parameter");
+    }
+}
 void validate_schematic(const Project &p) {
     std::set<std::string> ids;
     auto uuid = [&](const std::string &id) {
@@ -183,11 +194,7 @@ void validate_schematic(const Project &p) {
         }
     };
     objects(p.components);
-    for(const auto& c:p.components)validate_waveform(c);
-    for(const auto& c:p.components)validate_semiconductor(c);
-    for(const auto& c:p.components)
-        if(c.parallel_resistance_enabled&&(c.kind!=Kind::inductor||!std::isfinite(c.parallel_resistance)||c.parallel_resistance<=0))
-            throw Diagnostic("invalid_parameter",c.id,"Parallel resistance must be a positive inductor parameter");
+    validate_effective_components(p);
     objects(p.nodes);
     objects(p.tags);
     objects(p.patterns);
@@ -290,6 +297,8 @@ void validate_hierarchy(const Project &p) {
                                  "Public parameters require unique bindings and a valid value range");
             parameter_value(body,p,param,default_value);
         }
+        if (!d.parameters.empty())
+            validate_effective_components(body);
     }
 }
 FlattenedProject flatten(const Project &source) {
