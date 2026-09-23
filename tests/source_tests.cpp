@@ -163,7 +163,18 @@ int main(int argc, char **argv) try {
              "Instance override in degrees reaches the sine source");
         roundtrip(masked);
         masked.definitions.front().parameters.push_back(
-            {id(54), "Frequency", "Hz", id(10), "source_frequency", 0});
+            {id(54), "Frequency", "Hz", id(10), "source_frequency", 50});
+        masked.instances.front().parameters.push_back({id(54), 0});
+        try {
+            (void)flatten(masked);
+            throw std::runtime_error("Invalid instance waveform override was accepted");
+        } catch (const Diagnostic &diagnostic) {
+            check(diagnostic.code == "invalid_waveform" &&
+                      diagnostic.path == std::vector<std::string>{id(53)},
+                  "Instance override reports the source and instance path");
+        }
+        masked.instances.front().parameters.pop_back();
+        masked.definitions.front().parameters.back().value = 0;
         error("invalid_waveform", [&] { validate_hierarchy(masked); });
         masked.instances.clear();
         error("invalid_waveform", [&] { flatten(masked); });
@@ -171,6 +182,24 @@ int main(int argc, char **argv) try {
         write_project(masked, invalid_output);
         std::istringstream invalid_input(invalid_output.str());
         error("invalid_waveform", [&] { read_project(invalid_input); });
+        masked.definitions.front().parameters.back().value = 50;
+        Definition outer;
+        outer.id = id(55);
+        outer.name = "Nested source";
+        outer.wired = true;
+        outer.instances.push_back({id(56), "Inner", phase.id, 0, 0});
+        outer.parameters.push_back({id(57), "Frequency", "Hz", id(56), id(54), 50});
+        masked.definitions.push_back(outer);
+        masked.instances.push_back({id(58), "Outer", outer.id, 0, 0});
+        masked.instances.back().parameters.push_back({id(57), 0});
+        try {
+            (void)flatten(masked);
+            throw std::runtime_error("Invalid nested waveform override was accepted");
+        } catch (const Diagnostic &diagnostic) {
+            check(diagnostic.code == "invalid_waveform" &&
+                      diagnostic.path == (std::vector<std::string>{id(58), id(56)}),
+                  "Nested override reports the complete instance path");
+        }
     }
     for (auto method : {Method::backward_euler, Method::trapezoidal}) {
         auto p = fixture();

@@ -50,6 +50,10 @@ Definition-local public defaults are also checked against the resulting source
 waveform, semiconductor and inductor loss constraints after they are applied.
 An invalid default is rejected during project loading or flattening, including
 when that definition has no root instance.
+Each instance's effective waveform, semiconductor and inductor loss parameters
+are checked again during expansion after applying its overrides. Diagnostics
+identify the complete instance path, including overrides passed through a
+nested public parameter.
 
 The complete catalog is checked for missing definitions, invalid local UUIDs, incompatible ports and recursion. Expansion is limited to 64 levels and one million objects and reports a diagnostic at the limit.
 

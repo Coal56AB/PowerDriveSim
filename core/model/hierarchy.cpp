@@ -421,6 +421,14 @@ FlattenedProject flatten(const Project &source) {
             }
             auto child_path = path;
             child_path.push_back(i.id);
+            if (!d.parameters.empty()) {
+                try {
+                    validate_effective_components(body);
+                } catch (Diagnostic &diagnostic) {
+                    diagnostic.path = child_path;
+                    throw;
+                }
+            }
             auto terminals =
                 expand(body, child_path, name + i.name + "/", transform({i.x, i.y}, offset, rotation),
                        compose(rotation, i.orientation));
