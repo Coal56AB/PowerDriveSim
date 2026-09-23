@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cmath>
 #include <functional>
+#include <numbers>
 #include <set>
 
 namespace pds {
@@ -107,6 +108,11 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
             }
             if (p.field == "initial") {
                 c.initial = value;
+                return;
+            }
+            if ((c.kind == Kind::voltage || c.kind == Kind::current) &&
+                p.field == "source_phase_deg") {
+                c.source.phase = value * std::numbers::pi / 180.0;
                 return;
             }
             if((c.kind==Kind::voltage||c.kind==Kind::current))

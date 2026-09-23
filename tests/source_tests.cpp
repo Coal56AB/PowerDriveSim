@@ -144,6 +144,24 @@ int main(int argc, char **argv) try {
         near(p.components[0].source.phase, std::numbers::pi / 2, 1e-12, "Sine phase can be edited in degrees");
         near(std::get<double>(read_property(p, p.components[0].id, "source_phase_deg")), 90.0, 1e-12,
              "Sine phase degrees read back from radians");
+
+        Definition phase;
+        phase.id = id(50);
+        phase.name = "Sine phase mask";
+        static_cast<Schematic &>(phase) = static_cast<const Schematic &>(p);
+        phase.wired = true;
+        phase.parameters.push_back({id(51), "Phase in degrees", "", id(10), "source_phase_deg", 90.0});
+        Project masked;
+        masked.id = id(52);
+        masked.wired = true;
+        masked.definitions.push_back(phase);
+        masked.instances.push_back({id(53), "Sine source", phase.id, 0, 0});
+        near(flatten(masked).project.components.front().source.phase, std::numbers::pi / 2, 1e-12,
+             "Public phase default in degrees reaches the sine source");
+        masked.instances.front().parameters.push_back({id(51), 180.0});
+        near(flatten(masked).project.components.front().source.phase, std::numbers::pi, 1e-12,
+             "Instance override in degrees reaches the sine source");
+        roundtrip(masked);
     }
     for (auto method : {Method::backward_euler, Method::trapezoidal}) {
         auto p = fixture();

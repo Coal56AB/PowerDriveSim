@@ -28,7 +28,7 @@ only and never changes connectivity; manual entry always remains available.
 Several paths from the same gate or signal output to one tag group count as one
 driver. A second, distinct output is still diagnosed as a conflicting driver.
 
-Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Instance overrides may use expressions evaluated from the project's safe initialization program; unresolved names, non-finite results and invalid target fields are diagnosed before compilation.
+Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase (radians or the degree editor field)/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. A public phase value in degrees is converted to the source's stored radians on expansion. Unknown and duplicate overrides are rejected. Instance overrides may use expressions evaluated from the project's safe initialization program; unresolved names, non-finite results and invalid target fields are diagnosed before compilation.
 
 Schema 28 also allows the default of a public parameter itself to be an
 expression in the definition-local initialization scope. Explicit instance
