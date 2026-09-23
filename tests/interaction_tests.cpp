@@ -1764,6 +1764,50 @@ class InteractionTests : public QObject {
         QCOMPARE(definition(expression_window.root_project(), parent.id).parameter_expressions.size(), size_t(1));
         QCOMPARE(flatten(expression_window.root_project()).project.components.front().value, 3200.);
     }
+    void public_mask_separates_ungrouped_fields() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.wired = true;
+        Definition body;
+        body.id = new_uuid();
+        body.name = "Grouped mask";
+        body.wired = true;
+        for (const auto kind : {Kind::resistor, Kind::capacitor, Kind::inductor}) {
+            Component component;
+            component.id = new_uuid();
+            component.name = kind_name(kind);
+            component.kind = kind;
+            component.value = kind == Kind::resistor ? 1000. : 1e-3;
+            body.components.push_back(component);
+            PublicParameter parameter;
+            parameter.id = new_uuid();
+            parameter.name = component.name;
+            parameter.object = component.id;
+            parameter.field = "value";
+            parameter.value = component.value;
+            parameter.group = kind == Kind::capacitor ? "" : "Power";
+            body.parameters.push_back(parameter);
+        }
+        project.definitions.push_back(body);
+        const auto instance_id = new_uuid();
+        project.instances.push_back({instance_id, "Mask", body.id, 0, 0});
+        EditorWindow w("en", dir.path());
+        w.set_project(project);
+        ready(w);
+        w.select_object(instance_id);
+        std::vector<QLabel *> headings;
+        for (auto *label : w.findChildren<QLabel *>())
+            if (label->isVisible() && (label->text() == "Power" || label->text() == "Ungrouped"))
+                headings.push_back(label);
+        std::sort(headings.begin(), headings.end(), [](QLabel *a, QLabel *b) {
+            return a->mapToGlobal(QPoint(0, 0)).y() < b->mapToGlobal(QPoint(0, 0)).y();
+        });
+        QCOMPARE(headings.size(), size_t(3));
+        QCOMPARE(headings[0]->text(), QString("Power"));
+        QCOMPARE(headings[1]->text(), QString("Ungrouped"));
+        QCOMPARE(headings[2]->text(), QString("Power"));
+    }
     void connection_tags_distinguish_domains_on_canvas() {
         QTemporaryDir dir;
         Project project;

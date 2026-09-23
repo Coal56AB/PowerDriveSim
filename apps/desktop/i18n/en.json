@@ -483,6 +483,7 @@
   "maximum": "Maximum",
   "minimum": "Minimum",
   "parameter_group": "Group",
+  "parameter_ungrouped": "Ungrouped",
   "unit": "Unit",
   "definition": "Definition",
   "definition_readonly": "Read only — choose Edit shared definition to make changes",

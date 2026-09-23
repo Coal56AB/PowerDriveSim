@@ -483,6 +483,7 @@
   "maximum": "Максимум",
   "minimum": "Минимум",
   "parameter_group": "Группа",
+  "parameter_ungrouped": "Без группы",
   "unit": "Единица",
   "definition": "Определение",
   "definition_readonly": "Просмотр — для изменений выберите «Редактировать общее определение»",

@@ -667,12 +667,12 @@ void EditorWindow::fill_inspector() {
         auto field = found->second;
         auto key = field.value("key").toString();
         const auto group = field.value("group").toString().trimmed();
-        if (!group.isEmpty() && group != current_group) {
-            auto *heading = new QLabel(group);
+        if (group != current_group) {
+            auto *heading = new QLabel(group.isEmpty() ? text("parameter_ungrouped") : group);
             auto font = heading->font();
             font.setBold(true);
             heading->setFont(font);
-            heading->setContentsMargins(0, current_group.isEmpty() ? 2 : 10, 0, 2);
+            heading->setContentsMargins(0, row == 3 ? 2 : 10, 0, 2);
             properties_->insertRow(row++, heading);
             current_group = group;
         }
