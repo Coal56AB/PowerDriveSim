@@ -599,7 +599,6 @@ void Scope::mousePressEvent(QMouseEvent *e) {
             const double position_x=area.left()+trigger_position_*area.width();
             double low=y_low,high=y_high;
             if(separate_axes_&&lane_under<int(display_ranges_.size())){low=display_ranges_[lane_under].first;high=display_ranges_[lane_under].second;}
-            const double level_y=area.bottom()-(trigger_level_-low)/(high-low)*area.height();
             const bool level_handle=lane_under==trigger_lane&&e->position().x()>=area.right()-14;
             const bool position_handle=e->position().y()<=area.top()+18&&std::abs(e->position().x()-position_x)<=7;
             if(level_handle||position_handle) {
