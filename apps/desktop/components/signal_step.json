@@ -1,0 +1,12 @@
+{
+  "type": "signal_step",
+  "fields": [],
+  "palette": {
+    "id": 110,
+    "label": "signal_step",
+    "category": "signals",
+    "short": "Step",
+    "fixed": false,
+    "hidden": false
+  }
+}

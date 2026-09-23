@@ -24,6 +24,7 @@ class QTabWidget;
 class QVBoxLayout;
 class QSpinBox;
 class QDialog;
+namespace pds::desktop { struct SignalPreset; }
 class QPushButton;
 class QLineEdit;
 class QPlainTextEdit;
@@ -325,7 +326,7 @@ class EditorWindow : public QMainWindow {
     std::string add_node(bool ground, QPointF point);
     std::string add_pattern(QPointF point);
     std::string add_plot(QPointF point);
-    std::string add_code_block(QPointF point);
+    std::string add_code_block(QPointF point, const SignalPreset *preset = nullptr);
     bool connect_ports(Endpoint from, Endpoint to);
     QPointF port_position(const Endpoint &endpoint) const;
     void start_simulation();

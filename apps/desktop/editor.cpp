@@ -4,6 +4,7 @@
 #include "apps/desktop/labels.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
+#include "apps/desktop/signal_presets.hpp"
 #include "apps/desktop/theme.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "core/editor/properties.hpp"
@@ -1254,7 +1255,12 @@ void EditorWindow::set_placement_preview() {
                 });
         } else if (placing_ == 106)
             fragment.apply("Tag", [](Project &p) { p.tags.push_back({new_uuid(), "TAG", 0, 0, Domain::gate}); });
-        else if (placing_ == 108)
+        else if (const auto *preset = signal_preset(placing_)) {
+            const auto name = component_actions_.at(preset->placement_id)->text().toStdString();
+            fragment.apply("Add signal preset", [preset, name](Project &p) {
+                p.code_blocks.push_back(make_signal_preset(*preset, name, 0, 0));
+            });
+        } else if (placing_ == 108)
             fragment.apply("Code block", [](Project &p) {
                 CodeBlock block;
                 block.id = new_uuid();
@@ -1283,10 +1289,11 @@ void EditorWindow::cancel_placement() {
 void EditorWindow::place_at(QPointF point) {
     if (running() || !paste_fragment_)
         return;
-    if (placing_ == 108) {
+    const auto *preset = signal_preset(placing_);
+    if (placing_ == 108 || preset) {
         canvas_->set_ghost(nullptr);
         cancel_placement();
-        (void)add_code_block(point);
+        (void)add_code_block(point, preset);
         canvas_->setFocus();
         return;
     }
@@ -2945,20 +2952,25 @@ std::string EditorWindow::add_plot(QPointF point) {
     auto_connect_nearby_pins();
     return selected_;
 }
-std::string EditorWindow::add_code_block(QPointF point) {
+std::string EditorWindow::add_code_block(QPointF point, const SignalPreset *preset) {
     if (running() || !editing_allowed())
         return {};
     try {
         point = canvas_->snap_point(point);
         CodeBlock block;
-        block.id = new_uuid();
-        block.name = text("code_block").toStdString();
-        block.x = point.x();
-        block.y = point.y();
-        block.code = "out = 0;";
-        block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
+        if (preset) {
+            const auto name = component_actions_.at(preset->placement_id)->text().toStdString();
+            block = make_signal_preset(*preset, name, point.x(), point.y());
+        } else {
+            block.id = new_uuid();
+            block.name = text("code_block").toStdString();
+            block.x = point.x();
+            block.y = point.y();
+            block.code = "out = 0;";
+            block.outputs.push_back({new_uuid(), "out", "", SignalScalarType::real, 0});
+        }
         selected_ = block.id;
-        document_->apply("Add code block", [&](Project &p) { p.code_blocks.push_back(block); });
+        document_->apply(preset ? "Add signal preset" : "Add code block", [&](Project &p) { p.code_blocks.push_back(block); });
         refresh_canvas(true, false);
         return selected_;
     } catch (const std::exception &error) {

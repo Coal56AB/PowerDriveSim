@@ -1,5 +1,6 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/theme.hpp"
+#include "apps/desktop/signal_presets.hpp"
 #include "apps/desktop/ui_icons.hpp"
 #include "formats/project/project.hpp"
 #include <QAction>
@@ -354,7 +355,7 @@ QIcon component_icon(int id, bool framed) {
 }
 void EditorWindow::refresh_component_icons() {
     for (const auto &[id, action] : component_actions_)
-        action->setIcon(component_icon(id));
+        action->setIcon(component_icon(signal_preset(id) ? 108 : id));
 }
 void EditorWindow::begin_placement(int id) {
     if (running())
@@ -410,7 +411,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
         action->setProperty("fixed", entry.value("fixed").toBool());
         action->setProperty("template", spec.value("template").toString());
         action->setIconText(short_name);
-        action->setIcon(component_icon(id));
+        action->setIcon(component_icon(signal_preset(id) ? 108 : id));
         action->setProperty("description", description);
         action->setToolTip(text(label.constData()) + "\n\n" + description);
         connect(action, &QAction::triggered, this, [this, id = id] { begin_placement(id); });
@@ -452,7 +453,7 @@ void EditorWindow::build_component_palette(QLineEdit *search) {
             category = group_item;
         }
         auto *item = new QTreeWidgetItem(category, {text(label.constData())});
-        item->setIcon(0, component_icon(id));
+        item->setIcon(0, component_icon(signal_preset(id) ? 108 : id));
         item->setData(0, Qt::UserRole, id);
         item->setToolTip(0, description);
     }

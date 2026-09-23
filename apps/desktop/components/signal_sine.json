@@ -1,0 +1,12 @@
+{
+  "type": "signal_sine",
+  "fields": [],
+  "palette": {
+    "id": 112,
+    "label": "signal_sine",
+    "category": "signals",
+    "short": "sin",
+    "fixed": false,
+    "hidden": false
+  }
+}

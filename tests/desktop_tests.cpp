@@ -26,6 +26,7 @@
 #include <QTreeWidgetItemIterator>
 #include <QWheelEvent>
 #include <QtTest/QtTest>
+#include <array>
 #include <cmath>
 using namespace pds;
 using namespace pds::desktop;
@@ -773,6 +774,126 @@ class DesktopTests : public QObject {
         QCOMPARE(window.result().samples.back().values[index], 0.0);
         window.open_plot(plot);
         QVERIFY(window.findChild<QDialog *>("plot_" + QString::fromStdString(plot)));
+    }
+    void signal_presets_are_editable_code_blocks() {
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        struct Preset { int id; const char *code; };
+        const std::array<Preset, 4> presets{{
+            {109, "out = 1;"},
+            {110, "out = t >= 5e-3 ? 1 : 0;"},
+            {111, "out = t < 10e-3 ? t / 10e-3 : 1;"},
+            {112, "out = sin(2 * PI * 50 * t);"},
+        }};
+        std::vector<std::string> blocks, outputs;
+        for (size_t index = 0; index < presets.size(); ++index) {
+            QTreeWidgetItem *entry = nullptr;
+            for (QTreeWidgetItemIterator it(library); *it; ++it)
+                if ((*it)->data(0, Qt::UserRole).toInt() == presets[index].id)
+                    entry = *it;
+            QVERIFY(entry);
+            for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
+            library->scrollToItem(entry);
+            QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              library->visualItemRect(entry).center());
+            QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               library->visualItemRect(entry).center());
+            QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              window.canvas()->mapFromScene(QPointF(100 + 220 * index, 100)));
+            QCOMPARE(window.project().code_blocks.size(), index + 1);
+            const auto &block = window.project().code_blocks.back();
+            QCOMPARE(block.code, std::string(presets[index].code));
+            QCOMPARE(block.period, 100e-6);
+            QCOMPARE(block.outputs.size(), size_t(1));
+            QCOMPARE(block.outputs.front().type, SignalScalarType::real);
+            blocks.push_back(block.id);
+            outputs.push_back(block.outputs.front().id);
+        }
+
+        window.select_object(blocks.back());
+        QTimer edit_safety;
+        edit_safety.setSingleShot(true);
+        connect(&edit_safety, &QTimer::timeout, [] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+                dialog->reject();
+        });
+        edit_safety.start(2000);
+        QTimer::singleShot(50, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            dialog->findChild<QLineEdit *>("code_block_name")->setText("Reference sine");
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            if (buttons) buttons->button(QDialogButtonBox::Ok)->click();
+        });
+        window.findChild<QAction *>("action_properties")->trigger();
+        edit_safety.stop();
+        QCOMPARE(window.project().code_blocks.back().name, std::string("Reference sine"));
+        window.undo();
+        QCOMPARE(window.project().code_blocks.back().name, std::string("Sine"));
+        window.redo();
+        QCOMPARE(window.project().code_blocks.back().name, std::string("Reference sine"));
+
+        const auto voltage = window.add_component(Kind::voltage, {80, 320});
+        const auto resistor = window.add_component(Kind::resistor, {280, 320});
+        const auto ground = window.add_node(true, {180, 440});
+        QVERIFY(window.connect_ports({voltage, "p"}, {resistor, "p"}));
+        QVERIFY(window.connect_ports({resistor, "n"}, {ground, "node"}));
+        QVERIFY(window.connect_ports({voltage, "n"}, {ground, "node"}));
+
+        auto configured = window.project();
+        configured.profile.stop = 10.1e-3;
+        configured.profile.step = 100e-6;
+        configured.scope_enabled = true;
+        for (size_t index = 0; index < blocks.size(); ++index) {
+            const auto channel = endpoint_key({blocks[index], outputs[index]});
+            configured.scope_points.push_back(channel);
+            configured.scope_channels.push_back(channel);
+        }
+        window.set_project(configured);
+        QVERIFY(window.scope());
+        const auto path = temp.filePath("signal-presets.pds");
+        QVERIFY(window.save_project(path));
+        QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().code_blocks.size(), presets.size());
+        for (size_t index = 0; index < presets.size(); ++index) {
+            QCOMPARE(window.project().code_blocks[index].code, std::string(presets[index].code));
+            QCOMPARE(window.project().code_blocks[index].period, 100e-6);
+        }
+
+        window.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(), 5000);
+        QVERIFY(window.has_result());
+        std::array<size_t, 4> channels{};
+        for (size_t index = 0; index < channels.size(); ++index) {
+            const auto key = endpoint_key({blocks[index], outputs[index]});
+            const auto channel = std::find_if(window.result().channels.begin(), window.result().channels.end(),
+                                              [&](const Channel &candidate) { return candidate.object == key; });
+            QVERIFY(channel != window.result().channels.end());
+            channels[index] = size_t(channel - window.result().channels.begin());
+        }
+        auto sample_at = [&](double time) -> const Sample * {
+            const auto sample = std::find_if(window.result().samples.begin(), window.result().samples.end(),
+                                             [&](const Sample &candidate) { return std::abs(candidate.time - time) < 1e-12; });
+            return sample == window.result().samples.end() ? nullptr : &*sample;
+        };
+        const auto *before_step = sample_at(4.9e-3);
+        QVERIFY(before_step);
+        QCOMPARE(before_step->values[channels[0]], 1.0);
+        QCOMPARE(before_step->values[channels[1]], 0.0);
+        QVERIFY(std::abs(before_step->values[channels[2]] - .49) < 1e-12);
+        QVERIFY(std::abs(before_step->values[channels[3]] - std::sin(2 * std::acos(-1.0) * 50 * 4.9e-3)) < 1e-12);
+        const auto *step = sample_at(5.1e-3);
+        QVERIFY(step);
+        QCOMPARE(step->values[channels[1]], 1.0);
+        QVERIFY(std::abs(step->values[channels[2]] - .51) < 1e-12);
+        QVERIFY(std::abs(step->values[channels[3]] - std::sin(2 * std::acos(-1.0) * 50 * 5.1e-3)) < 1e-12);
+        const auto *ramp_end = sample_at(10.1e-3);
+        QVERIFY(ramp_end);
+        QVERIFY(std::abs(ramp_end->values[channels[2]] - 1) < 1e-12);
+        QVERIFY(std::abs(ramp_end->values[channels[3]] - std::sin(2 * std::acos(-1.0) * 50 * 10.1e-3)) < 1e-12);
     }
 };
 int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }

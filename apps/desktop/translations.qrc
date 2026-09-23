@@ -6,6 +6,10 @@
   </qresource>
   <qresource prefix="/components">
     <file alias="code_block.json">components/code_block.json</file>
+    <file alias="signal_constant.json">components/signal_constant.json</file>
+    <file alias="signal_step.json">components/signal_step.json</file>
+    <file alias="signal_ramp.json">components/signal_ramp.json</file>
+    <file alias="signal_sine.json">components/signal_sine.json</file>
     <file alias="differential_plot.json">components/differential_plot.json</file>
     <file alias="open-end-winding.json">components/open-end-winding.json</file>
     <file alias="npc-3l.json">components/npc-3l.json</file>

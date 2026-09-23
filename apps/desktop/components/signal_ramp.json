@@ -1,0 +1,12 @@
+{
+  "type": "signal_ramp",
+  "fields": [],
+  "palette": {
+    "id": 111,
+    "label": "signal_ramp",
+    "category": "signals",
+    "short": "Ramp",
+    "fixed": false,
+    "hidden": false
+  }
+}

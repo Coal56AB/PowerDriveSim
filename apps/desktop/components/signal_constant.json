@@ -1,0 +1,12 @@
+{
+  "type": "signal_constant",
+  "fields": [],
+  "palette": {
+    "id": 109,
+    "label": "signal_constant",
+    "category": "signals",
+    "short": "1",
+    "fixed": false,
+    "hidden": false
+  }
+}
