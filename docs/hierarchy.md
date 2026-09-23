@@ -26,7 +26,7 @@ lexical shadowing: every scope-compatible match is unioned, and conflicting dire
 drivers are diagnosed after that union. The `listed` flag controls name completion
 only and never changes connectivity; manual entry always remains available.
 
-Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Symbolic parameter expressions are not implemented by this step.
+Public numeric parameters bind to value/initial fields, source waveform offset/frequency/phase/delay/duty, semiconductor Ron/Roff/Vf, diode charge times/initial charge, thyristor holding current, constant PWM frequency/duty/delay, or another instance's public parameter. Unknown and duplicate overrides are rejected. Instance overrides may use expressions evaluated from the project's safe initialization program; unresolved names, non-finite results and invalid target fields are diagnosed before compilation.
 
 Schema 21 extends the existing `PublicParameter` mask metadata with an optional
 group and inclusive minimum/maximum values. The interface editor stores these
