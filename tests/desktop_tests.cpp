@@ -1029,8 +1029,10 @@ class DesktopTests : public QObject {
     void signal_state_presets_are_causal_and_snapshot_safe() {
         const auto *integrator_preset = signal_preset(117);
         const auto *delay_preset = signal_preset(118);
+        const auto *hold_preset = signal_preset(121);
         QVERIFY(integrator_preset);
         QVERIFY(delay_preset);
+        QVERIFY(hold_preset);
 
         CodeBlock source;
         source.id = new_uuid();
@@ -1040,6 +1042,13 @@ class DesktopTests : public QObject {
         source.outputs = {{new_uuid(), "out", "", SignalScalarType::real, 0}};
         auto integrator = make_signal_preset(*integrator_preset, "Discrete integrator", 180, 100);
         auto delay = make_signal_preset(*delay_preset, "Delay 1 tick", 360, 100);
+        auto hold = make_signal_preset(*hold_preset, "Sample and hold", 540, 100);
+        CodeBlock trigger;
+        trigger.id = new_uuid();
+        trigger.name = "Sample pulse";
+        trigger.period = 100e-6;
+        trigger.code = "out = t >= 100e-6 && t < 200e-6;";
+        trigger.outputs = {{new_uuid(), "out", "", SignalScalarType::boolean, 0}};
 
         Project project;
         project.id = new_uuid();
@@ -1055,12 +1064,14 @@ class DesktopTests : public QObject {
         supply.kind = Kind::voltage;
         supply.value = 1;
         project.components = {supply};
-        project.code_blocks = {source, integrator, delay};
+        project.code_blocks = {source, integrator, delay, trigger, hold};
         project.wires = {
             {new_uuid(), {supply.id, "p"}, {supply_node, "node"}},
             {new_uuid(), {supply.id, "n"}, {ground, "node"}},
             {new_uuid(), {source.id, source.outputs[0].id}, {integrator.id, integrator.inputs[0].id}},
             {new_uuid(), {source.id, source.outputs[0].id}, {delay.id, delay.inputs[0].id}},
+            {new_uuid(), {source.id, source.outputs[0].id}, {hold.id, hold.inputs[0].id}},
+            {new_uuid(), {trigger.id, trigger.outputs[0].id}, {hold.id, hold.inputs[1].id}},
         };
         SimulationIR ir;
         try {
@@ -1068,7 +1079,7 @@ class DesktopTests : public QObject {
         } catch (const std::exception &error) {
             QFAIL(error.what());
         }
-        QCOMPARE(ir.signal.tasks.size(), size_t(3));
+        QCOMPARE(ir.signal.tasks.size(), size_t(5));
         Result complete;
         try {
             complete = execute(ir);
@@ -1077,14 +1088,19 @@ class DesktopTests : public QObject {
         }
         const auto integrator_key = endpoint_key({integrator.id, integrator.outputs[0].id});
         const auto delay_key = endpoint_key({delay.id, delay.outputs[0].id});
+        const auto hold_key = endpoint_key({hold.id, hold.outputs[0].id});
         const auto integrator_found = std::find_if(complete.channels.begin(), complete.channels.end(),
                                                    [&](const Channel &channel) { return channel.object == integrator_key; });
         const auto delay_found = std::find_if(complete.channels.begin(), complete.channels.end(),
                                               [&](const Channel &channel) { return channel.object == delay_key; });
+        const auto hold_found = std::find_if(complete.channels.begin(), complete.channels.end(),
+                                             [&](const Channel &channel) { return channel.object == hold_key; });
         QVERIFY(integrator_found != complete.channels.end());
         QVERIFY(delay_found != complete.channels.end());
+        QVERIFY(hold_found != complete.channels.end());
         const auto integrator_channel = size_t(integrator_found - complete.channels.begin());
         const auto delay_channel = size_t(delay_found - complete.channels.begin());
+        const auto hold_channel = size_t(hold_found - complete.channels.begin());
         auto sample_at = [&](double time) -> const Sample * {
             const auto found = std::find_if(complete.samples.begin(), complete.samples.end(),
                                             [&](const Sample &sample) { return std::abs(sample.time - time) < 1e-15; });
@@ -1093,15 +1109,21 @@ class DesktopTests : public QObject {
         const auto *initial = sample_at(0);
         const auto *first = sample_at(100e-6);
         const auto *second = sample_at(200e-6);
+        const auto *third = sample_at(300e-6);
         QVERIFY(initial);
         QVERIFY(first);
         QVERIFY(second);
+        QVERIFY(third);
         QCOMPARE(initial->values[integrator_channel], 0.0);
         QCOMPARE(initial->values[delay_channel], 0.0);
         QCOMPARE(first->values[integrator_channel], 200e-6);
         QCOMPARE(first->values[delay_channel], 0.0);
         QCOMPARE(second->values[integrator_channel], 400e-6);
         QCOMPARE(second->values[delay_channel], 2.0);
+        QCOMPARE(initial->values[hold_channel], 0.0);
+        QCOMPARE(first->values[hold_channel], 0.0);
+        QCOMPARE(second->values[hold_channel], 2.0);
+        QCOMPARE(third->values[hold_channel], 2.0);
 
         ExecutionOptions snapshot_options;
         snapshot_options.capture_snapshot = true;
@@ -1113,6 +1135,8 @@ class DesktopTests : public QObject {
         QCOMPARE(partial.snapshot->signal_tasks.at(delay.id).next_tick, std::uint64_t(3));
         QCOMPARE(partial.snapshot->signal_tasks.at(integrator.id).outputs.at("out"), 400e-6);
         QCOMPARE(partial.snapshot->signal_tasks.at(delay.id).outputs.at("out"), 2.0);
+        QCOMPARE(partial.snapshot->signal_tasks.at(hold.id).outputs.at("out"), 2.0);
+        QVERIFY(!partial.snapshot->signal_tasks.at(hold.id).program_state.static_values.empty());
         std::ostringstream saved;
         write_snapshot(*partial.snapshot, saved);
         std::istringstream input(saved.str());
