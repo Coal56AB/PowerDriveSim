@@ -638,6 +638,8 @@
   "signal_carrier_description": "A 1 kHz symmetric −1…1 triangle output, implemented as an editable code block.",
   "signal_pwm_comparator": "PWM comparator",
   "signal_pwm_comparator_description": "Compares real reference and carrier inputs through an editable code block.",
+  "signal_sample_hold": "Sample and hold",
+  "signal_sample_hold_description": "Captures real input in when Boolean sample is true and holds its last value between samples.",
   "edit_code_block": "Edit code block…",
   "code_block_single_selection": "Select one code block to edit it.",
   "code_block_period": "Execution period",

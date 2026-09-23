@@ -137,6 +137,36 @@ int main() {
         failing_state = initialize_signal_runtime({{failing}});
         error("invalid_code_block", [&] { (void)run_signal_tasks({{failing}}, failing_state, .35, {}); });
 
+        const auto sample_sensor = derived_uuid("signal-hold-sensor");
+        const auto sample_trigger = derived_uuid("signal-hold-trigger");
+        SignalTaskIR hold;
+        hold.id = derived_uuid("signal-hold-task");
+        hold.period = .1;
+        hold.code = "static double held = 0;\nif (sample) held = in;\nout = held;";
+        hold.inputs = {{port("signal-hold-in", "in", ""), {sample_sensor, "out"}},
+                       {port("signal-hold-sample", "sample", "", SignalScalarType::boolean),
+                        {sample_trigger, "out"}}};
+        hold.outputs = {port("signal-hold-out", "out", "")};
+        SignalIR hold_ir{{hold}};
+        auto hold_state = initialize_signal_runtime(hold_ir);
+        auto sample_hold = [&](double time, double input, bool sample) {
+            SignalFrame accepted{
+                {signal_endpoint_key({sample_sensor, "out"}),
+                 {SignalScalarType::real, "", input, time, true}},
+                {signal_endpoint_key({sample_trigger, "out"}),
+                 {SignalScalarType::boolean, "", sample ? 1.0 : 0.0, time, true}},
+            };
+            const auto values = run_signal_tasks(hold_ir, hold_state, time, accepted);
+            check(values.size() == 1, "Sample-and-hold emits once per tick");
+            return values[0].value.value;
+        };
+        near(sample_hold(0, 7, false), 0, 0, "Sample-and-hold starts at zero");
+        near(sample_hold(.1, 3, true), 3, 0, "Sample-and-hold captures enabled input");
+        near(sample_hold(.2, 8, false), 3, 0, "Sample-and-hold retains its value while disabled");
+        near(sample_hold(.3, -2, true), -2, 0, "Sample-and-hold captures a later input");
+        check(!hold_state.tasks.at(hold.id).program_state.static_values.empty(),
+              "Sample-and-hold stores its retained value in serializable C state");
+
         auto invalid = ir;
         invalid.tasks[0].code = "error = 1;";
         error("invalid_code_block", [&] { (void)initialize_signal_runtime(invalid); });

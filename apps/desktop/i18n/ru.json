@@ -638,6 +638,8 @@
   "signal_carrier_description": "Симметричный треугольный вещественный выход −1…1 частотой 1 кГц; реализован как редактируемый блок кода.",
   "signal_pwm_comparator": "ШИМ-компаратор",
   "signal_pwm_comparator_description": "Сравнивает вещественные входы reference и carrier редактируемым блоком кода.",
+  "signal_sample_hold": "Выборка и хранение",
+  "signal_sample_hold_description": "При логической единице на sample запоминает вещественный вход in; между выборками хранит последнее значение.",
   "edit_code_block": "Редактировать блок кода…",
   "code_block_single_selection": "Для редактирования выберите один блок кода.",
   "code_block_period": "Период выполнения",

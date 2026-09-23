@@ -1182,6 +1182,53 @@ class DesktopTests : public QObject {
         QCOMPARE(window.project().code_blocks[0].code, std::string(integrator_preset->code));
         QCOMPARE(window.project().code_blocks[1].code, std::string(delay_preset->code));
     }
+    void sample_hold_preset_has_typed_ports_and_survives_roundtrip() {
+        const auto *preset = signal_preset(121);
+        QVERIFY(preset);
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        QTreeWidgetItem *entry = nullptr;
+        for (QTreeWidgetItemIterator it(library); *it; ++it)
+            if ((*it)->data(0, Qt::UserRole).toInt() == 121)
+                entry = *it;
+        QVERIFY(entry);
+        for (auto *parent = entry->parent(); parent; parent = parent->parent())
+            parent->setExpanded(true);
+        library->scrollToItem(entry);
+        QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          library->visualItemRect(entry).center());
+        QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                           library->visualItemRect(entry).center());
+        QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                          window.canvas()->mapFromScene(QPointF(180, 100)));
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        const auto &block = window.project().code_blocks.front();
+        QCOMPARE(block.name, std::string("Sample and hold"));
+        QCOMPARE(block.code, std::string(preset->code));
+        QCOMPARE(block.period, 100e-6);
+        QCOMPARE(block.inputs.size(), size_t(2));
+        QCOMPARE(block.inputs[0].name, std::string("in"));
+        QCOMPARE(block.inputs[0].type, SignalScalarType::real);
+        QCOMPARE(block.inputs[1].name, std::string("sample"));
+        QCOMPARE(block.inputs[1].type, SignalScalarType::boolean);
+        QCOMPARE(block.outputs.size(), size_t(1));
+        QCOMPARE(block.outputs[0].type, SignalScalarType::real);
+        const auto input_ids = std::pair{block.inputs[0].id, block.inputs[1].id};
+        window.undo();
+        QCOMPARE(window.project().code_blocks.size(), size_t(0));
+        window.redo();
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        const auto path = temp.filePath("sample-hold.pds");
+        QVERIFY(window.save_project(path));
+        QVERIFY(window.open_project(path));
+        QCOMPARE(window.project().code_blocks.size(), size_t(1));
+        QCOMPARE(window.project().code_blocks[0].inputs[0].id, input_ids.first);
+        QCOMPARE(window.project().code_blocks[0].inputs[1].id, input_ids.second);
+        QCOMPARE(window.project().code_blocks[0].code, std::string(preset->code));
+    }
 };
 int main(int argc, char **argv) { return run_qt_test<DesktopTests>(argc, argv); }
 #include "desktop_tests.moc"

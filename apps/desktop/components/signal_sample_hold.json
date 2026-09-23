@@ -1,0 +1,12 @@
+{
+  "type": "signal_sample_hold",
+  "fields": [],
+  "palette": {
+    "id": 121,
+    "label": "signal_sample_hold",
+    "category": "signals",
+    "short": "S/H",
+    "fixed": false,
+    "hidden": false
+  }
+}
