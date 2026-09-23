@@ -121,6 +121,47 @@ class InteractionTests : public QObject {
         QTest::qWait(30);
         QVERIFY(std::abs(dock->height() - recording_height) <= 2);
     }
+    void deep_hierarchy_breadcrumbs_remain_accessible() {
+        QTemporaryDir dir;
+        Project project;
+        project.id = new_uuid();
+        project.name = "Nested circuit with a descriptive project title";
+        project.wired = true;
+        std::vector<std::string> definitions(9), instances(9);
+        for (auto &id : definitions) id = new_uuid();
+        for (auto &id : instances) id = new_uuid();
+        project.instances.push_back({instances[0], "Power stage number 1", definitions[0], 0, 0});
+        for (size_t level = 0; level < definitions.size(); ++level) {
+            Definition body;
+            body.id = definitions[level];
+            body.name = "Stage definition " + std::to_string(level + 1);
+            body.wired = true;
+            if (level + 1 < definitions.size())
+                body.instances.push_back({instances[level + 1],
+                                          "Power stage number " + std::to_string(level + 2),
+                                          definitions[level + 1], 0, 0});
+            project.definitions.push_back(std::move(body));
+        }
+        EditorWindow w("en", dir.path());
+        w.set_project(project);
+        ready(w);
+        w.navigate_hierarchy(instances);
+        QTest::qWait(30);
+        auto *breadcrumb = w.findChild<QWidget *>("hierarchy_breadcrumbs");
+        auto *current = w.findChild<QToolButton *>("hierarchy_level_9");
+        auto *overflow = w.findChild<QToolButton *>("hierarchy_overflow");
+        QVERIFY(breadcrumb && current && current->isVisible() && overflow && overflow->menu());
+        QCOMPARE(overflow->menu()->actions().size(), 7);
+        QVERIFY(w.width() <= 1500);
+        QVERIFY(breadcrumb->rect().contains(current->geometry().center()));
+        if (const auto screenshot = qEnvironmentVariable("PDS_DEEP_HIERARCHY_SCREENSHOT"); !screenshot.isEmpty())
+            QVERIFY(w.grab().save(screenshot));
+        overflow->menu()->actions()[3]->trigger();
+        QCOMPARE(w.hierarchy_path().size(), size_t(4));
+        QTest::qWait(30);
+        auto *selected = w.findChild<QToolButton *>("hierarchy_level_4");
+        QVERIFY(selected && selected->isVisible() && selected->isChecked());
+    }
     void grid_style_settings_persist() {
         QTemporaryDir dir;
         {

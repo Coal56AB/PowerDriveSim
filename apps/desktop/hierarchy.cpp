@@ -351,15 +351,41 @@ void EditorWindow::refresh_hierarchy() {
         });
         layout->addWidget(button);
     };
-    add_level(root.name, 0);
+    std::vector<std::string> levels{root.name};
     const Schematic *level = &root;
     size_t depth = 0;
     for (const auto &step : hierarchy_path()) {
         auto i = std::find_if(level->instances.begin(), level->instances.end(),
                               [&](const auto &i) { return i.id == step; });
         if (i == level->instances.end()) break;
-        add_level(i->name, ++depth);
+        levels.push_back(i->name);
+        ++depth;
         level = &definition(root, i->definition);
+    }
+    if (levels.size() <= 4) {
+        for (size_t index = 0; index < levels.size(); ++index)
+            add_level(levels[index], index);
+    } else {
+        add_level(levels.front(), 0);
+        add_separator();
+        auto *overflow = new QToolButton;
+        overflow->setObjectName("hierarchy_overflow");
+        overflow->setText(QString::fromUtf8("…"));
+        overflow->setToolTip(text("hierarchy"));
+        overflow->setPopupMode(QToolButton::InstantPopup);
+        auto *menu = new QMenu(overflow);
+        for (size_t index = 1; index + 2 < levels.size(); ++index) {
+            const auto title = levels[index].empty() ? text("untitled") : QString::fromStdString(levels[index]);
+            auto *action = menu->addAction(title);
+            connect(action, &QAction::triggered, this, [this, index] {
+                auto path = hierarchy_path();
+                if (index <= path.size()) { path.resize(index); navigate_hierarchy(path); }
+            });
+        }
+        overflow->setMenu(menu);
+        layout->addWidget(overflow);
+        for (size_t index = levels.size() - 2; index < levels.size(); ++index)
+            add_level(levels[index], index);
     }
     if (!definition_button_) {
         definition_button_ = new QToolButton;
