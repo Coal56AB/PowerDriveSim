@@ -17,8 +17,27 @@ constexpr std::array<SignalPortPreset, 1> boolean_output{{{"out", SignalScalarTy
 constexpr std::array<SignalPortPreset, 2> boolean_pair{{
     {"a", SignalScalarType::boolean}, {"b", SignalScalarType::boolean},
 }};
+constexpr std::array<SignalPortPreset, 2> regulator_inputs{{
+    {"reference", SignalScalarType::real}, {"feedback", SignalScalarType::real},
+}};
+constexpr std::array<SignalPortPreset, 3> three_phase_modulation{{
+    {"ma", SignalScalarType::real}, {"mb", SignalScalarType::real}, {"mc", SignalScalarType::real},
+}};
+constexpr std::array<SignalPortPreset, 6> two_level_gates{{
+    {"A1", SignalScalarType::boolean}, {"A2", SignalScalarType::boolean},
+    {"B1", SignalScalarType::boolean}, {"B2", SignalScalarType::boolean},
+    {"C1", SignalScalarType::boolean}, {"C2", SignalScalarType::boolean},
+}};
+constexpr std::array<SignalPortPreset, 12> three_level_gates{{
+    {"A1", SignalScalarType::boolean}, {"A2", SignalScalarType::boolean},
+    {"A3", SignalScalarType::boolean}, {"A4", SignalScalarType::boolean},
+    {"B1", SignalScalarType::boolean}, {"B2", SignalScalarType::boolean},
+    {"B3", SignalScalarType::boolean}, {"B4", SignalScalarType::boolean},
+    {"C1", SignalScalarType::boolean}, {"C2", SignalScalarType::boolean},
+    {"C3", SignalScalarType::boolean}, {"C4", SignalScalarType::boolean},
+}};
 
-constexpr std::array<SignalPreset, 13> presets{{
+constexpr std::array<SignalPreset, 16> presets{{
     {109, "out = 1;", 100e-6, {}, real_output},
     {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6, {}, real_output},
     {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6, {}, real_output},
@@ -32,6 +51,30 @@ constexpr std::array<SignalPreset, 13> presets{{
     {119, "double phase = t * 1000 - floor(t * 1000);\nout = 1 - 4 * abs(phase - 0.5);", 100e-6, {}, real_output},
     {120, "out = reference >= carrier;", 100e-6, real_reference_carrier, boolean_output},
     {121, "static double held = 0;\nif (sample) held = in;\nout = held;", 100e-6, real_sample_inputs, real_output},
+    {122, R"(static double integral = 0;
+double kp = 1;
+double ki = 100;
+double error = reference - feedback;
+double raw = kp * error + ki * integral;
+if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
+out = clamp(kp * error + ki * integral, -1, 1);)", 100e-6, regulator_inputs, real_output},
+    {123, R"(double phase = t * 1000 - floor(t * 1000);
+double carrier = 1 - 4 * abs(phase - 0.5);
+A1 = clamp(ma, -1, 1) >= carrier; A2 = !A1;
+B1 = clamp(mb, -1, 1) >= carrier; B2 = !B1;
+C1 = clamp(mc, -1, 1) >= carrier; C2 = !C1;)", 10e-6, three_phase_modulation, two_level_gates},
+    {124, R"(double phase = t * 1000 - floor(t * 1000);
+double upper = 1 - 2 * abs(phase - 0.5);
+double lower = upper - 1;
+double a = clamp(ma, -1, 1);
+double b = clamp(mb, -1, 1);
+double c = clamp(mc, -1, 1);
+int la = a >= 1 || a > upper ? 1 : a <= -1 || a < lower ? -1 : 0;
+int lb = b >= 1 || b > upper ? 1 : b <= -1 || b < lower ? -1 : 0;
+int lc = c >= 1 || c > upper ? 1 : c <= -1 || c < lower ? -1 : 0;
+A1 = la > 0; A2 = la >= 0; A3 = la <= 0; A4 = la < 0;
+B1 = lb > 0; B2 = lb >= 0; B3 = lb <= 0; B4 = lb < 0;
+C1 = lc > 0; C2 = lc >= 0; C3 = lc <= 0; C4 = lc < 0;)", 10e-6, three_phase_modulation, three_level_gates},
 }};
 } // namespace
 
@@ -64,6 +107,9 @@ std::vector<IconPrimitive> default_code_icon(int placement_id) {
     case 119:return {line({{3,24},{10,8},{17,24},{24,8},{29,20}},IconColor::signal)};
     case 120:return {line({{3,23},{8,23},{8,9},{15,9},{15,23},{22,23},{22,9},{29,9}},IconColor::gate)};
     case 121:return {text("S/H",8)};
+    case 122:return {text("PI",10)};
+    case 123:return {text("2L",10)};
+    case 124:return {text("3L",10)};
     default:return {text("{C}",8)};
     }
 }

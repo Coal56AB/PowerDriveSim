@@ -1,0 +1,12 @@
+{
+  "type": "signal_pwm_2l",
+  "fields": [],
+  "palette": {
+    "id": 123,
+    "label": "signal_pwm_2l",
+    "category": "signals",
+    "short": "PWM 2L",
+    "fixed": false,
+    "hidden": false
+  }
+}

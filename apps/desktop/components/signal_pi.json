@@ -1,0 +1,12 @@
+{
+  "type": "signal_pi",
+  "fields": [],
+  "palette": {
+    "id": 122,
+    "label": "signal_pi",
+    "category": "signals",
+    "short": "PI",
+    "fixed": false,
+    "hidden": false
+  }
+}

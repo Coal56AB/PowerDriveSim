@@ -2,8 +2,10 @@
 #include "apps/desktop/code_editor.hpp"
 #include "apps/desktop/code_icon_editor.hpp"
 #include "apps/desktop/signal_presets.hpp"
+#include "core/model/c_program.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include "tests/qt_test_main.hpp"
+#include <tuple>
 #include <QAction>
 #include <QCheckBox>
 #include <QClipboard>
@@ -919,6 +921,70 @@ class DesktopTests : public QObject {
                 bool_port_found = true;
             }
         QVERIFY(bool_port_found);
+    }
+    void inverter_pwm_and_pi_presets_produce_typed_outputs() {
+        auto run = [](int id, double time, const std::map<std::string, double> &values,
+                      CProgramState *state = nullptr) {
+            const auto *preset = signal_preset(id);
+            if (!preset) throw std::runtime_error("Missing signal preset");
+            const auto block = make_signal_preset(*preset, "test", 0, 0);
+            CProgramOptions options;
+            options.allow_time = true;
+            options.external_variables.insert("dt");
+            for (const auto &input : block.inputs) options.external_variables.insert(input.name);
+            for (const auto &output : block.outputs) {
+                options.external_variables.insert(output.name);
+                options.writable_variables.insert(output.name);
+            }
+            auto inputs = values;
+            inputs["dt"] = preset->period;
+            return execute_c_program(compile_c_program(block.code, options), time, state, inputs).variables;
+        };
+        const auto high = run(123, 0, {{"ma", 0}, {"mb", 0}, {"mc", 0}});
+        const auto low = run(123, 0.0005, {{"ma", 0}, {"mb", 0}, {"mc", 0}});
+        for (const auto *phase : {"A", "B", "C"}) {
+            QCOMPARE(high.at(std::string(phase) + "1"), 1.0);
+            QCOMPARE(high.at(std::string(phase) + "2"), 0.0);
+            QCOMPARE(low.at(std::string(phase) + "1"), 0.0);
+            QCOMPARE(low.at(std::string(phase) + "2"), 1.0);
+        }
+        const auto npc = run(124, 0.0005, {{"ma", 1}, {"mb", 0}, {"mc", -1}});
+        for (const auto &[phase, pattern] : {
+                 std::pair{"A", std::array{1., 1., 0., 0.}},
+                 std::pair{"B", std::array{0., 1., 1., 0.}},
+                 std::pair{"C", std::array{0., 0., 1., 1.}}})
+            for (int gate = 1; gate <= 4; ++gate)
+                QCOMPARE(npc.at(std::string(phase) + std::to_string(gate)), pattern[gate - 1]);
+        CProgramState state;
+        const auto saturated = run(122, 0, {{"reference", 2}, {"feedback", 0}}, &state);
+        const auto recovered = run(122, 0.0001, {{"reference", 0}, {"feedback", 0}}, &state);
+        QCOMPARE(saturated.at("out"), 1.0);
+        QCOMPARE(recovered.at("out"), 0.0);
+        QTemporaryDir temp;
+        EditorWindow window("en", temp.path());
+        window.show();
+        auto *library = window.findChild<QTreeWidget *>("library");
+        QVERIFY(library);
+        for (const auto [id, inputs, outputs] : {
+                 std::tuple{122, size_t(2), size_t(1)},
+                 std::tuple{123, size_t(3), size_t(6)},
+                 std::tuple{124, size_t(3), size_t(12)}}) {
+            QTreeWidgetItem *entry = nullptr;
+            for (QTreeWidgetItemIterator it(library); *it; ++it)
+                if ((*it)->data(0, Qt::UserRole).toInt() == id) entry = *it;
+            QVERIFY(entry);
+            for (auto *parent = entry->parent(); parent; parent = parent->parent()) parent->setExpanded(true);
+            library->scrollToItem(entry);
+            QTest::mouseClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              library->visualItemRect(entry).center());
+            QTest::mouseDClick(library->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               library->visualItemRect(entry).center());
+            QTest::mouseClick(window.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                              window.canvas()->mapFromScene(QPointF(100 + 200 * (id - 122), 100)));
+            QCOMPARE(window.project().code_blocks.size(), size_t(id - 121));
+            QCOMPARE(window.project().code_blocks.back().inputs.size(), inputs);
+            QCOMPARE(window.project().code_blocks.back().outputs.size(), outputs);
+        }
     }
     void signal_presets_are_editable_code_blocks() {
         QTemporaryDir temp;

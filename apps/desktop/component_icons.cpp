@@ -134,7 +134,7 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         f.setBold(true);
         p.setFont(f);
         p.drawText(QRectF(3, 4, 26, 24), Qt::AlignCenter, "{C}");
-    } else if (id >= 109 && id <= 121) {
+    } else if (signal_preset(id)) {
         p.drawRoundedRect(QRectF(3, 4, 26, 24), 3, 3);
         p.drawLine(0,16,3,16);p.drawLine(29,16,32,16);
         paint_code_icon(p,default_code_icon(id),QRectF(6,7,20,18));

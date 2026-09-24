@@ -1,0 +1,12 @@
+{
+  "type": "signal_pwm_3l",
+  "fields": [],
+  "palette": {
+    "id": 124,
+    "label": "signal_pwm_3l",
+    "category": "signals",
+    "short": "PWM 3L",
+    "fixed": false,
+    "hidden": false
+  }
+}
