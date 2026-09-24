@@ -15,7 +15,7 @@ public_port "67cbed39-1ff5-5f8f-a2da-731185ad9fda" "a" "115f6897-f914-5111-8a09-
 public_port "d912aca3-22ea-5ece-85be-06da1d9fdeab" "b" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "sp" 0 0
 public_port "d19036d5-73ad-56ab-a8fd-cb4b2a9c2343" "c" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "sp" 0 0
 public_port "ea558ad9-4c56-5624-877d-a0c8a6ad72c0" "Ns" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 0
-public_parameter "9716445a-973d-5f11-807c-2e1fc98cc713" "Np/Ns" "" "*" "value" 2 "" 0 0 0 0 ""
+public_parameter "9716445a-973d-5f11-807c-2e1fc98cc713" "Np/Ns" "" "*" "value" 2 "" 1 1e-6 0 0 ""
 body
 PowerDriveSim 30
 project "899e47ce-3051-545d-9a19-069c46b7ac8e" "Three-phase Y-Y transformer"

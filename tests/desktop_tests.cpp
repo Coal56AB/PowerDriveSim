@@ -229,6 +229,13 @@ class DesktopTests : public QObject {
         QVERIFY(peak!=result.samples.end());
         QVERIFY(std::abs(peak->values[size_t(voltage-result.channels.begin())]-5)<1e-12);
         auto changed=example.project();
+        try {
+            write_property(changed,changed.instances[0].id,
+                           "parameter/"+changed.definitions[0].parameters[0].id,0.0);
+            QFAIL("Zero turns ratio must be rejected by the public parameter range");
+        } catch(const Diagnostic &diagnostic) {
+            QCOMPARE(diagnostic.code,std::string("invalid_instance_parameter"));
+        }
         write_property(changed,changed.instances[0].id,
                        "parameter/"+changed.definitions[0].parameters[0].id,4.0);
         example.set_project(changed);
