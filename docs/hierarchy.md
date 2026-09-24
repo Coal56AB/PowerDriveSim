@@ -102,7 +102,9 @@ library/name detection. It may also embed a raster image; the desktop converts
 the selected file to a PNG of at most 512×512 and stores its base64 bytes in the
 definition metadata. The embedded image takes precedence over the symbol and is
 drawn with fixed aspect ratio, while the block frame and real ports remain normal
-schematic geometry. No absolute source path is serialized.
+schematic geometry. The loader checks the PNG header and dimensions before the
+desktop decodes it; malformed headers and images larger than 512×512 receive an
+addressed appearance diagnostic. No absolute source path is serialized.
 
 ## Schema 7
 

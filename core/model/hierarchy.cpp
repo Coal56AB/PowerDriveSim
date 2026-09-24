@@ -4,12 +4,15 @@
 #include "core/model/semiconductor.hpp"
 #include "core/model/connectivity.hpp"
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <numbers>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <utility>
 
 namespace pds {
@@ -73,6 +76,46 @@ std::string expanded_uuid(const std::vector<std::string> &path, const std::strin
     return id;
 }
 namespace {
+int base64_digit(char value) {
+    if (value >= 'A' && value <= 'Z') return value - 'A';
+    if (value >= 'a' && value <= 'z') return value - 'a' + 26;
+    if (value >= '0' && value <= '9') return value - '0' + 52;
+    if (value == '+') return 62;
+    if (value == '/') return 63;
+    return -1;
+}
+bool valid_appearance_png(std::string_view encoded) {
+    if (encoded.empty()) return true;
+    if (encoded.size() > 8 * 1024 * 1024 || encoded.size() < 60 || encoded.size() % 4 != 0)
+        return false;
+    const size_t padding = encoded.ends_with("==") ? 2 : encoded.ends_with('=') ? 1 : 0;
+    for (size_t i = 0; i < encoded.size() - padding; ++i)
+        if (base64_digit(encoded[i]) < 0) return false;
+    for (size_t i = encoded.size() - padding; i < encoded.size(); ++i)
+        if (encoded[i] != '=') return false;
+    std::array<unsigned char, 24> header{};
+    for (size_t group = 0; group < 8; ++group) {
+        const auto offset = group * 4;
+        const auto bits = (uint32_t(base64_digit(encoded[offset])) << 18) |
+                          (uint32_t(base64_digit(encoded[offset + 1])) << 12) |
+                          (uint32_t(base64_digit(encoded[offset + 2])) << 6) |
+                          uint32_t(base64_digit(encoded[offset + 3]));
+        header[group * 3] = static_cast<unsigned char>(bits >> 16);
+        header[group * 3 + 1] = static_cast<unsigned char>(bits >> 8);
+        header[group * 3 + 2] = static_cast<unsigned char>(bits);
+    }
+    constexpr std::array<unsigned char, 8> signature{137, 80, 78, 71, 13, 10, 26, 10};
+    if (!std::equal(signature.begin(), signature.end(), header.begin()) ||
+        header[8] != 0 || header[9] != 0 || header[10] != 0 || header[11] != 13 ||
+        header[12] != 'I' || header[13] != 'H' || header[14] != 'D' || header[15] != 'R')
+        return false;
+    auto dimension = [&](size_t start) {
+        return (uint32_t(header[start]) << 24) | (uint32_t(header[start + 1]) << 16) |
+               (uint32_t(header[start + 2]) << 8) | uint32_t(header[start + 3]);
+    };
+    const auto width = dimension(16), height = dimension(20);
+    return width > 0 && width <= 512 && height > 0 && height <= 512;
+}
 void parameter_value(Schematic &s, const Project &catalog, const PublicParameter &p, double value) {
     if (!public_parameter_accepts(p, value))
         throw Diagnostic("invalid_public_parameter_value", p.id,
@@ -286,10 +329,8 @@ void validate_hierarchy(const Project &p) {
     for (const auto &d : p.definitions) {
         auto body = definition_project(p, d.id);
         validate_schematic(body);
-        if(d.appearance.symbol < -1 || d.appearance.symbol > 9999 || d.appearance.image_png.size() > 8 * 1024 * 1024 ||
-           std::any_of(d.appearance.image_png.begin(),d.appearance.image_png.end(),[](unsigned char c){
-               return !(std::isalnum(c)||c=='+'||c=='/'||c=='=');
-           }))
+        if(d.appearance.symbol < -1 || d.appearance.symbol > 9999 ||
+           !valid_appearance_png(d.appearance.image_png))
             throw Diagnostic("invalid_definition_appearance",d.id,"Definition appearance is invalid");
         std::set<std::string> ids, names, bindings;
         for (const auto &port : d.ports) {

@@ -121,8 +121,27 @@ static void net_display_names() {
     require(execute(compile(p)).samples.back().values == before.samples.back().values,
             "Net labels do not alter numerical ordering or results");
 }
+static void embedded_appearance_bounds() {
+    auto project = fixture();
+    project.definitions.front().appearance.image_png =
+        "iVBORw0KGgoAAAANSUhEUgAAAgAAAAABCAYAAACouxZ2AAAAG0lEQVR4nGMUkdP4zzAKRsEoGAWjYBSMghEFANUtAVuccXo2AAAAAElFTkSuQmCC";
+    validate_hierarchy(project);
+    std::ostringstream saved;
+    write_project(project, saved);
+    std::istringstream input(saved.str());
+    require(read_project(input).definitions.front().appearance == project.definitions.front().appearance,
+            "A 512-pixel embedded PNG survives project round trip");
+    project.definitions.front().appearance.image_png[0] = 'A';
+    error("invalid_definition_appearance", [&] { validate_hierarchy(project); });
+    project.definitions.front().appearance.image_png =
+        "iVBORw0KGgoAAAANSUhEUgAAAgEAAAABCAYAAABHeX1IAAAAG0lEQVR4nGMUkdP4zzAKRsEoGAWjYBSMghEHANqZAVtLjZ2nAAAAAElFTkSuQmCC";
+    error("invalid_definition_appearance", [&] { validate_hierarchy(project); });
+    project.definitions.front().appearance.image_png = "bm90IGEgUE5H";
+    error("invalid_definition_appearance", [&] { validate_hierarchy(project); });
+}
 int main() try {
     net_display_names();
+    embedded_appearance_bounds();
     auto p = fixture();
     auto expressed=p;
     expressed.definitions[0].initialization_code="double capacitance = 2e-6;";
