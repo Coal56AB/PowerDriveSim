@@ -404,8 +404,15 @@ static void topology() {
     error("missing_ground",[&]{compile(p);});
     p=rc(); p.nodes.push_back({id(20),"floating",false});
     error("floating_node",[&]{compile(p);});
-    p=rc(); p.components[1].positive=id(999);
-    error("missing_terminal",[&]{compile(p);});
+    p=rc(); p.components[1].name="IP1"; p.components[1].positive=id(999);
+    try {
+        compile(p);
+        require(false,"Disconnected component must be diagnosed");
+    } catch(const Diagnostic& diagnostic) {
+        require(diagnostic.code=="missing_terminal"&&diagnostic.object==p.components[1].id&&
+                std::string(diagnostic.what()).find("IP1")!=std::string::npos,
+                "Missing terminal keeps its UUID and includes its visible name");
+    }
     p=rc(); p.components[1].name="IP2"; p.components[1].negative=p.components[1].positive;
     try {
         compile(p);
