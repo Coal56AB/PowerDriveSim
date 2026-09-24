@@ -37,7 +37,7 @@ constexpr std::array<SignalPortPreset, 12> three_level_gates{{
     {"C3", SignalScalarType::boolean}, {"C4", SignalScalarType::boolean},
 }};
 
-constexpr std::array<SignalPreset, 16> presets{{
+constexpr std::array<SignalPreset, 17> presets{{
     {109, "out = 1;", 100e-6, {}, real_output},
     {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6, {}, real_output},
     {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6, {}, real_output},
@@ -75,6 +75,21 @@ int lc = c >= 1 || c > upper ? 1 : c <= -1 || c < lower ? -1 : 0;
 A1 = la > 0; A2 = la >= 0; A3 = la <= 0; A4 = la < 0;
 B1 = lb > 0; B2 = lb >= 0; B3 = lb <= 0; B4 = lb < 0;
 C1 = lc > 0; C2 = lc >= 0; C3 = lc <= 0; C4 = lc < 0;)", 10e-6, three_phase_modulation, three_level_gates},
+    {125, R"(static double integral = 0;
+static double derivative = 0;
+static double previous_feedback = 0;
+static int initialized = 0;
+double kp = 1;
+double ki = 100;
+double kd = 0.001;
+double filter_time = 0.001;
+if (!initialized) { previous_feedback = feedback; initialized = 1; }
+double error = reference - feedback;
+derivative += dt / (filter_time + dt) * ((feedback - previous_feedback) / dt - derivative);
+previous_feedback = feedback;
+double raw = kp * error + ki * integral - kd * derivative;
+if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
+out = clamp(kp * error + ki * integral - kd * derivative, -1, 1);)", 100e-6, regulator_inputs, real_output},
 }};
 } // namespace
 
@@ -110,6 +125,7 @@ std::vector<IconPrimitive> default_code_icon(int placement_id) {
     case 122:return {text("PI",10)};
     case 123:return {text("2L",10)};
     case 124:return {text("3L",10)};
+    case 125:return {text("PID",8)};
     default:return {text("{C}",8)};
     }
 }

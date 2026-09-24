@@ -960,6 +960,11 @@ class DesktopTests : public QObject {
         const auto recovered = run(122, 0.0001, {{"reference", 0}, {"feedback", 0}}, &state);
         QCOMPARE(saturated.at("out"), 1.0);
         QCOMPARE(recovered.at("out"), 0.0);
+        CProgramState pid_state;
+        const auto pid_initial = run(125, 0, {{"reference", 0}, {"feedback", 0}}, &pid_state);
+        const auto pid_step = run(125, 0.0001, {{"reference", 0}, {"feedback", 0.1}}, &pid_state);
+        QCOMPARE(pid_initial.at("out"), 0.0);
+        QVERIFY(pid_step.at("out") < -0.1 && pid_step.at("out") > -1.0);
         QTemporaryDir temp;
         EditorWindow window("en", temp.path());
         window.show();
@@ -968,7 +973,8 @@ class DesktopTests : public QObject {
         for (const auto [id, inputs, outputs] : {
                  std::tuple{122, size_t(2), size_t(1)},
                  std::tuple{123, size_t(3), size_t(6)},
-                 std::tuple{124, size_t(3), size_t(12)}}) {
+                 std::tuple{124, size_t(3), size_t(12)},
+                 std::tuple{125, size_t(2), size_t(1)}}) {
             QTreeWidgetItem *entry = nullptr;
             for (QTreeWidgetItemIterator it(library); *it; ++it)
                 if ((*it)->data(0, Qt::UserRole).toInt() == id) entry = *it;

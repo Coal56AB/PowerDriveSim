@@ -1,0 +1,12 @@
+{
+  "type": "signal_pid",
+  "fields": [],
+  "palette": {
+    "id": 125,
+    "label": "signal_pid",
+    "category": "signals",
+    "short": "PID",
+    "fixed": false,
+    "hidden": false
+  }
+}
