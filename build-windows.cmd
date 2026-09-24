@@ -42,14 +42,17 @@ echo [2/4] Building...
 cmake --build build --config Release --target powerdrive-desktop --parallel
 if errorlevel 1 goto :failed
 
-echo [3/4] Deploying Qt runtime...
-"%PDS_BUILD_QT%\bin\windeployqt.exe" --release --no-translations "build\Release\powerdrive-desktop.exe"
-if errorlevel 1 goto :failed
+echo [3/4] Checking deployed Qt runtime...
+for %%F in (Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll platforms\qwindows.dll) do (
+    if not exist "build\Release\%%F" (
+        echo ERROR: Missing build\Release\%%F after CMake build.
+        goto :failed
+    )
+)
 
 echo [4/4] Smoke test...
-set "PATH=%PDS_BUILD_QT%\bin;%PATH%"
-set "QT_QPA_PLATFORM=offscreen"
-set "QT_QPA_PLATFORM_PLUGIN_PATH=%PDS_BUILD_QT%\plugins\platforms"
+set "QT_QPA_PLATFORM=windows"
+set "QT_QPA_PLATFORM_PLUGIN_PATH="
 set "QT_QPA_FONTDIR=C:\Windows\Fonts"
 "build\Release\powerdrive-desktop.exe" --smoke-test
 if errorlevel 1 goto :failed

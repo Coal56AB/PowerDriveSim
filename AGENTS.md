@@ -90,9 +90,9 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-Пути адаптировать под машину. На Windows тестам нужен Qt/bin в PATH; offscreen plugin берётся через импортированную CMake-цель. Для изображений offscreen задайте QT_QPA_FONTDIR=C:/Windows/Fonts и PDS_SCREENSHOT_PATH=<PNG path>.
+Пути адаптировать под машину. После сборки Windows CMake разворачивает Qt runtime рядом с приложением и оконными тестами; offscreen plugin берётся через импортированную CMake-цель. Для изображений offscreen задайте QT_QPA_FONTDIR=C:/Windows/Fonts и PDS_SCREENSHOT_PATH=<PNG path>.
 
-`build/Release/powerdrive-desktop.exe` — приложение; `--lang en` переключает язык. Примеры копируются рядом в `examples`. Локально windeployqt уже скопировал Qt DLL рядом с EXE; MSVC runtime на машине установлен, отдельно не упакован. Подробности: docs/desktop.md.
+`build/Release/powerdrive-desktop.exe` — приложение; `--lang en` переключает язык. Примеры копируются рядом в `examples`. MSVC runtime на машине установлен, отдельно не упакован. Подробности: docs/desktop.md.
 
 CLI: `build/Release/powerdrive-cli examples/rc.pds build/rc.csv`.
 Не запускать старые test binaries после неудачной сборки. Целевая проверка выполняется на Windows.

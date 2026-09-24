@@ -139,14 +139,14 @@ Qt перехватывает неожиданное C++-исключение, �
 
 В Windows для обычной локальной сборки можно дважды запустить корневой
 `build-windows.cmd`. Скрипт проверяет, что старый экземпляр приложения не держит
-EXE, находит Qt через `PDS_QT_ROOT`, `QTDIR` или локальную `.deps`, собирает Release,
-запускает `windeployqt` и короткую проверку запуска. Готовый файл находится в
+EXE, находит Qt через `PDS_QT_ROOT`, `QTDIR` или локальную `.deps`, собирает Release
+и выполняет короткую проверку запуска. CMake вызывает `windeployqt` после сборки
+приложения и оконных тестов. Готовый файл находится в
 `build/Release/powerdrive-desktop.exe`.
 
 ```powershell
 cmake -S . -B build -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH="C:/Qt/6.5.3/msvc2019_64"
 cmake --build build --config Release
-C:/Qt/6.5.3/msvc2019_64/bin/windeployqt.exe --release --no-translations build/Release/powerdrive-desktop.exe
 build/Release/powerdrive-desktop.exe
 ```
 
