@@ -42,6 +42,7 @@
   "example_npc-3l": "Трёхуровневый NPC-инвертор",
   "example_open-end-winding": "Два инвертора с открытой обмоткой",
   "example_ac-voltage-controller": "Регулятор переменного напряжения",
+  "example_ac-voltage-controller-3p-code": "Трёхфазный регулятор с Блоком кода",
   "example_precharge-discharge": "Предзаряд и разряд DC-звена",
   "example_braking-chopper": "Тормозной прерыватель",
   "step_reason_none": "не требовалось",

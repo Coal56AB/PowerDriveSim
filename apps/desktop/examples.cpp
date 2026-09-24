@@ -60,6 +60,7 @@ void EditorWindow::build_examples_menu(QMenu *menu) {
                                                 {"npc-3l", "converters/inverters"},
                                                 {"open-end-winding", "converters/inverters"},
                                                 {"ac-voltage-controller", "converters/ac_ac"},
+                                                {"ac-voltage-controller-3p-code", "converters/ac_ac"},
                                                 {"precharge-discharge", "converters/dc_bus"},
                                                 {"braking-chopper", "converters/dc_bus"}};
     for (const auto &file : directory.entryList({"*.pds"}, QDir::Files)) {

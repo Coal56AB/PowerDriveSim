@@ -42,6 +42,7 @@
   "example_npc-3l": "Three-level NPC inverter",
   "example_open-end-winding": "Dual inverter with open-end winding",
   "example_ac-voltage-controller": "AC voltage controller",
+  "example_ac-voltage-controller-3p-code": "Three-phase controller with CodeBlock",
   "example_precharge-discharge": "DC bus precharge and discharge",
   "example_braking-chopper": "Braking chopper",
   "step_reason_none": "not needed",

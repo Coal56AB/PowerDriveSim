@@ -656,6 +656,12 @@ class InteractionTests : public QObject {
     }
     void ac_controller_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
+        auto *example_action = w.findChild<QAction *>("example_ac-voltage-controller-3p-code");
+        QVERIFY(example_action);
+        QCOMPARE(example_action->text(), QString::fromUtf8("Трёхфазный регулятор с Блоком кода"));
+        auto *example_group = qobject_cast<QMenu *>(example_action->parent());
+        QVERIFY(example_group);
+        QCOMPARE(example_group->title(), QString::fromUtf8("Регуляторы AC → AC"));
         Project empty; empty.id = new_uuid(); empty.wired = true;
         w.set_project(empty); ready(w);
         auto *insert = w.findChild<QAction *>("insert_component_250");
