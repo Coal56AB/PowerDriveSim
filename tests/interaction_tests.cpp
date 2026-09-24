@@ -100,19 +100,46 @@ class InteractionTests : public QObject {
         auto *button = w.findChild<QToolButton *>("edit_definition_button");
         QVERIFY(button);
         QVERIFY(!button->isWindow());
+        QCOMPARE(button->parentWidget(), w.findChild<QWidget *>("hierarchy_breadcrumbs"));
         QVERIFY(button->isVisible());
-        QTest::qWait(100);
+        struct TopLevelGuard : QObject {
+            bool detached = false;
+            bool eventFilter(QObject *object, QEvent *event) override {
+                if (event->type() == QEvent::ParentChange &&
+                    static_cast<QWidget *>(object)->isWindow())
+                    detached = true;
+                return false;
+            }
+        } guard;
+        button->installEventFilter(&guard);
         const auto inner = w.project().instances.at(1).id;
         w.open_subcircuit(inner);
+        QVERIFY(!guard.detached);
         QVERIFY(!button->isWindow());
         QTest::qWait(100);
         w.navigate_hierarchy({});
+        QVERIFY(!guard.detached);
         QVERIFY(!button->isWindow());
         QVERIFY(!button->isVisible());
-        w.open_subcircuit(outer);
-        QVERIFY(!button->isWindow());
-        QTest::qWait(100);
-        QCOMPARE(w.hierarchy_path(), (std::vector<std::string>{outer}));
+        // The user's hang happened on a native double-click into this locked
+        // three-phase library definition, not only on the direct API path.
+        const std::vector<std::string> expected{outer};
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            auto *outer_item = item(w, outer);
+            QVERIFY(outer_item);
+            QTest::mouseDClick(w.canvas()->viewport(), Qt::LeftButton, Qt::NoModifier,
+                               w.canvas()->mapFromScene(outer_item->scenePos()));
+            QTRY_VERIFY_WITH_TIMEOUT(w.hierarchy_path() == expected, 1000);
+            QVERIFY(!guard.detached);
+            QVERIFY(!button->isWindow());
+            QCOMPARE(button->parentWidget(), w.findChild<QWidget *>("hierarchy_breadcrumbs"));
+            QTest::qWait(100);
+            QVERIFY(button->isVisible());
+            w.navigate_hierarchy({});
+            QVERIFY(!guard.detached);
+            QVERIFY(!button->isWindow());
+            QVERIFY(!button->isVisible());
+        }
     }
     void results_panel_keeps_user_height_across_tabs() {
         QTemporaryDir dir;

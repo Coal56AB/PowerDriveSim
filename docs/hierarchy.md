@@ -70,6 +70,13 @@ The complete catalog is checked for missing definitions, invalid local UUIDs, in
 
 The desktop uses the same transactions for grouping, insertion, detach and expansion. Breadcrumbs and the hierarchy tree navigate between levels. Opening internals initially shows a read-only shared definition; Edit definition enables changes affecting all linked instances. Public ports and numeric parameter bindings are editable in a dialog. Instance parameter overrides are shown in the Inspector. Run, save and autosave always operate on the complete root project, including when an internal level is open. Browsing levels does not create undo entries or discard redo. Undo/redo reverses an edit and restores the level where that edit was made.
 
+The Edit definition button remains a child of the breadcrumb widget throughout
+navigation. Detaching it creates a native top-level window; repeated hierarchy
+refreshes then trigger a Windows activation loop and freeze the UI. The permanent
+native interaction test `locked_hierarchy_navigation_keeps_definition_button_embedded`
+covers direct navigation, double-click entry, nested locked definitions and
+repeated return to the root. Keep this test when changing hierarchy controls.
+
 The public-port chooser includes each input and output of a code block by its
 stable port UUID, every output of a multi-output Gate C block and typed
 connection-tag terminals. Display names follow the current port names; changing
