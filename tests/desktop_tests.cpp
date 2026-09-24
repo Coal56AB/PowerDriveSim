@@ -235,7 +235,13 @@ class DesktopTests : public QObject {
         value->setText("not a resistance");
         QTest::mouseClick(apply, Qt::LeftButton);
         QCOMPARE(window.project().components[1].value, 1000.0);
-        QVERIFY(window.findChild<QListWidget *>("diagnostics_list")->count() > 0);
+        auto *diagnostics = window.findChild<QListWidget *>("diagnostics_list");
+        QVERIFY(diagnostics && diagnostics->count() > 0);
+        diagnostics->setCurrentRow(0);
+        diagnostics->setFocus();
+        QApplication::clipboard()->setText("previous clipboard contents");
+        QTest::keyClick(diagnostics, Qt::Key_C, Qt::ControlModifier);
+        QCOMPARE(QApplication::clipboard()->text(), diagnostics->item(0)->text());
         window.observe_object(window.project().wires[1].id);
         window.observe_object(v);
         QVERIFY(window.scope() != nullptr);
