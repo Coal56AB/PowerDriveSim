@@ -586,12 +586,20 @@ class InteractionTests : public QObject {
         QVERIFY(w.has_result() && !w.result().samples.empty());
         const auto path = dir.filePath("dual.pds"); QVERIFY(w.save_project(path));
         const auto expected = encoded(w.root_project());
-        if (auto screenshot = qEnvironmentVariable("PDS_OPEN_END_SCREENSHOT"); !screenshot.isEmpty()) {
+        const auto screenshot = qEnvironmentVariable("PDS_OPEN_END_SCREENSHOT");
+        if (!screenshot.isEmpty()) {
             QTest::qWait(30); QVERIFY(w.grab().save(screenshot + ".png"));
             w.open_plot(w.project().plots.front().id);
             auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(w.project().plots.front().id));
             QVERIFY(graph); QTest::qWait(30); QVERIFY(graph->grab().save(screenshot + "-plot.png")); graph->close();
-            w.open_subcircuit(w.project().instances.front().id);
+        }
+        w.open_subcircuit(w.project().instances.front().id);
+        QToolButton *root_title = nullptr;
+        for (auto *candidate : w.findChildren<QToolButton *>("hierarchy_level_0"))
+            if (candidate->isVisible()) root_title = candidate;
+        QVERIFY(root_title);
+        QCOMPARE(root_title->text(), QString::fromStdString(w.root_project().name));
+        if (!screenshot.isEmpty()) {
             QTest::qWait(30); QVERIFY(w.grab().save(screenshot + "-inside.png"));
         }
         QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
