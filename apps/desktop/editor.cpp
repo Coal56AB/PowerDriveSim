@@ -2041,7 +2041,20 @@ void EditorWindow::build_ui() {
                                               std::abs(candidate.x() - old_node.x()) < 1e-6 &&
                                               between(candidate.y(), trunk[i].adjacent.y(),
                                                       trunk[j].adjacent.y());
-                        if (horizontal || vertical) {
+                        const auto along_end = [&](const TrunkEnd &end) {
+                            return (std::abs(end.adjacent.y() - old_node.y()) < 1e-6 &&
+                                    std::abs(candidate.y() - old_node.y()) < 1e-6 &&
+                                    between(candidate.x(), old_node.x(), end.adjacent.x())) ||
+                                   (std::abs(end.adjacent.x() - old_node.x()) < 1e-6 &&
+                                    std::abs(candidate.x() - old_node.x()) < 1e-6 &&
+                                    between(candidate.y(), old_node.y(), end.adjacent.y()));
+                        };
+                        // A T-junction may be at a corner: one trunk side is
+                        // collinear with the dragged branch's new endpoint,
+                        // while the other side turns at the old junction.
+                        const bool corner = trunk.size() == 2 &&
+                                            (along_end(trunk[i]) || along_end(trunk[j]));
+                        if (horizontal || vertical || corner) {
                             JunctionMove move{node->id, candidate, {}};
                             for (const auto &end : trunk) {
                                 const auto path = static_cast<QGraphicsPathItem *>(wires_.at(end.wire))->path();

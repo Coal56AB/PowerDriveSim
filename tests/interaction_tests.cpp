@@ -4990,6 +4990,73 @@ class InteractionTests : public QObject {
         const auto reopened = static_cast<QGraphicsPathItem *>(item(routed, branch_wire))->path();
         QCOMPARE(reopened, optimized);
     }
+    void moved_plot_branch_at_trunk_corner_repositions_node() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        Project project;project.id=new_uuid();project.wired=true;
+        w.set_project(project);
+        const auto left=w.add_node(false,{0,140});
+        const auto joint=w.add_node(false,{140,140});
+        const auto right=w.add_node(false,{280,180});
+        const auto graph=w.add_plot({320,-70});
+        QVERIFY(w.connect_ports({left,"node"},{joint,"node"}));
+        QVERIFY(w.connect_ports({joint,"node"},{right,"node"}));
+        QVERIFY(w.connect_ports({graph,"in1"},{joint,"node"}));
+        auto schematic=w.project();
+        schematic.wires[1].bends={{140,180}};
+        schematic.wires[2].bends={{140,-20}};
+        const auto branch=schematic.wires[2].id;
+        w.set_project(schematic);
+        ready(w);
+        w.select_object(branch);
+        const auto before=encoded(w.project());
+        auto *branch_item=static_cast<QGraphicsPathItem*>(item(w,branch));
+        auto path=branch_item->path();
+        QVERIFY(path.elementCount()>=3);
+        QCOMPARE(path.elementAt(path.elementCount()-2).x,140.0);
+        QCOMPARE(path.elementAt(path.elementCount()-1).x,140.0);
+        drag(w,{140,40},{100,40});
+        const auto moved=std::find_if(w.project().nodes.begin(),w.project().nodes.end(),
+                                      [&](const Node& node){return node.id==joint;});
+        QVERIFY(moved!=w.project().nodes.end());
+        QCOMPARE(QPointF(moved->x,moved->y),QPointF(100,140));
+        const auto branch_path=branch_item->path();
+        const auto branch_end=branch_path.elementAt(branch_path.elementCount()-1);
+        const auto branch_before_end=branch_path.elementAt(branch_path.elementCount()-2);
+        QCOMPARE(QPointF(branch_end.x,branch_end.y),QPointF(100,140));
+        QCOMPARE(branch_before_end.x,100.0);
+        std::map<std::string,QPainterPath> paths;
+        size_t degree=0;
+        for(const auto& wire:w.project().wires) {
+            if(wire.from.object!=joint&&wire.to.object!=joint)continue;
+            ++degree;
+            const auto route=static_cast<QGraphicsPathItem*>(item(w,wire.id))->path();
+            QVERIFY(route.elementCount()>=2);
+            const auto endpoint=wire.from.object==joint?route.elementAt(0):route.elementAt(route.elementCount()-1);
+            QCOMPARE(QPointF(endpoint.x,endpoint.y),QPointF(100,140));
+            for(int i=1;i<route.elementCount();++i) {
+                const auto previous=route.elementAt(i-1),current=route.elementAt(i);
+                QVERIFY(QPointF(previous.x,previous.y)!=QPointF(current.x,current.y));
+            }
+            paths.emplace(wire.id,route);
+        }
+        QCOMPARE(degree,size_t(3));
+        const auto left_path=paths.at(w.project().wires[0].id);
+        const auto right_path=paths.at(w.project().wires[1].id);
+        QCOMPARE(left_path.elementAt(left_path.elementCount()-1).x,100.0);
+        QCOMPARE(right_path.elementAt(0).x,100.0);
+        QCOMPARE(right_path.elementAt(1).x,140.0);
+        const auto after=encoded(w.project());
+        QVERIFY(after!=before);
+        w.undo();QCOMPARE(encoded(w.project()),before);
+        w.redo();QCOMPARE(encoded(w.project()),after);
+        const auto file=dir.filePath("corner-route.pds");
+        QVERIFY(w.save_project(file));
+        QVERIFY(w.open_project(file));
+        QCOMPARE(encoded(w.project()),after);
+        for(const auto& [id,route]:paths)
+            QCOMPARE(static_cast<QGraphicsPathItem*>(item(w,id))->path(),route);
+    }
     void wires_branch_route_reconnect_and_save() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
