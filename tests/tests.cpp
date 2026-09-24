@@ -201,6 +201,43 @@ static void numerical() {
              method==Method::trapezoidal?2e-7:2e-4,"DC motor energy balance");
     }
 
+    // With back EMF above the applied voltage, the same motor branch becomes a
+    // generator. The source absorbs energy; no special regenerative solver path
+    // or hidden clamp is allowed to reverse the physical current sign.
+    p=motor_project(Method::trapezoidal);
+    p.profile.stop=.01;
+    p.components[1].initial=150;
+    r=execute(compile(p));
+    {
+        const auto omega=named_channel(r,11,"omega:");
+        const auto motor_current=named_channel(r,11,"i:");
+        const auto source_current=named_channel(r,10,"i:");
+        double returned=0,copper=0,damping=0,load=0;
+        const auto &m=p.components[1].motor;
+        for(size_t k=0;k<r.samples.size();++k) {
+            const auto &sample=r.samples[k];
+            require(sample.values[motor_current]<0 && sample.values[source_current]>0,
+                    "Overspeed DC motor returns current into the voltage source");
+            if(!k)continue;
+            const auto &prior_step=r.samples[k-1];
+            const double dt=sample.time-prior_step.time;
+            auto integral=[&](double a,double b){return .5*(a+b)*dt;};
+            const double i0=prior_step.values[motor_current],i1=sample.values[motor_current];
+            const double w0=prior_step.values[omega],w1=sample.values[omega];
+            returned+=integral(-12*i0,-12*i1);
+            copper+=integral(2*i0*i0,2*i1*i1);
+            damping+=integral(m.damping*w0*w0,m.damping*w1*w1);
+            load+=integral(m.load_torque*w0,m.load_torque*w1);
+        }
+        const double initial_speed=r.samples.front().values[omega];
+        const double final_speed=r.samples.back().values[omega];
+        const double released=.5*m.inertia*(initial_speed*initial_speed-final_speed*final_speed);
+        require(final_speed<initial_speed && returned>0 && copper>0 && damping>0,
+                "Mechanical energy decreases while source and losses receive energy");
+        near(released,returned+copper+damping+load,2e-7,
+             "DC motor regenerative mechanical/electrical energy balance");
+    }
+
     // The DC operating point includes external shaft load rather than silently
     // dropping it: electromagnetic torque equals damping plus load torque.
     p=motor_project(Method::backward_euler);
