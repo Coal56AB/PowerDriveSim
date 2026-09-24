@@ -42,6 +42,7 @@
   "example_vsi-2l-signal-pwm": "Двухуровневый инвертор с ШИМ-блоком",
   "example_ideal-transformer": "Идеальный трансформатор 2:1",
   "example_dc-motor-startup": "Разгон двигателя постоянного тока",
+  "example_dc-motor-pwm": "Двигатель с ПИ-регулятором и ШИМ-полумостом",
   "examples_machines": "Электрические машины",
   "example_npc-3l": "Трёхуровневый NPC-инвертор",
   "example_open-end-winding": "Два инвертора с открытой обмоткой",

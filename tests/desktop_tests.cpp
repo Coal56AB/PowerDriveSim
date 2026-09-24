@@ -107,6 +107,51 @@ class DesktopTests : public QObject {
         const auto index=size_t(speed-example.result().channels.begin());
         QVERIFY(std::abs(example.result().samples.back().values[index]-76.016)<0.01);
     }
+    void dc_motor_closed_loop_pwm_example() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        EditorWindow window("en",temp.path());
+        QVERIFY(window.open_project(QString(PDS_SOURCE_DIR)+"/examples/dc-motor-pwm.pds"));
+        QCOMPARE(window.project().instances.size(),size_t(1));
+        QCOMPARE(window.project().code_blocks.size(),size_t(3));
+        QCOMPARE(window.project().plots.size(),size_t(2));
+        const auto motor_id=window.project().components[1].id;
+        QCOMPARE(plot_source_channels(window.project(),window.project().plots[0].id)[0],
+                 "omega/"+motor_id);
+        if(const auto screenshot=qEnvironmentVariable("PDS_MOTOR_PWM_SCREENSHOT");!screenshot.isEmpty()) {
+            window.resize(1400,900);
+            window.show();
+            window.findChild<QAction *>("action_fit")->trigger();
+            QTest::qWait(80);
+            QVERIFY(window.grab().save(screenshot));
+        }
+        const auto saved=temp.filePath("dc-motor-pwm-copy.pds");
+        QVERIFY(window.save_project(saved));
+        QVERIFY(window.open_project(saved));
+        window.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!window.running(),5000);
+        QVERIFY(window.has_result());
+        const auto &result=window.result();
+        const auto speed=std::find_if(result.channels.begin(),result.channels.end(),
+                                      [&](const Channel &channel){return channel.object=="omega/"+motor_id;});
+        QVERIFY(speed!=result.channels.end());
+        QVERIFY(!result.samples.empty());
+        QVERIFY(std::abs(result.samples.back().values[size_t(speed-result.channels.begin())]-60)<1.5);
+        const auto &blocks=window.project().code_blocks;
+        const auto pwm=std::find_if(blocks.begin(),blocks.end(),[](const CodeBlock &block) {
+            return block.name=="Half-bridge PWM";
+        });
+        QVERIFY(pwm!=blocks.end());
+        auto gate_index=[&](const CodePort &port) {
+            const auto key=signal_endpoint_key({pwm->id,port.id});
+            const auto found=std::find(result.gate_objects.begin(),result.gate_objects.end(),key);
+            return size_t(found-result.gate_objects.begin());
+        };
+        const auto high=gate_index(pwm->outputs[0]),low=gate_index(pwm->outputs[1]);
+        QVERIFY(high<result.gate_objects.size() && low<result.gate_objects.size());
+        for(const auto &sample:result.samples)
+            QVERIFY(sample.gates[high]!=sample.gates[low]);
+    }
     void ideal_transformer_palette_and_ports() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
