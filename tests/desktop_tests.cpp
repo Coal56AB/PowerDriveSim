@@ -192,6 +192,43 @@ class DesktopTests : public QObject {
         QVERIFY(example.has_result());
         QVERIFY(example.result().max_scaled_residual<1e-12);
     }
+    void three_phase_transformer_library_and_example() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        EditorWindow window("en",temp.path());
+        window.show();
+        QVERIFY(window.findChild<QAction *>("insert_component_283"));
+        QVERIFY(window.open_project(QString(PDS_SOURCE_DIR)+"/library/transformers/three-phase-yy.pds"));
+        QCOMPARE(window.project().instances.size(),size_t(1));
+        QCOMPARE(window.project().definitions.size(),size_t(1));
+        QCOMPARE(window.project().definitions[0].ports.size(),size_t(8));
+        QCOMPARE(window.project().definitions[0].components.size(),size_t(3));
+        EditorWindow example("en",temp.path());
+        QVERIFY(example.open_project(QString(PDS_SOURCE_DIR)+"/examples/transformer-yy.pds"));
+        QCOMPARE(example.project().plots.size(),size_t(1));
+        if(const auto screenshot=qEnvironmentVariable("PDS_YY_SCREENSHOT");!screenshot.isEmpty()) {
+            example.resize(1400,900);
+            example.show();
+            example.findChild<QAction *>("action_fit")->trigger();
+            QTest::qWait(80);
+            QVERIFY(example.grab().save(screenshot));
+        }
+        const auto saved=temp.filePath("transformer-yy-copy.pds");
+        QVERIFY(example.save_project(saved));
+        QVERIFY(example.open_project(saved));
+        example.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!example.running(),5000);
+        QVERIFY(example.has_result());
+        const auto &result=example.result();
+        const auto voltage=std::find_if(result.channels.begin(),result.channels.end(),
+                                        [](const Channel &channel){return channel.name=="u:Voltage A";});
+        QVERIFY(voltage!=result.channels.end());
+        const auto peak=std::find_if(result.samples.begin(),result.samples.end(),[](const Sample &sample) {
+            return std::abs(sample.time-.005)<1e-12;
+        });
+        QVERIFY(peak!=result.samples.end());
+        QVERIFY(std::abs(peak->values[size_t(voltage-result.channels.begin())]-5)<1e-12);
+    }
     void code_editor_find_replace_and_help() {
         init_language("en");
         CCodeEdit editor(false);editor.resize(600,400);editor.setPlainText("alpha beta alpha");editor.show();editor.setFocus();

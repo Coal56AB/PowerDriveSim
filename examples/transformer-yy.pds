@@ -1,0 +1,91 @@
+PowerDriveSim 30
+project "7ba4d46e-4e21-5375-8be7-5e17e6f7d752" "Three-phase Y-Y transformer 2:1"
+profile 0.04 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 1
+scopeview 0 -1 -1 -1
+instance "0d783e36-692c-59a6-ba7f-86dae39810f5" "Three-phase Y-Y transformer" "899e47ce-3051-545d-9a19-069c46b7ac8e" 0 0 0 0
+node "e503ba9b-d9a1-58b7-808e-d729933035c7" "GND-P" 1 -430 220
+node "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "GND-S" 1 520 220
+wire "e98cd93f-3732-5bbb-a7de-d5a97c8c979b" "0d783e36-692c-59a6-ba7f-86dae39810f5" "0f853b79-f1a5-5703-8714-2621969ed9bd" "e503ba9b-d9a1-58b7-808e-d729933035c7" "node" 0 "" 2 0
+wire "443ac56c-a5bd-5867-a94c-492a96ebb24d" "0d783e36-692c-59a6-ba7f-86dae39810f5" "ea558ad9-4c56-5624-877d-a0c8a6ad72c0" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+plot "345a8eed-127c-5f90-b027-51466b7a71df" "Secondary phase voltages" 820 0 3 0 -1 -1 -1 0
+component "e73ecdff-b27a-55b7-a38c-0cd517b25ea7" "Source A" V "" "" 10 0 -430 -100 0
+orientation "e73ecdff-b27a-55b7-a38c-0cd517b25ea7" 1 0
+source "e73ecdff-b27a-55b7-a38c-0cd517b25ea7" 1 0 50 0 0 0.5 0
+component "569fe836-0102-56cd-91a6-2bc80b8447be" "Load A" R "" "" 8 0 520 -100 0
+orientation "569fe836-0102-56cd-91a6-2bc80b8447be" 1 0
+component "88e16674-1975-551e-a59b-dd6cdb231f11" "Voltage A" VP "" "" 0 0 700 -100 0
+wire "674e576c-00ea-5bdd-a693-3c51808420b3" "e73ecdff-b27a-55b7-a38c-0cd517b25ea7" "p" "0d783e36-692c-59a6-ba7f-86dae39810f5" "faf8950c-0865-5d37-9627-306ed90e02ce" 0 "" 2 0
+wire "b48daa1e-c1df-5ee3-b45b-2ba3cb5b5927" "e73ecdff-b27a-55b7-a38c-0cd517b25ea7" "n" "e503ba9b-d9a1-58b7-808e-d729933035c7" "node" 0 "" 2 0
+wire "5f8b20da-e524-59c6-8d57-9c6296596a25" "0d783e36-692c-59a6-ba7f-86dae39810f5" "67cbed39-1ff5-5f8f-a2da-731185ad9fda" "569fe836-0102-56cd-91a6-2bc80b8447be" "p" 0 "" 2 0
+wire "a3726007-b68b-5612-a02c-023392d4195f" "569fe836-0102-56cd-91a6-2bc80b8447be" "n" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+wire "188cd707-96a2-5d11-a48a-8ba5a7c4f139" "88e16674-1975-551e-a59b-dd6cdb231f11" "p" "0d783e36-692c-59a6-ba7f-86dae39810f5" "67cbed39-1ff5-5f8f-a2da-731185ad9fda" 0 "" 2 0
+wire "778014a1-b5da-5b53-b317-2bed6c280956" "88e16674-1975-551e-a59b-dd6cdb231f11" "n" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+wire "5420313b-54e2-5037-8e12-ad1c32efeb54" "88e16674-1975-551e-a59b-dd6cdb231f11" "out" "345a8eed-127c-5f90-b027-51466b7a71df" "in1" 0 "" 2 0
+scope_point "88e16674-1975-551e-a59b-dd6cdb231f11"
+scope "88e16674-1975-551e-a59b-dd6cdb231f11"
+component "c88853f8-9bb7-5d61-947a-474bd5af6a96" "Source B" V "" "" 10 0 -430 0 0
+orientation "c88853f8-9bb7-5d61-947a-474bd5af6a96" 1 0
+source "c88853f8-9bb7-5d61-947a-474bd5af6a96" 1 0 50 -2.0943951023931953 0 0.5 0
+component "75df424f-d34c-52e6-aea6-316c1d873160" "Load B" R "" "" 8 0 520 0 0
+orientation "75df424f-d34c-52e6-aea6-316c1d873160" 1 0
+component "8785b8f2-a1f7-5615-872d-4cb88cb1e8ed" "Voltage B" VP "" "" 0 0 700 0 0
+wire "041efe47-955b-5475-9ff8-7275b8f0b107" "c88853f8-9bb7-5d61-947a-474bd5af6a96" "p" "0d783e36-692c-59a6-ba7f-86dae39810f5" "d2d6a589-5a7d-575c-a362-9f5e9524f38e" 0 "" 2 0
+wire "d06ba1e9-4b5c-5ab0-88b5-fa20a1f224a5" "c88853f8-9bb7-5d61-947a-474bd5af6a96" "n" "e503ba9b-d9a1-58b7-808e-d729933035c7" "node" 0 "" 2 0
+wire "4b440267-4f88-58f0-80d5-028bb4820134" "0d783e36-692c-59a6-ba7f-86dae39810f5" "d912aca3-22ea-5ece-85be-06da1d9fdeab" "75df424f-d34c-52e6-aea6-316c1d873160" "p" 0 "" 2 0
+wire "0596dd71-3985-5492-82ce-ea9afaa01936" "75df424f-d34c-52e6-aea6-316c1d873160" "n" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+wire "b6beb530-fb6e-5594-b3a1-a30ff7b50720" "8785b8f2-a1f7-5615-872d-4cb88cb1e8ed" "p" "0d783e36-692c-59a6-ba7f-86dae39810f5" "d912aca3-22ea-5ece-85be-06da1d9fdeab" 0 "" 2 0
+wire "d508bea0-bbca-5877-906c-2e316c22196c" "8785b8f2-a1f7-5615-872d-4cb88cb1e8ed" "n" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+wire "5728b5e5-1142-5f6a-be73-6a5f978de713" "8785b8f2-a1f7-5615-872d-4cb88cb1e8ed" "out" "345a8eed-127c-5f90-b027-51466b7a71df" "in2" 0 "" 2 0
+scope_point "8785b8f2-a1f7-5615-872d-4cb88cb1e8ed"
+scope "8785b8f2-a1f7-5615-872d-4cb88cb1e8ed"
+component "8b9f8df0-fd93-51c2-8422-d65d52cda02e" "Source C" V "" "" 10 0 -430 100 0
+orientation "8b9f8df0-fd93-51c2-8422-d65d52cda02e" 1 0
+source "8b9f8df0-fd93-51c2-8422-d65d52cda02e" 1 0 50 2.0943951023931953 0 0.5 0
+component "e48160b1-b969-554e-a215-89f5c6b9cbfa" "Load C" R "" "" 8 0 520 100 0
+orientation "e48160b1-b969-554e-a215-89f5c6b9cbfa" 1 0
+component "4511d2d0-93b2-50e9-85e2-752828f12f8d" "Voltage C" VP "" "" 0 0 700 100 0
+wire "007d1a52-dfbe-517e-8075-039cada6718b" "8b9f8df0-fd93-51c2-8422-d65d52cda02e" "p" "0d783e36-692c-59a6-ba7f-86dae39810f5" "70eeef54-e123-5d41-b20c-0cec82bef5a3" 0 "" 2 0
+wire "0eb2469a-575e-5a2d-8da2-86c80bc4bd68" "8b9f8df0-fd93-51c2-8422-d65d52cda02e" "n" "e503ba9b-d9a1-58b7-808e-d729933035c7" "node" 0 "" 2 0
+wire "ff4030c2-6338-51ef-adf2-1f45b3a02dc3" "0d783e36-692c-59a6-ba7f-86dae39810f5" "d19036d5-73ad-56ab-a8fd-cb4b2a9c2343" "e48160b1-b969-554e-a215-89f5c6b9cbfa" "p" 0 "" 2 0
+wire "0df390c5-3cbf-580b-a02f-c0fdd6a95ded" "e48160b1-b969-554e-a215-89f5c6b9cbfa" "n" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+wire "1943d02d-ea26-52d4-9228-d12cbebd06c2" "4511d2d0-93b2-50e9-85e2-752828f12f8d" "p" "0d783e36-692c-59a6-ba7f-86dae39810f5" "d19036d5-73ad-56ab-a8fd-cb4b2a9c2343" 0 "" 2 0
+wire "995aec25-0196-5352-ad04-349c7f70ab71" "4511d2d0-93b2-50e9-85e2-752828f12f8d" "n" "31a96d10-32ac-5898-9a15-3b6c9e3d16cc" "node" 0 "" 2 0
+wire "21f78c89-8075-5186-a03e-74f677ef9540" "4511d2d0-93b2-50e9-85e2-752828f12f8d" "out" "345a8eed-127c-5f90-b027-51466b7a71df" "in3" 0 "" 2 0
+scope_point "4511d2d0-93b2-50e9-85e2-752828f12f8d"
+scope "4511d2d0-93b2-50e9-85e2-752828f12f8d"
+definition "899e47ce-3051-545d-9a19-069c46b7ac8e" "Three-phase Y-Y transformer"
+public_port "faf8950c-0865-5d37-9627-306ed90e02ce" "A" "115f6897-f914-5111-8a09-97663a4c4a5c" "p" 0 0
+public_port "d2d6a589-5a7d-575c-a362-9f5e9524f38e" "B" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "p" 0 0
+public_port "70eeef54-e123-5d41-b20c-0cec82bef5a3" "C" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "p" 0 0
+public_port "0f853b79-f1a5-5703-8714-2621969ed9bd" "Np" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 0
+public_port "67cbed39-1ff5-5f8f-a2da-731185ad9fda" "a" "115f6897-f914-5111-8a09-97663a4c4a5c" "sp" 0 0
+public_port "d912aca3-22ea-5ece-85be-06da1d9fdeab" "b" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "sp" 0 0
+public_port "d19036d5-73ad-56ab-a8fd-cb4b2a9c2343" "c" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "sp" 0 0
+public_port "ea558ad9-4c56-5624-877d-a0c8a6ad72c0" "Ns" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 0
+public_parameter "9716445a-973d-5f11-807c-2e1fc98cc713" "Np/Ns" "" "*" "value" 2 "" 0 0 0 0 ""
+body
+PowerDriveSim 30
+project "899e47ce-3051-545d-9a19-069c46b7ac8e" "Three-phase Y-Y transformer"
+profile 0.04 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "Np" 0 -200 270
+node "7fc71674-8603-5f37-a57e-e6772c9e7696" "Ns" 0 200 270
+component "115f6897-f914-5111-8a09-97663a4c4a5c" "Phase A" Transformer "" "" 2 0 0 -180 0
+transformer_secondary "115f6897-f914-5111-8a09-97663a4c4a5c" "" ""
+wire "91774daa-4a75-5f23-8bfe-31dfe4131e43" "115f6897-f914-5111-8a09-97663a4c4a5c" "n" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 "" 2 0
+wire "dc62e8a6-bf9f-562d-ae8a-0d1b7dd0ce03" "115f6897-f914-5111-8a09-97663a4c4a5c" "sn" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 "" 2 0
+component "f9a73437-5c3e-5005-b39d-a1111a586fe4" "Phase B" Transformer "" "" 2 0 0 0 0
+transformer_secondary "f9a73437-5c3e-5005-b39d-a1111a586fe4" "" ""
+wire "bbb1093f-a29d-5683-95f9-ec8466f6d102" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "n" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 "" 2 0
+wire "ff358c6b-f14b-53ab-b797-d6281056a024" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "sn" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 "" 2 0
+component "8de2439c-0032-53ea-8d4e-18252cc3e9da" "Phase C" Transformer "" "" 2 0 0 180 0
+transformer_secondary "8de2439c-0032-53ea-8d4e-18252cc3e9da" "" ""
+wire "c491d277-40f4-58e9-b749-66734c8a013f" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "n" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 "" 2 0
+wire "f155d3f4-33cb-513a-bf6c-2c998c9a8491" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "sn" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 "" 2 0
+end_definition

@@ -1,0 +1,13 @@
+{
+  "type": "library:three-phase-transformer-yy",
+  "fields": [],
+  "template": "transformers/three-phase-yy.pds",
+  "palette": {
+    "id": 283,
+    "label": "three_phase_transformer_yy",
+    "category": "machines",
+    "short": "Y–Y",
+    "fixed": false,
+    "hidden": false
+  }
+}

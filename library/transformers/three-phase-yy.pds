@@ -1,0 +1,41 @@
+PowerDriveSim 30
+project "a305d342-ba2d-5c84-8488-50d4a669a9ae" "Three-phase Y-Y transformer"
+profile 0.04 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+instance "0d783e36-692c-59a6-ba7f-86dae39810f5" "Three-phase Y-Y transformer" "899e47ce-3051-545d-9a19-069c46b7ac8e" 0 0 0 0
+definition "899e47ce-3051-545d-9a19-069c46b7ac8e" "Three-phase Y-Y transformer"
+public_port "faf8950c-0865-5d37-9627-306ed90e02ce" "A" "115f6897-f914-5111-8a09-97663a4c4a5c" "p" 0 0
+public_port "d2d6a589-5a7d-575c-a362-9f5e9524f38e" "B" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "p" 0 0
+public_port "70eeef54-e123-5d41-b20c-0cec82bef5a3" "C" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "p" 0 0
+public_port "0f853b79-f1a5-5703-8714-2621969ed9bd" "Np" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 0
+public_port "67cbed39-1ff5-5f8f-a2da-731185ad9fda" "a" "115f6897-f914-5111-8a09-97663a4c4a5c" "sp" 0 0
+public_port "d912aca3-22ea-5ece-85be-06da1d9fdeab" "b" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "sp" 0 0
+public_port "d19036d5-73ad-56ab-a8fd-cb4b2a9c2343" "c" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "sp" 0 0
+public_port "ea558ad9-4c56-5624-877d-a0c8a6ad72c0" "Ns" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 0
+public_parameter "9716445a-973d-5f11-807c-2e1fc98cc713" "Np/Ns" "" "*" "value" 2 "" 0 0 0 0 ""
+body
+PowerDriveSim 30
+project "899e47ce-3051-545d-9a19-069c46b7ac8e" "Three-phase Y-Y transformer"
+profile 0.04 0.00001 Trapezoidal
+nonlinear 64 1e-9 1e-12 1e-9
+wiring wires
+scope_enabled 0
+scopeview 0 -1 -1 -1
+node "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "Np" 0 -200 270
+node "7fc71674-8603-5f37-a57e-e6772c9e7696" "Ns" 0 200 270
+component "115f6897-f914-5111-8a09-97663a4c4a5c" "Phase A" Transformer "" "" 2 0 0 -180 0
+transformer_secondary "115f6897-f914-5111-8a09-97663a4c4a5c" "" ""
+wire "91774daa-4a75-5f23-8bfe-31dfe4131e43" "115f6897-f914-5111-8a09-97663a4c4a5c" "n" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 "" 2 0
+wire "dc62e8a6-bf9f-562d-ae8a-0d1b7dd0ce03" "115f6897-f914-5111-8a09-97663a4c4a5c" "sn" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 "" 2 0
+component "f9a73437-5c3e-5005-b39d-a1111a586fe4" "Phase B" Transformer "" "" 2 0 0 0 0
+transformer_secondary "f9a73437-5c3e-5005-b39d-a1111a586fe4" "" ""
+wire "bbb1093f-a29d-5683-95f9-ec8466f6d102" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "n" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 "" 2 0
+wire "ff358c6b-f14b-53ab-b797-d6281056a024" "f9a73437-5c3e-5005-b39d-a1111a586fe4" "sn" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 "" 2 0
+component "8de2439c-0032-53ea-8d4e-18252cc3e9da" "Phase C" Transformer "" "" 2 0 0 180 0
+transformer_secondary "8de2439c-0032-53ea-8d4e-18252cc3e9da" "" ""
+wire "c491d277-40f4-58e9-b749-66734c8a013f" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "n" "ab6e72be-d9f7-5019-8fcc-2d65a83b7561" "node" 0 "" 2 0
+wire "f155d3f4-33cb-513a-bf6c-2c998c9a8491" "8de2439c-0032-53ea-8d4e-18252cc3e9da" "sn" "7fc71674-8603-5f37-a57e-e6772c9e7696" "node" 0 "" 2 0
+end_definition

@@ -47,6 +47,7 @@
     <file alias="diode-bridge-1p.json">components/diode-bridge-1p.json</file>
     <file alias="three_phase_source_y.json">components/three_phase_source_y.json</file>
     <file alias="three_phase_source_delta.json">components/three_phase_source_delta.json</file>
+    <file alias="three_phase_transformer_yy.json">components/three_phase_transformer_yy.json</file>
     <file alias="capacitor.json">components/capacitor.json</file>
     <file alias="current_probe.json">components/current_probe.json</file>
     <file alias="current_source.json">components/current_source.json</file>
@@ -78,6 +79,7 @@
   <qresource prefix="/library">
     <file alias="sources/three-phase-source-y.pds">../../library/sources/three-phase-source-y.pds</file>
     <file alias="sources/three-phase-source-delta.pds">../../library/sources/three-phase-source-delta.pds</file>
+    <file alias="transformers/three-phase-yy.pds">../../library/transformers/three-phase-yy.pds</file>
     <file alias="converters/open-end-winding.pds">../../library/converters/open-end-winding.pds</file>
     <file alias="converters/npc-3l.pds">../../library/converters/npc-3l.pds</file>
     <file alias="converters/vsi-2l.pds">../../library/converters/vsi-2l.pds</file>

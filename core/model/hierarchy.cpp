@@ -125,7 +125,8 @@ void parameter_value(Schematic &s, const Project &catalog, const PublicParameter
             return;
         bool applied = false;
         for (auto &c : s.components) {
-            if (p.field == "value" && (c.kind == Kind::voltage || c.kind == Kind::current)) {
+            if (p.field == "value" && (c.kind == Kind::voltage || c.kind == Kind::current ||
+                                       c.kind == Kind::ideal_transformer)) {
                 c.value = value;
                 applied = true;
             } else if (p.field == "three_phase_switch_ron" && c.kind == Kind::ideal_switch) {

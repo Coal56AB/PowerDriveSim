@@ -700,7 +700,7 @@ static void regression() {
     near(value(a,a.samples.back(),4),0,1e-12,"Stop-time events");
 }
 static void examples(const std::string& root) {
-    for(const auto& name:{"rc","rlc","switch","rc-trapezoidal","diode-freewheel"}) {
+    for(const auto& name:{"rc","rlc","switch","rc-trapezoidal","diode-freewheel","transformer-yy"}) {
         std::ifstream in(root+"/examples/"+name+".pds"); auto p=read_project(in); auto r=execute(compile(p));
         require(!r.samples.empty() && r.samples.back().time==p.profile.stop,"Example completes");
         if(std::string(name)=="rc" || std::string(name)=="rc-trapezoidal") near(value(r,r.samples.back(),4),1-std::exp(-5),0.0002,"RC example");
@@ -710,6 +710,41 @@ static void examples(const std::string& root) {
         }
         if(std::string(name)=="diode-freewheel") near(value(r,r.samples.back(),13),(1-std::exp(-.53))*std::exp(-.97),1e-7,"Freewheel example");
         if(std::string(name)=="switch") near(value(r,r.samples.back(),4),0,1e-12,"Switch example");
+        if(std::string(name)=="transformer-yy") {
+            const auto sample=std::find_if(r.samples.begin(),r.samples.end(),[](const Sample& s) {
+                return std::abs(s.time-.005)<1e-12;
+            });
+            require(sample!=r.samples.end(),"Three-phase transformer sample at voltage peak");
+            auto channel_value=[&](const Result& result,const Sample& point,const std::string& label) {
+                const auto found=std::find_if(result.channels.begin(),result.channels.end(),[&](const Channel& c) {
+                    return c.name==label;
+                });
+                require(found!=result.channels.end(),"Three-phase transformer channel "+label);
+                return point.values[size_t(found-result.channels.begin())];
+            };
+            double source_power=0,load_power=0;
+            int phase_index=0;
+            for(const auto& phase:{"A","B","C"}) {
+                const double offset=phase_index==0?0:phase_index==1?-2*std::numbers::pi/3:
+                                                                             2*std::numbers::pi/3;
+                const double primary=10*std::sin(2*std::numbers::pi*50*sample->time+offset);
+                const double secondary=channel_value(r,*sample,std::string("u:Voltage ")+phase);
+                const double current=channel_value(r,*sample,std::string("i:Source ")+phase);
+                near(secondary,primary/2,1e-12,"Three-phase transformer phase ratio");
+                source_power-=primary*current;
+                load_power+=secondary*secondary/8;
+                ++phase_index;
+            }
+            near(source_power,load_power,1e-12,"Three-phase transformer instant power balance");
+            p.instances[0].parameters={{p.definitions[0].parameters[0].id,4}};
+            const auto changed=execute(compile(p));
+            const auto peak=std::find_if(changed.samples.begin(),changed.samples.end(),[](const Sample& s) {
+                return std::abs(s.time-.005)<1e-12;
+            });
+            require(peak!=changed.samples.end(),"Overridden transformer sample");
+            near(channel_value(changed,*peak,"u:Voltage A"),2.5,1e-12,
+                 "Public Np/Ns parameter changes all three phases");
+        }
     }
 }
 int main(int argc,char** argv) {
