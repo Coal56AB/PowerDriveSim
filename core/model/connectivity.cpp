@@ -30,6 +30,22 @@ bool compatible_tags(const ConnectionTag& a,const ConnectionTag& b) {
     return (a.scope==TagScope::ancestors&&ancestor_path(b.scope_path,a.scope_path))||
            (b.scope==TagScope::ancestors&&ancestor_path(a.scope_path,b.scope_path));
 }
+const char* domain_name(Domain domain) {
+    switch(domain) {
+    case Domain::electrical:return "electrical";
+    case Domain::gate:return "gate (bool)";
+    case Domain::signal:return "signal (double)";
+    }
+    return "unknown";
+}
+const char* direction_name(Direction direction) {
+    switch(direction) {
+    case Direction::input:return "input";
+    case Direction::output:return "output";
+    case Direction::conserving:return "terminal";
+    }
+    return "port";
+}
 }
 std::string endpoint_key(const Endpoint& e) { return e.object+"/"+e.port; }
 namespace {
@@ -67,7 +83,10 @@ void validate_wire(const Project& p,const Wire& w) {
     auto tag=[&](const Endpoint& e){return std::any_of(p.tags.begin(),p.tags.end(),[&](const auto& t){return t.id==e.object&&e.port=="io";});};
     bool gate_to_plot=((a.domain==Domain::gate||a.domain==Domain::electrical)&&plot_input(p,p,w.to))||((b.domain==Domain::gate||b.domain==Domain::electrical)&&plot_input(p,p,w.from));
     if((a.domain!=b.domain&&!gate_to_plot) || (a.domain!=Domain::electrical && !tag(w.from) && !tag(w.to) && a.direction==b.direction))
-        throw Diagnostic("incompatible_port",w.id,"Connect electrical terminals together or a matching output to an input");
+        throw Diagnostic("incompatible_port",w.id,
+                         std::string("Cannot connect ")+domain_name(a.domain)+" "+direction_name(a.direction)+
+                         " '"+w.from.port+"' to "+domain_name(b.domain)+" "+direction_name(b.direction)+
+                         " '"+w.to.port+"'; connect matching domains from an output to an input");
     for(const auto& point:w.bends)
         if(!std::isfinite(point.x)||!std::isfinite(point.y)) throw Diagnostic("invalid_geometry",w.id,"Wire points must be finite");
 }

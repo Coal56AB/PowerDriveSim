@@ -286,7 +286,16 @@ int main(int argc,char** argv) {
         check(save(doc.project())==connected,"Failed transaction does not change history or model");
         auto pattern=doc.add_pattern(200,400),sw=doc.add_component(Kind::ideal_switch,200,500);
         error("incompatible_port",[&]{doc.connect({pattern,"out"},{r,"p"});});
-        error("incompatible_port",[&]{doc.connect({probe,"out"},{sw,"gate"});});
+        try {
+            doc.connect({probe,"out"},{sw,"gate"});
+            throw std::runtime_error("Missing incompatible_port diagnostic");
+        } catch(const Diagnostic& diagnostic) {
+            check(diagnostic.code=="incompatible_port","Unexpected port diagnostic");
+            const std::string message=diagnostic.what();
+            check(message.find("signal (double) output")!=std::string::npos&&
+                  message.find("gate (bool) input")!=std::string::npos,
+                  "Port diagnostic identifies both scalar types");
+        }
         doc.connect({pattern,"out"},{sw,"gate"});
         doc.apply("Pattern edges",[&](Project& project){project.events={{.001,pattern,true},{.003,pattern,false}};});
         resolved=resolve_connections(doc.project());
