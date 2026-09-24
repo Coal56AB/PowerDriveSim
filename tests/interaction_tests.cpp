@@ -493,6 +493,19 @@ class InteractionTests : public QObject {
         w.start_simulation();
         QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 10000);
         QVERIFY(w.has_result());
+        if (const auto screenshot = qEnvironmentVariable("PDS_CODE_BLOCK_EXAMPLE_SCREENSHOT");
+            !screenshot.isEmpty()) {
+            w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60),
+                                  Qt::KeepAspectRatio);
+            QTest::qWait(30);
+            QVERIFY(w.grab().save(screenshot));
+            w.open_plot(w.project().plots.front().id);
+            auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(w.project().plots.front().id));
+            QVERIFY(graph);
+            QTest::qWait(30);
+            QVERIFY(graph->grab().save(screenshot + "-plot.png"));
+            graph->close();
+        }
         QCOMPARE(w.result().last_time, .03);
         const auto gate_key = w.project().code_blocks.front().id + "/" +
                               w.project().code_blocks.front().outputs.front().id;
