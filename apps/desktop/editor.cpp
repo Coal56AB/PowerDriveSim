@@ -3487,6 +3487,26 @@ void EditorWindow::commit_positions() {
     refresh_canvas(true, false);
     auto_connect_nearby_pins();
 }
+void EditorWindow::erase_with_hidden_current_probes(const std::vector<std::string>& ids) {
+    std::set<std::string> removed(ids.begin(),ids.end());
+    std::vector<std::string> records;
+    for(const auto& component:project().components) {
+        if(component.kind!=Kind::current_probe||!is_hidden_current_probe(project(),component.id))
+            continue;
+        bool affected=removed.count(component.id)>0;
+        for(const auto& wire:project().wires)
+            if(wire.from.object==component.id||wire.to.object==component.id)
+                affected=affected||removed.count(wire.id)>0||
+                         removed.count(wire.from.object)>0||removed.count(wire.to.object)>0;
+        if(!affected)continue;
+        removed.insert(component.id);
+        records.push_back(hidden_current_probe_record(component.id));
+        for(const auto& wire:project().wires)
+            if(wire.from.object==component.id||wire.to.object==component.id)
+                removed.insert(wire.id);
+    }
+    document_->erase(std::vector<std::string>(removed.begin(),removed.end()),records);
+}
 void EditorWindow::delete_selected() {
     canvas_->cancel_gesture();
     if (running())
@@ -3502,6 +3522,11 @@ void EditorWindow::delete_selected() {
                                      [&](const Wire &w) { return w.id == id; });
             if (wire == project().wires.end())
                 continue;
+            if(auto observed=hidden_current_wire_view(project(),id)) {
+                show_error(Diagnostic("observed_wire_segment",observed->probe,
+                                      "Remove the current observation before deleting a wire segment"));
+                return;
+            }
             std::vector<Point> points;
             auto path = static_cast<QGraphicsPathItem *>(item)->path();
             for (int i = 0; i < path.elementCount(); ++i) {
@@ -3560,8 +3585,12 @@ void EditorWindow::delete_selected() {
         for (const auto &node : project().nodes)
             if (node.id == ids[0] && !node.ground) {
                 std::vector<std::vector<Point>> routes;
+                bool observed_route = false;
                 for (const auto &wire : project().wires)
                     if (wire.from.object == node.id || wire.to.object == node.id) {
+                        observed_route = observed_route || hidden_current_wire_view(project(), wire.id).has_value() ||
+                            is_hidden_current_probe(project(), wire.from.object) ||
+                            is_hidden_current_probe(project(), wire.to.object);
                         std::vector<Point> route;
                         auto path = wires_.at(wire.id)->path();
                         for (int i = 0; i < path.elementCount(); ++i) {
@@ -3570,7 +3599,7 @@ void EditorWindow::delete_selected() {
                         }
                         routes.push_back(route);
                     }
-                if (routes.size() == 2) {
+                if (routes.size() == 2 && !observed_route) {
                     try {
                         document_->remove_junction(node.id, routes[0], routes[1]);
                         selected_.clear();
@@ -3582,7 +3611,7 @@ void EditorWindow::delete_selected() {
                 }
             }
     try {
-        document_->erase(ids);
+        erase_with_hidden_current_probes(ids);
         selected_.clear();
         refresh_canvas();
     } catch (const std::exception &e) {

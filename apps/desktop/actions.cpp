@@ -582,7 +582,7 @@ bool EditorWindow::copy_selection(bool cut) {
         mime->setText(QString::fromUtf8(bytes));
         QApplication::clipboard()->setMimeData(mime);
         if (cut) {
-            document_->erase(ids);
+            erase_with_hidden_current_probes(ids);
             selected_.clear();
             refresh();
         }

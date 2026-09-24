@@ -3296,6 +3296,51 @@ class InteractionTests : public QObject {
         for (size_t index = 0; index < wires.size(); ++index)
             QCOMPARE(static_cast<QGraphicsPathItem *>(item(w, wires[index]))->path(), original_paths[index]);
     }
+    void deleting_observed_wire_removes_hidden_current_probe() {
+        QTemporaryDir dir;
+        EditorWindow w("en",dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto wire=w.project().wires.front().id;
+        const auto base_components=w.project().components.size();
+        const auto base_wires=w.project().wires.size();
+        w.observe_wires({wire},true);
+        QCOMPARE(w.project().components.size(),base_components+1);
+        const auto probe=w.project().components.back().id;
+        const auto observed=encoded(w.project());
+        w.select_object(wire);
+        item(w,wire)->setData(wire_segment_role,1);
+        QTest::keyClick(w.canvas(),Qt::Key_Delete);
+        QCOMPARE(encoded(w.project()),observed);
+        auto *diagnostics=w.findChild<QListWidget*>("diagnostics_list");
+        QVERIFY(diagnostics->count()>0);
+        QVERIFY(diagnostics->item(diagnostics->count()-1)->text().contains("observed_wire_segment"));
+        item(w,wire)->setData(wire_segment_role,0);
+        QTest::keyClick(w.canvas(),Qt::Key_Delete);
+        QCOMPARE(w.project().components.size(),base_components);
+        QCOMPARE(w.project().wires.size(),base_wires-1);
+        QCOMPARE(w.project().scope_points.size(),size_t(0));
+        QVERIFY(std::none_of(w.project().extensions.begin(),w.project().extensions.end(),
+                             [&](const std::string& record){return record.find(probe)!=std::string::npos;}));
+        const auto deleted=encoded(w.project());
+        w.undo();QCOMPARE(encoded(w.project()),observed);
+        w.redo();QCOMPARE(encoded(w.project()),deleted);
+        w.undo();
+        std::string endpoint;
+        for(const auto& candidate:w.project().wires)
+            if(candidate.from.object==probe||candidate.to.object==probe) {
+                endpoint=candidate.from.object==probe?candidate.to.object:candidate.from.object;
+                break;
+            }
+        QVERIFY(!endpoint.empty());
+        w.select_object(endpoint);
+        QTest::keyClick(w.canvas(),Qt::Key_Delete);
+        QVERIFY(std::none_of(w.project().components.begin(),w.project().components.end(),
+                             [&](const Component& component){return component.id==probe;}));
+        QVERIFY(std::none_of(w.project().extensions.begin(),w.project().extensions.end(),
+                             [&](const std::string& record){return record.find(probe)!=std::string::npos;}));
+        w.undo();QCOMPARE(encoded(w.project()),observed);
+    }
     void selected_wire_group_is_available_from_background_menu() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

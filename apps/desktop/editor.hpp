@@ -516,6 +516,7 @@ class EditorWindow : public QMainWindow {
     void show_warning(const QString &message);
     void commit_positions();
     void delete_selected();
+    void erase_with_hidden_current_probes(const std::vector<std::string>& ids);
     void choose_channels();
     void finish_simulation();
     void update_title();

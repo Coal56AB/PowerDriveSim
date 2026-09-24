@@ -533,8 +533,10 @@ void Document::arrange(const std::vector<std::string>& list,const std::string& m
         for(size_t i=0;i<points.size();++i){double value=low;if(mode=="right"||mode=="bottom")value=high;if(mode=="horizontal"||mode=="vertical")value=low+(high-low)*i/(points.size()-1);coordinate(points[i])=std::round(value/20)*20;}
     });
 }
-void Document::erase(const std::vector<std::string>& list) {
+void Document::erase(const std::vector<std::string>& list,
+                     const std::vector<std::string>& extension_records) {
     const std::set<std::string> ids(list.begin(),list.end());
+    const std::set<std::string> records(extension_records.begin(),extension_records.end());
     const auto edited_definition=location_.empty()?std::string{}:current_definition();
     if(!location_.empty()) {
         const auto &active=definition(current_,current_definition());
@@ -571,6 +573,7 @@ void Document::erase(const std::vector<std::string>& list) {
         }
     }
     apply_with_root("Delete objects",[&](Project& p) {
+        std::erase_if(p.extensions,[&](const std::string& record){return records.count(record)>0;});
         const bool removes_object=
             std::any_of(p.components.begin(),p.components.end(),[&](const Component& c){return ids.count(c.id);})||
             std::any_of(p.tags.begin(),p.tags.end(),[&](const ConnectionTag& t){return ids.count(t.id);})||

@@ -561,12 +561,13 @@ class DesktopTests : public QObject {
                                }),
                  2);
 
-        // Reproduce the reported order: remove one half of the conductor while
-        // its oscilloscope observation still exists, then remove the channel.
-        window.select_object(observed_wire);
-        auto *delete_action = window.findChild<QAction *>("action_delete");
-        QVERIFY(delete_action);
-        delete_action->trigger();
+        // Load an already damaged observation created by an older editor version.
+        // Current wire deletion removes the hidden probe atomically.
+        auto damaged = window.project();
+        damaged.wires.erase(std::remove_if(damaged.wires.begin(), damaged.wires.end(),
+                                           [&](const Wire &wire) { return wire.id == observed_wire; }),
+                            damaged.wires.end());
+        window.set_project(std::move(damaged));
         QCOMPARE(window.project().scope_points.size(), size_t(1));
         QCOMPARE(std::count_if(window.project().wires.begin(), window.project().wires.end(),
                                [&](const Wire &wire) {

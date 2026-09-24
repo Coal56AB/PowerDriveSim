@@ -36,7 +36,8 @@ public:
     std::vector<std::string> paste(const Project& fragment,double dx,double dy);
     void transform(const std::vector<std::string>& ids,int quarter_turns,bool mirror);
     void arrange(const std::vector<std::string>& ids,const std::string& mode);
-    void erase(const std::vector<std::string>& ids);
+    void erase(const std::vector<std::string>& ids,
+               const std::vector<std::string>& extension_records = {});
     void remove_junction(const std::string& id, std::vector<Point> first_route, std::vector<Point> second_route);
     std::string create_definition(const std::vector<std::string>& ids,const std::string& name);
     std::string add_instance(const std::string& definition,double x,double y);
