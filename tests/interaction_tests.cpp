@@ -5185,6 +5185,65 @@ class InteractionTests : public QObject {
         for(const auto& [id,route]:paths)
             QCOMPARE(static_cast<QGraphicsPathItem*>(item(w,id))->path(),route);
     }
+    void moved_plot_branch_with_off_grid_joint_repositions_node() {
+        QTemporaryDir dir;
+        EditorWindow w("en",dir.path());
+        Project project;project.id=new_uuid();project.wired=true;
+        w.set_project(project);
+        const auto left=w.add_node(false,{0,140});
+        const auto joint=w.add_node(false,{140,140});
+        const auto right=w.add_node(false,{280,180});
+        const auto graph=w.add_plot({320,-70});
+        QVERIFY(w.connect_ports({left,"node"},{joint,"node"}));
+        QVERIFY(w.connect_ports({joint,"node"},{right,"node"}));
+        QVERIFY(w.connect_ports({graph,"in1"},{joint,"node"}));
+        auto schematic=w.project();
+        for(auto& node:schematic.nodes)
+            if(node.id==joint)node.x=139.7507110675997;
+        schematic.wires[1].bends={{140,180}};
+        schematic.wires[2].bends={{140,-20}};
+        const auto branch=schematic.wires[2].id;
+        w.set_project(schematic);
+        ready(w);
+        w.select_object(branch);
+        const auto before=encoded(w.project());
+        drag(w,{140,40},{100,40});
+        const auto moved=std::find_if(w.project().nodes.begin(),w.project().nodes.end(),
+                                      [&](const Node& node){return node.id==joint;});
+        QVERIFY(moved!=w.project().nodes.end());
+        QCOMPARE(QPointF(moved->x,moved->y),QPointF(100,140));
+        std::map<std::string,QPainterPath> paths;
+        for(const auto& wire:w.project().wires) {
+            if(wire.from.object!=joint&&wire.to.object!=joint)continue;
+            const auto route=static_cast<QGraphicsPathItem*>(item(w,wire.id))->path();
+            QVERIFY(route.elementCount()>=2);
+            const auto endpoint=wire.from.object==joint?route.elementAt(0):route.elementAt(route.elementCount()-1);
+            QCOMPARE(QPointF(endpoint.x,endpoint.y),QPointF(100,140));
+            for(int i=1;i<route.elementCount();++i) {
+                const auto a=route.elementAt(i-1),b=route.elementAt(i);
+                QVERIFY(QPointF(a.x,a.y)!=QPointF(b.x,b.y));
+            }
+            paths.emplace(wire.id,route);
+        }
+        QCOMPARE(paths.size(),size_t(3));
+        const auto& branch_route=paths.at(branch);
+        QCOMPARE(branch_route.elementAt(branch_route.elementCount()-2).x,100.);
+        const auto& left_route=paths.at(schematic.wires[0].id);
+        const auto& right_route=paths.at(schematic.wires[1].id);
+        QCOMPARE(left_route.elementAt(left_route.elementCount()-1).x,100.);
+        QCOMPARE(right_route.elementAt(0).x,100.);
+        QCOMPARE(right_route.elementAt(1).x,140.);
+        const auto after=encoded(w.project());
+        QVERIFY(after!=before);
+        w.undo();QCOMPARE(encoded(w.project()),before);
+        w.redo();QCOMPARE(encoded(w.project()),after);
+        const auto file=dir.filePath("offgrid-branch.pds");
+        QVERIFY(w.save_project(file));
+        QVERIFY(w.open_project(file));
+        QCOMPARE(encoded(w.project()),after);
+        for(const auto& [id,route]:paths)
+            QCOMPARE(static_cast<QGraphicsPathItem*>(item(w,id))->path(),route);
+    }
     void wires_branch_route_reconnect_and_save() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
