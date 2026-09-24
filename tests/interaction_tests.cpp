@@ -143,6 +143,37 @@ class InteractionTests : public QObject {
         w.redo();
         QVERIFY(center_color() != QColor("#d34f62"));
     }
+    void three_phase_thyristor_example_opens_runs_and_reloads() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/thyristor-bridge-3p.pds"));
+        ready(w);
+        QCOMPARE(w.project().instances.size(), size_t(2));
+        const auto bridge = w.project().instances.front().id;
+        const auto &body = definition(w.root_project(), w.project().instances.front().definition);
+        QCOMPARE(body.components.size(), size_t(6));
+        QCOMPARE(body.ports.size(), size_t(11));
+        QCOMPARE(definition(w.root_project(), w.project().instances.back().definition).patterns.size(), size_t(6));
+        w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60),
+                              Qt::KeepAspectRatio);
+        if (const auto screenshot = qEnvironmentVariable("PDS_THYRISTOR_3P_SCREENSHOT");
+            !screenshot.isEmpty())
+            QVERIFY(w.grab().save(screenshot + ".png"));
+        w.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 5000);
+        QVERIFY(w.has_result());
+        QVERIFY(!w.result().samples.empty());
+        const auto saved = encoded(w.root_project());
+        const auto path = dir.filePath("thyristor-bridge-3p.pds");
+        QVERIFY(w.save_project(path));
+        w.open_subcircuit(bridge);
+        QCOMPARE(w.project().components.size(), size_t(6));
+        if (const auto screenshot = qEnvironmentVariable("PDS_THYRISTOR_3P_SCREENSHOT");
+            !screenshot.isEmpty())
+            QVERIFY(w.grab().save(screenshot + "-inside.png"));
+        QVERIFY(w.open_project(path));
+        QCOMPARE(encoded(w.root_project()), saved);
+    }
     void locked_hierarchy_navigation_keeps_definition_button_embedded() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());
