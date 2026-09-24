@@ -74,6 +74,12 @@ namespace pds::desktop {
 static QString q(const std::string &s) {
     return QString::fromStdString(s);
 }
+static QImage embedded_definition_image(const std::string &encoded) {
+    QImage image;
+    if (!encoded.empty())
+        image.loadFromData(QByteArray::fromBase64(QByteArray::fromStdString(encoded)), "PNG");
+    return image;
+}
 static QColor domain_color(Domain domain) {
     return domain == Domain::gate ? QColor("#17866d")
          : domain == Domain::signal ? QColor("#8c67c8") : QColor("#146cca");
@@ -237,11 +243,8 @@ class Atom final : public QGraphicsItem {
         prepareGeometryChange();
         input_count = count;
     }
-    void set_definition(const Definition &definition) {
-        custom_image = {};
-        if (!definition.appearance.image_png.empty())
-            custom_image.loadFromData(QByteArray::fromBase64(
-                QByteArray::fromStdString(definition.appearance.image_png)), "PNG");
+    void set_definition(const Definition &definition, const QImage &image) {
+        custom_image = image;
         library_icon_id = definition.appearance.symbol >= 0
             ? definition.appearance.symbol
             : definition_icon_id(definition.id);
@@ -1226,8 +1229,11 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         append(block.inputs, true);
         append(block.outputs, false);
     }
-    for (const auto &instance : fragment.instances)
-        add(instance, 4, {}, {})->set_definition(definition(fragment, instance.definition));
+    for (const auto &instance : fragment.instances) {
+        const auto &body = definition(fragment, instance.definition);
+        add(instance, 4, {}, {})->set_definition(body,
+            embedded_definition_image(body.appearance.image_png));
+    }
     for(const auto &appearance:fragment.object_icons)
         for(auto *child:group->childItems())
             if(auto *a=dynamic_cast<Atom *>(child);a&&a->id==appearance.object)
@@ -2169,6 +2175,7 @@ void EditorWindow::set_project(Project p) {
     canvas_->cancel_gesture();
     labels_.clear();
     atoms_.clear();
+    definition_images_.clear();
     wires_.clear();
     base_wire_routes_.clear();
     canvas_->scene()->clear();
@@ -2670,9 +2677,22 @@ void EditorWindow::rebuild_scene() {
             }
         }
     }
+    std::set<std::string> visible_definitions;
     for (const auto &i : project().instances) {
-        atom(i.id, i.name, {}, 4)->set_definition(definition(project(), i.definition));
+        const auto &body = definition(project(), i.definition);
+        visible_definitions.insert(body.id);
+        auto [cached, inserted] = definition_images_.try_emplace(body.id);
+        if (inserted || cached->second.encoded != body.appearance.image_png) {
+            cached->second.encoded = body.appearance.image_png;
+            cached->second.image = embedded_definition_image(cached->second.encoded);
+        }
+        atom(i.id, i.name, {}, 4)->set_definition(body, cached->second.image);
     }
+    for (auto image = definition_images_.begin(); image != definition_images_.end();)
+        if (!visible_definitions.contains(image->first))
+            image = definition_images_.erase(image);
+        else
+            ++image;
     for (auto i = atoms_.begin(); i != atoms_.end();)
         if (!present.count(i->first)) {
             delete i->second;

@@ -6,6 +6,7 @@
 #include <QElapsedTimer>
 #include <QFutureWatcher>
 #include <QGraphicsView>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMainWindow>
@@ -445,6 +446,11 @@ class EditorWindow : public QMainWindow {
     std::optional<Project> paste_fragment_;
     bool rebuilding_ = false, busy_ = false;
     std::map<std::string, QGraphicsItem *> atoms_;
+    struct CachedDefinitionImage {
+        std::string encoded;
+        QImage image;
+    };
+    std::map<std::string, CachedDefinitionImage> definition_images_;
     std::map<std::string, QGraphicsItem *> labels_;
     void update_labels();
     bool commit_label_positions();

@@ -25,6 +25,7 @@
 #include <QFileInfo>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
+#include <QImage>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
@@ -86,6 +87,62 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void embedded_definition_image_refreshes_after_edit_and_undo() {
+        QTemporaryDir dir;
+        EditorWindow w("en", dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto resistor = w.project().components[1].id;
+        w.select_object(resistor);
+        const auto grouped = w.group_selection("Image cell");
+        QVERIFY(!grouped.empty());
+        QImage source(12, 8, QImage::Format_ARGB32_Premultiplied);
+        source.fill(QColor("#d34f62"));
+        QByteArray png;
+        QBuffer buffer(&png);
+        QVERIFY(buffer.open(QIODevice::WriteOnly));
+        QVERIFY(source.save(&buffer, "PNG"));
+        auto project = w.root_project();
+        const auto definition_id = project.instances.front().definition;
+        auto body = std::find_if(project.definitions.begin(), project.definitions.end(),
+                                 [&](const Definition &candidate) { return candidate.id == definition_id; });
+        QVERIFY(body != project.definitions.end());
+        body->appearance.image_png = png.toBase64().toStdString();
+        w.set_project(std::move(project));
+        auto center_color = [&] {
+            auto *block = item(w, grouped);
+            if (!block) return QColor{};
+            QImage canvas(180, 160, QImage::Format_ARGB32_Premultiplied);
+            canvas.fill(Qt::transparent);
+            QPainter painter(&canvas);
+            painter.translate(90, 80);
+            QStyleOptionGraphicsItem options;
+            block->paint(&painter, &options, nullptr);
+            painter.end();
+            return canvas.pixelColor(90, 80);
+        };
+        QCOMPARE(center_color(), QColor("#d34f62"));
+        w.select_object(grouped);
+        bool cleared = false;
+        QTimer::singleShot(20, &w, [&] {
+            auto *dialog = w.findChild<QDialog *>("public_interface_dialog");
+            if (!dialog) return;
+            dialog->findChild<QPushButton *>("public_image_clear")->click();
+            cleared = true;
+            dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok)->click();
+        });
+        QTimer::singleShot(2000, &w, [&] {
+            if (auto *dialog = w.findChild<QDialog *>("public_interface_dialog")) dialog->reject();
+        });
+        w.findChild<QAction *>("public_interface")->trigger();
+        QVERIFY(cleared);
+        QVERIFY(definition(w.root_project(), definition_id).appearance.image_png.empty());
+        QVERIFY(center_color() != QColor("#d34f62"));
+        w.undo();
+        QCOMPARE(center_color(), QColor("#d34f62"));
+        w.redo();
+        QVERIFY(center_color() != QColor("#d34f62"));
+    }
     void locked_hierarchy_navigation_keeps_definition_button_embedded() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

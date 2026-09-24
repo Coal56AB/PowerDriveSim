@@ -104,7 +104,9 @@ definition metadata. The embedded image takes precedence over the symbol and is
 drawn with fixed aspect ratio, while the block frame and real ports remain normal
 schematic geometry. The loader checks the PNG header and dimensions before the
 desktop decodes it; malformed headers and images larger than 512×512 receive an
-addressed appearance diagnostic. No absolute source path is serialized.
+addressed appearance diagnostic. The desktop shares one decoded image per visible
+definition and refreshes it when the embedded bytes change. No absolute source
+path is serialized.
 
 ## Schema 7
 
