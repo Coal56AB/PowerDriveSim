@@ -1292,6 +1292,12 @@ class InteractionTests : public QObject {
         QApplication::clipboard()->clear();
         QTest::keyClick(diagnostics, Qt::Key_C, Qt::ControlModifier);
         QCOMPARE(QApplication::clipboard()->text(), diagnostics->item(0)->text());
+        new QListWidgetItem("Second diagnostic", diagnostics);
+        diagnostics->item(1)->setSelected(true);
+        QApplication::clipboard()->clear();
+        QTest::keyClick(diagnostics, Qt::Key_C, Qt::ControlModifier);
+        QCOMPARE(QApplication::clipboard()->text(),
+                 diagnostics->item(0)->text() + "\nSecond diagnostic");
     }
     void hierarchy_graph_windows_remain_independent() {
         QTemporaryDir dir;

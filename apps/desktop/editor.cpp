@@ -3590,7 +3590,11 @@ void EditorWindow::select_object(const std::string &id) {
 }
 void EditorWindow::copy_diagnostics() {
     QStringList messages;
-    for (auto *item : errors_->selectedItems())
+    auto selected = errors_->selectedItems();
+    std::sort(selected.begin(), selected.end(), [this](const auto *a, const auto *b) {
+        return errors_->row(a) < errors_->row(b);
+    });
+    for (auto *item : selected)
         messages.push_back(item->text());
     if (!messages.isEmpty())
         QApplication::clipboard()->setText(messages.join('\n'));
