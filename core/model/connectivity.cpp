@@ -296,8 +296,18 @@ std::string code_output_channel(const Project& p,const Endpoint& endpoint) {
     return {};
 }
 std::string tagged_source(const Project& p,const ConnectionTag& source) {
+    // The source may be in a sibling definition. Both ancestor tags reach the
+    // same parent tag, even though the sibling tags are not directly compatible.
+    std::set<std::string> reached{source.id};
+    std::vector<const ConnectionTag*> frontier{&source};
+    for(size_t head=0;head<frontier.size();++head)
+        for(const auto& tag:p.tags)
+            if(!reached.count(tag.id)&&compatible_tags(*frontier[head],tag)) {
+                reached.insert(tag.id);
+                frontier.push_back(&tag);
+            }
     for(const auto& tag:p.tags) {
-        if(!compatible_tags(source,tag))continue;
+        if(!reached.count(tag.id))continue;
         const Endpoint terminal{tag.id,"io"};
         for(const auto& wire:p.wires) {
             const Endpoint* other=wire.from==terminal?&wire.to:(wire.to==terminal?&wire.from:nullptr);

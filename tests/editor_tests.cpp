@@ -492,6 +492,31 @@ int main(int argc,char** argv) {
         gate_plot_document.connect({gate_plot_rx,"io"},{gate_plot,"in1"});
         check(plot_channels(gate_plot_document.project(),gate_plot)==std::vector<std::string>{"gate/"+observed_pattern},
               "Gate tags expose their real source channel to a graph");
+        Project sibling_tags;sibling_tags.id=new_uuid();sibling_tags.wired=true;
+        Definition sender;sender.id=derived_uuid("sibling-tag-sender");sender.wired=true;
+        GatePattern sibling_pattern;sibling_pattern.id=derived_uuid("sibling-tag-pattern");
+        const auto sender_tag=derived_uuid("sibling-tag-output");
+        sender.patterns.push_back(sibling_pattern);
+        sender.tags.push_back({sender_tag,"G",0,0,Domain::gate,{},TagScope::ancestors});
+        sender.wires.push_back({new_uuid(),{sibling_pattern.id,"out"},{sender_tag,"io"}});
+        Definition receiver;receiver.id=derived_uuid("sibling-tag-receiver");receiver.wired=true;
+        PlotBlock sibling_plot;sibling_plot.id=derived_uuid("sibling-tag-plot");sibling_plot.inputs=1;
+        const auto receiver_tag=derived_uuid("sibling-tag-input");
+        receiver.plots.push_back(sibling_plot);
+        receiver.tags.push_back({receiver_tag,"G",0,0,Domain::gate,{},TagScope::ancestors});
+        receiver.wires.push_back({new_uuid(),{receiver_tag,"io"},{sibling_plot.id,"in1"}});
+        Definition sibling_parent;sibling_parent.id=derived_uuid("sibling-tag-parent");sibling_parent.wired=true;
+        const auto sender_instance=derived_uuid("sibling-tag-sender-instance");
+        const auto receiver_instance=derived_uuid("sibling-tag-receiver-instance");
+        sibling_parent.instances={{sender_instance,"Sender",sender.id,0,0},
+                                  {receiver_instance,"Receiver",receiver.id,200,0}};
+        sibling_parent.tags.push_back({derived_uuid("sibling-tag-bridge"),"G",100,0,Domain::gate});
+        const auto parent_instance=derived_uuid("sibling-tag-parent-instance");
+        sibling_tags.definitions={sender,receiver,sibling_parent};
+        sibling_tags.instances.push_back({parent_instance,"Parent",sibling_parent.id,0,0});
+        check(plot_channels(sibling_tags,expanded_uuid({parent_instance,receiver_instance},sibling_plot.id))==
+              std::vector<std::string>{"gate/"+expanded_uuid({parent_instance,sender_instance},sibling_pattern.id)},
+              "Gate plot finds a source through a parent tag between sibling definitions");
         // Gate tags route a programmable gate source to inputs without adding direct pattern-to-switch wires.
         p=Project{}; p.id=new_uuid(); p.wired=true; p.profile={.003,1e-4}; Document gate_tagged(p);
         auto gate_source=gate_tagged.add_pattern(0,0);
