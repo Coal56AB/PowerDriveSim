@@ -37,6 +37,27 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
             if (b >= 0)
                 system.incidence(p, n, b);
             switch (c.kind) {
+            case Kind::dc_motor: {
+                const auto &motor = c.motor;
+                system.add(b, p, 1);
+                system.add(b, n, -1);
+                system.add(b, b, -c.value);
+                system.add(b, s.mechanical, -motor.back_emf_constant);
+                if (operating_point) {
+                    system.add(s.mechanical, s.mechanical, motor.damping);
+                    system.add(s.mechanical, b, -motor.torque_constant);
+                    system.inject(s.mechanical, -motor.load_torque);
+                } else if (initialize) {
+                    system.add(s.mechanical, s.mechanical, 1);
+                    entry->dynamic.push_back({i, s.mechanical, c.kind, 0});
+                } else {
+                    const double factor = motor.inertia / h * (trapezoidal ? 2 : 1);
+                    system.add(s.mechanical, s.mechanical, factor + motor.damping);
+                    system.add(s.mechanical, b, -motor.torque_constant);
+                    entry->dynamic.push_back({i, s.mechanical, c.kind, factor});
+                }
+                break;
+            }
             case Kind::ideal_transformer:
                 system.incidence(s.secondary_positive, s.secondary_negative, s.secondary_branch);
                 // Vp = (Np/Ns) Vs. Currents use the passive sign convention,
@@ -168,7 +189,13 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
         else if (term.kind == Kind::diode)
             value = term.factor *
                     (states[term.state] + (!initialize && trapezoidal ? h / 2 * history[term.state] : 0));
-        else if (term.kind == Kind::capacitor)
+        else if (term.kind == Kind::dc_motor) {
+            const auto &component = ir_.stamps[term.state].component;
+            value = initialize ? states[term.state]
+                               : term.factor * states[term.state] +
+                                     (trapezoidal ? history[term.state] : 0) -
+                                     component.motor.load_torque;
+        } else if (term.kind == Kind::capacitor)
             value = states[term.state] + (!initialize && trapezoidal ? term.factor * history[term.state] : 0);
         else
             value = initialize ? states[term.state]

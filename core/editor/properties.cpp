@@ -213,6 +213,13 @@ PropertyValue read_property(const Project &p, const std::string &id, const std::
                 return c.parallel_resistance_enabled;
             if (key == "parallel_resistance")
                 return c.parallel_resistance;
+            if(c.kind==Kind::dc_motor) {
+                if(key=="motor_torque_constant")return c.motor.torque_constant;
+                if(key=="motor_back_emf_constant")return c.motor.back_emf_constant;
+                if(key=="motor_inertia")return c.motor.inertia;
+                if(key=="motor_damping")return c.motor.damping;
+                if(key=="motor_load_torque")return c.motor.load_torque;
+            }
             if (key == "closed")
                 return c.closed;
             if(rectifying(c.kind)||gate_controlled(c.kind)) {
@@ -429,6 +436,16 @@ void write_property(Project &p, const std::string &id, const std::string &key, c
                 c.parallel_resistance_enabled = std::get<bool>(value);
             if (key == "parallel_resistance")
                 c.parallel_resistance = std::get<double>(value);
+            if(c.kind==Kind::dc_motor) {
+                if(key=="motor_torque_constant") {
+                    c.motor.torque_constant=std::get<double>(value);
+                    c.motor.back_emf_constant=c.motor.torque_constant;
+                }
+                if(key=="motor_back_emf_constant")c.motor.back_emf_constant=std::get<double>(value);
+                if(key=="motor_inertia")c.motor.inertia=std::get<double>(value);
+                if(key=="motor_damping")c.motor.damping=std::get<double>(value);
+                if(key=="motor_load_torque")c.motor.load_torque=std::get<double>(value);
+            }
             if (key == "closed")
                 c.closed = std::get<bool>(value);
             if(key=="initial_latched")c.semiconductor.initial_latched=std::get<bool>(value);

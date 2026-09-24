@@ -102,7 +102,7 @@ std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, boo
     for (size_t i = 0; i < ir.stamps.size(); ++i) {
         const auto &s = ir.stamps[i];
         const auto k = s.component.kind;
-        const bool path = k == Kind::resistor || (k == Kind::capacitor && !operating_point) || k == Kind::voltage ||
+        const bool path = k == Kind::resistor || k == Kind::dc_motor || (k == Kind::capacitor && !operating_point) || k == Kind::voltage ||
                           k == Kind::current_probe || (k == Kind::inductor && (!initialize || operating_point)) ||
                           (k == Kind::ideal_switch && (gates[i] || resistive_semiconductor(s.component))) ||
                           (rectifying(k) && (diodes[i] || resistive_semiconductor(s.component)));

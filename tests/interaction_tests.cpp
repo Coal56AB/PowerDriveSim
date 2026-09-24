@@ -4553,7 +4553,7 @@ class InteractionTests : public QObject {
             auto *tree = w.findChild<QTreeWidget *>("library");
             auto *bar = w.findChild<QToolBar *>("component_bar");
             QVERIFY(tree && bar);
-            QCOMPARE(tree->topLevelItemCount(), 5);
+            QCOMPARE(tree->topLevelItemCount(), 6);
             const auto all_actions = w.findChildren<QAction *>();
             const auto fixed_actions = std::count_if(all_actions.begin(), all_actions.end(),
                                                      [](const QAction *action) {

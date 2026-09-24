@@ -386,6 +386,12 @@ static Result execute_impl(const SimulationIR& ir,const std::atomic_bool* cancel
             const double voltage=(s.positive<0?0:values[s.positive])-(s.negative<0?0:values[s.negative]);
             if(s.component.kind==Kind::capacitor) { states[i]=voltage; history[i]=values[s.branch]; }
             if(s.component.kind==Kind::inductor) { states[i]=values[s.branch]; history[i]=voltage; }
+            if(s.component.kind==Kind::dc_motor) {
+                const auto &motor=s.component.motor;
+                const double omega=values[s.mechanical];
+                states[i]=omega;
+                history[i]=motor.torque_constant*values[s.branch]-motor.damping*omega-motor.load_torque;
+            }
             if(s.component.kind==Kind::thyristor) {
                 const double current=values[s.branch];
                 const double tolerance=ir.profile.current_tolerance+ir.profile.relative_tolerance*std::abs(current);

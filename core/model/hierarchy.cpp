@@ -231,6 +231,7 @@ void validate_effective_components(const Schematic &schematic) {
     for (const auto &component : schematic.components) {
         validate_waveform(component);
         validate_semiconductor(component);
+        validate_motor(component);
         if (component.parallel_resistance_enabled &&
             (component.kind != Kind::inductor || !std::isfinite(component.parallel_resistance) ||
              component.parallel_resistance <= 0))

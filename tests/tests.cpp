@@ -59,6 +59,12 @@ static size_t channel(const Result& r,unsigned n) {
     throw std::runtime_error("Missing result channel");
 }
 static double value(const Result& r,const Sample& s,unsigned n) { return s.values[channel(r,n)]; }
+static size_t named_channel(const Result &r, unsigned n, const std::string &prefix) {
+    for(size_t i=0;i<r.channels.size();++i)
+        if((r.channels[i].object==id(n) || r.channels[i].object=="omega/"+id(n)) &&
+           r.channels[i].name.starts_with(prefix)) return i;
+    throw std::runtime_error("Missing named result channel");
+}
 static std::string saved(const Project& p) { std::ostringstream out; write_project(p,out); return out.str(); }
 static void error(const std::string& code,const std::function<void()>& f) {
     try { f(); } catch(const Diagnostic& d) {
@@ -72,7 +78,7 @@ static void unit() {
     require(!valid_uuid("display-name"),"Invalid UUID");
     require(!valid_uuid("00000000-0000-4000-8000-00000000000A"),"Canonical UUID");
     for(auto k:{Kind::resistor,Kind::capacitor,Kind::inductor,Kind::voltage,Kind::current,
-                Kind::ideal_switch,Kind::ideal_transformer})
+                Kind::ideal_switch,Kind::ideal_transformer,Kind::dc_motor})
         require(parse_kind(kind_name(k))==k,"Component type round trip");
     error("unknown_component",[]{parse_kind("Controller");});
     auto p=base(); p.nodes.pop_back();
@@ -146,6 +152,96 @@ static void numerical() {
         const double load_power=secondary*secondary/8;
         near(source_power+load_power,0,1e-12,"Transformer source/load power conservation");
     }
+
+    // Permanent-magnet brushed DC motor with a rigid inertial shaft. The
+    // electrical and mechanical equations reduce to one first-order ODE for
+    // constant voltage, providing an independent analytical reference.
+    auto motor_project = [&](Method method) {
+        auto model=base();
+        model.nodes.pop_back();
+        model.profile={.25,.0001,method};
+        auto motor=part(11,Kind::dc_motor,3,2,2,.4);
+        motor.motor={.2,.2,.02,.01,.05};
+        model.components={part(10,Kind::voltage,3,2,12),motor};
+        return model;
+    };
+    for(const auto method:{Method::backward_euler,Method::trapezoidal}) {
+        p=motor_project(method);
+        r=execute(compile(p));
+        const auto omega_channel=named_channel(r,11,"omega:");
+        const auto current_channel=named_channel(r,11,"i:");
+        const auto &motor=p.components[1];
+        const auto &m=motor.motor;
+        const double decay=(m.torque_constant*m.back_emf_constant/motor.value+m.damping)/m.inertia;
+        const double steady=(m.torque_constant*12/motor.value-m.load_torque)/
+                            (m.torque_constant*m.back_emf_constant/motor.value+m.damping);
+        double electrical_energy=0,copper_energy=0,damping_energy=0,load_energy=0;
+        for(size_t k=0;k<r.samples.size();++k) {
+            const auto &sample=r.samples[k];
+            const double expected=steady+(.4-steady)*std::exp(-decay*sample.time);
+            near(sample.values[omega_channel],expected,
+                 method==Method::trapezoidal?2e-7:2e-3,"DC motor analytical speed");
+            near(sample.values[current_channel],(12-m.back_emf_constant*sample.values[omega_channel])/motor.value,
+                 1e-12,"DC motor armature equation");
+            if(k) {
+                const auto &prior_sample=r.samples[k-1];
+                const double dt=sample.time-prior_sample.time;
+                auto integrate=[&](double a,double b){return .5*(a+b)*dt;};
+                const double i0=prior_sample.values[current_channel],i1=sample.values[current_channel];
+                const double w0=prior_sample.values[omega_channel],w1=sample.values[omega_channel];
+                electrical_energy+=integrate(12*i0,12*i1);
+                copper_energy+=integrate(motor.value*i0*i0,motor.value*i1*i1);
+                damping_energy+=integrate(m.damping*w0*w0,m.damping*w1*w1);
+                load_energy+=integrate(m.load_torque*w0,m.load_torque*w1);
+            }
+        }
+        const double w0=r.samples.front().values[omega_channel],w1=r.samples.back().values[omega_channel];
+        const double stored=.5*m.inertia*(w1*w1-w0*w0);
+        near(electrical_energy-copper_energy-damping_energy-load_energy-stored,0,
+             method==Method::trapezoidal?2e-7:2e-4,"DC motor energy balance");
+    }
+
+    // The DC operating point includes external shaft load rather than silently
+    // dropping it: electromagnetic torque equals damping plus load torque.
+    p=motor_project(Method::backward_euler);
+    p.profile.initial_state=InitialState::dc_operating_point;
+    r=execute(compile(p));
+    {
+        const auto omega=named_channel(r,11,"omega:");
+        const auto current=named_channel(r,11,"i:");
+        const double i=r.samples.front().values[current],w=r.samples.front().values[omega];
+        near(12,2*i+.2*w,1e-12,"DC motor operating-point voltage");
+        near(.2*i,.01*w+.05,1e-12,"DC motor operating-point torque");
+    }
+    p.components[1].motor.load_torque=1.2;
+    r=execute(compile(p));
+    near(r.samples.front().values[named_channel(r,11,"omega:")],0,1e-12,
+         "DC motor stall speed");
+    near(r.samples.front().values[named_channel(r,11,"i:")],6,1e-12,
+         "DC motor stall current");
+
+    // Speed and its previous mechanical-force history must survive a checkpoint
+    // exactly, including the trapezoidal companion term.
+    p=motor_project(Method::trapezoidal);
+    const auto motor_ir=compile(p);
+    const auto uninterrupted=execute(motor_ir);
+    ExecutionOptions stop_after;
+    stop_after.capture_snapshot=true;
+    stop_after.max_steps=517;
+    const auto prefix=execute(motor_ir,nullptr,nullptr,nullptr,nullptr,{},&stop_after);
+    require(prefix.snapshot.has_value(),"DC motor snapshot produced");
+    ExecutionOptions continue_from;
+    continue_from.resume=&*prefix.snapshot;
+    const auto resumed=execute(motor_ir,nullptr,nullptr,nullptr,nullptr,{},&continue_from);
+    require(resumed.samples.back().values.size()==uninterrupted.samples.back().values.size(),
+            "DC motor resumed channel count");
+    for(size_t k=0;k<resumed.samples.back().values.size();++k)
+        near(resumed.samples.back().values[k],uninterrupted.samples.back().values[k],0,
+             "DC motor bit-exact snapshot continuation");
+
+    p=motor_project(Method::backward_euler);
+    p.components[1].motor.back_emf_constant=.21;
+    error("invalid_parameter",[&]{(void)compile(p);});
 }
 static void trapezoidal_tests() {
     auto p=rc(); p.profile.method=Method::trapezoidal; p.profile.step=0.00001;
@@ -405,6 +501,22 @@ static void serialization() {
         const auto wired_result=execute(compile(wired));
         near(value(wired_result,wired_result.samples.back(),4),5,1e-12,
              "Converted transformer retains its secondary voltage");
+    }
+    {
+        auto motor=base();
+        motor.components={part(10,Kind::voltage,3,2,10),part(11,Kind::dc_motor,3,2,2)};
+        motor.components[1].motor={.2,.2,.02,.01,.05};
+        const auto encoded=saved(motor);
+        std::istringstream input(encoded);
+        const auto restored=read_project(input);
+        require(restored.components[1].motor==motor.components[1].motor,
+                "DC motor mechanical parameters round trip");
+        require(saved(restored)==encoded,"DC motor serialization is stable");
+        auto incomplete=encoded;
+        const auto start=incomplete.find("dc_motor ");
+        require(start!=std::string::npos,"DC motor record is serialized");
+        incomplete.erase(start,incomplete.find('\n',start)-start+1);
+        error("invalid_parameter",[&]{std::istringstream missing(incomplete);read_project(missing);});
     }
 
     // CTest uses build as cwd, so migration also has a self-contained fixture.

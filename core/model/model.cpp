@@ -1,7 +1,25 @@
 #include "core/model/model.hpp"
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 namespace pds {
+void validate_motor(const Component &component) {
+    if (component.kind != Kind::dc_motor)
+        return;
+    const auto &motor = component.motor;
+    if (!std::isfinite(component.value) || component.value <= 0 ||
+        !std::isfinite(motor.inertia) || motor.inertia <= 0 ||
+        !std::isfinite(motor.damping) || motor.damping < 0 ||
+        !std::isfinite(motor.torque_constant) || motor.torque_constant <= 0 ||
+        !std::isfinite(motor.back_emf_constant) || motor.back_emf_constant <= 0 ||
+        !std::isfinite(motor.load_torque) || !std::isfinite(component.initial))
+        throw Diagnostic("invalid_parameter", component.id,
+                         "DC motor requires finite R, J, Kt and Ke > 0, B >= 0, and finite load torque and initial speed");
+    const double scale = std::max({1.0, std::abs(motor.torque_constant), std::abs(motor.back_emf_constant)});
+    if (std::abs(motor.torque_constant - motor.back_emf_constant) > 1e-12 * scale)
+        throw Diagnostic("invalid_parameter", component.id,
+                         "A lossless SI permanent-magnet coupling requires equal torque and back-EMF constants Kt = Ke");
+}
 void validate_step_control(const Profile &profile, const std::string &object) {
     const auto &control = profile.step_control;
     for (double value : {control.minimum_step, control.voltage_tolerance,
@@ -51,11 +69,12 @@ std::string kind_name(Kind k) {
     case Kind::voltage_probe: return "VP";
     case Kind::current_probe: return "IP";
     case Kind::ideal_transformer: return "Transformer";
+    case Kind::dc_motor: return "DCM";
     }
     throw Diagnostic("unknown_component", "", "Unsupported component kind");
 }
 Kind parse_kind(const std::string& s) {
-    for(auto k : {Kind::resistor, Kind::capacitor, Kind::inductor, Kind::voltage, Kind::current, Kind::ideal_switch, Kind::diode, Kind::voltage_probe, Kind::current_probe, Kind::thyristor, Kind::igbt, Kind::ideal_transformer})
+    for(auto k : {Kind::resistor, Kind::capacitor, Kind::inductor, Kind::voltage, Kind::current, Kind::ideal_switch, Kind::diode, Kind::voltage_probe, Kind::current_probe, Kind::thyristor, Kind::igbt, Kind::ideal_transformer, Kind::dc_motor})
         if(kind_name(k) == s) return k;
     throw Diagnostic("unknown_component", s, "Unsupported component type");
 }

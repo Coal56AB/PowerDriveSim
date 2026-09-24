@@ -36,6 +36,7 @@ void EditorWindow::build_examples_menu(QMenu *menu) {
                                                 {"rc-trapezoidal", "examples_basics"},
                                                 {"rlc", "examples_basics"},
                                                 {"ideal-transformer", "examples_basics"},
+                                                {"dc-motor-startup", "examples_machines"},
                                                 {"switch", "examples_basics"},
                                                 {"rc-sine", "examples_sources"},
                                                 {"rc-pulse", "examples_sources"},

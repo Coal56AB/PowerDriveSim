@@ -1,0 +1,20 @@
+{
+  "type": "DCM",
+  "fields": [
+    {"key": "name", "editor": "text", "label": "name", "inline": "name"},
+    {"key": "value", "editor": "number", "label": "motor_resistance", "unit": "Ohm", "min": 0, "exclusiveMin": true, "inline": "value"},
+    {"key": "initial", "editor": "number", "label": "motor_initial_speed", "unit": "rad/s"},
+    {"key": "motor_torque_constant", "editor": "number", "label": "motor_constant", "unit": "Nm/A", "min": 0, "exclusiveMin": true},
+    {"key": "motor_inertia", "editor": "number", "label": "motor_inertia", "unit": "kgm2", "min": 0, "exclusiveMin": true},
+    {"key": "motor_damping", "editor": "number", "label": "motor_damping", "unit": "Nms/rad", "min": 0},
+    {"key": "motor_load_torque", "editor": "number", "label": "motor_load_torque", "unit": "Nm"}
+  ],
+  "palette": {
+    "id": 12,
+    "label": "dc_motor",
+    "category": "machines",
+    "short": "M",
+    "fixed": false,
+    "hidden": false
+  }
+}

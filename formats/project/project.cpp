@@ -89,6 +89,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::map<std::string,Semiconductor> semiconductors;
     std::map<std::string,std::pair<bool,double>> parallel_resistances;
     std::map<std::string,std::pair<std::string,std::string>> transformer_secondaries;
+    std::map<std::string,MotorParameters> motors;
     struct ChargeData { bool enabled; double transit, lifetime, initial; };
     std::map<std::string,ChargeData> charges;
     std::map<std::string,std::pair<double,bool>> thyristors;
@@ -510,7 +511,14 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             if(c.kind==Kind::igbt && p.schema<12)throw Diagnostic("schema_version",c.id,"IGBT requires schema 12");
             if(c.kind==Kind::thyristor && p.schema<11)throw Diagnostic("schema_version",c.id,"Thyristors require schema 11");
             if(c.kind==Kind::ideal_transformer && p.schema<29)throw Diagnostic("schema_version",c.id,"Ideal transformers require schema 29");
+            if(c.kind==Kind::dc_motor && p.schema<30)throw Diagnostic("schema_version",c.id,"DC motors require schema 30");
             p.components.push_back(c);
+        } else if(tag=="dc_motor" && p.schema>=30) {
+            std::string id;MotorParameters model;
+            row>>std::quoted(id)>>model.torque_constant>>model.back_emf_constant
+               >>model.inertia>>model.damping>>model.load_torque;
+            if(!motors.emplace(id,model).second)
+                throw Diagnostic("parse_error",id,"Duplicate DC motor parameters");
         } else if(tag=="transformer_secondary" && p.schema>=29) {
             std::string id,positive,negative;
             row>>std::quoted(id)>>std::quoted(positive)>>std::quoted(negative);
@@ -591,6 +599,16 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     for(const auto& c:p.components)
         if(c.kind==Kind::ideal_transformer&&!transformer_secondaries.contains(c.id))
             throw Diagnostic("missing_terminal",c.id,"Transformer secondary terminals are missing");
+    for(const auto& [id,model]:motors) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& component){return component.id==id;});
+        if(c==p.components.end()||c->kind!=Kind::dc_motor)
+            throw Diagnostic("invalid_parameter",id,"Motor parameters require a DC motor");
+        c->motor=model;
+        validate_motor(*c);
+    }
+    for(const auto& c:p.components)
+        if(c.kind==Kind::dc_motor&&!motors.contains(c.id))
+            throw Diagnostic("invalid_parameter",c.id,"DC motor parameters are missing");
     for(const auto& [id,data]:charges) {
         auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
         if(c==p.components.end()||c->kind!=Kind::diode)throw Diagnostic("invalid_diode_charge",id,"Charge model target must be a diode");
@@ -792,6 +810,12 @@ void write_project(const Project& p, std::ostream& out) {
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
     for(const auto& c:p.components)if(c.kind==Kind::ideal_transformer)
         out<<"transformer_secondary "<<std::quoted(c.id)<<' '<<std::quoted(c.secondary_positive)<<' '<<std::quoted(c.secondary_negative)<<'\n';
+    for(const auto& c:p.components)if(c.kind==Kind::dc_motor) {
+        validate_motor(c);
+        out<<"dc_motor "<<std::quoted(c.id)<<' '<<c.motor.torque_constant<<' '
+           <<c.motor.back_emf_constant<<' '<<c.motor.inertia<<' '
+           <<c.motor.damping<<' '<<c.motor.load_torque<<'\n';
+    }
     for(const auto& c:p.components)if(c.kind==Kind::inductor&&(c.parallel_resistance_enabled||std::abs(c.parallel_resistance-1e12)>1e-9))
         out<<"parallel_resistance "<<std::quoted(c.id)<<' '<<c.parallel_resistance_enabled<<' '<<c.parallel_resistance<<'\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';

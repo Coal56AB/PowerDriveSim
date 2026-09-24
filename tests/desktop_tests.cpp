@@ -4,6 +4,7 @@
 #include "apps/desktop/signal_presets.hpp"
 #include "core/model/c_program.hpp"
 #include "core/model/hierarchy.hpp"
+#include "core/editor/properties.hpp"
 #include "formats/project/project.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include "tests/qt_test_main.hpp"
@@ -47,6 +48,44 @@ using namespace pds::desktop;
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void dc_motor_palette_properties_and_example() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        EditorWindow window("en",temp.path());
+        window.show();
+        QVERIFY(window.findChild<QAction *>("insert_component_12"));
+        const auto id=window.add_component(Kind::dc_motor,{0,0});
+        QVERIFY(!id.empty());
+        QCOMPARE(window.project().components.front().value,2.0);
+        auto edited=window.project();
+        write_property(edited,id,"motor_torque_constant",0.2);
+        QCOMPARE(edited.components.front().motor.torque_constant,0.2);
+        QCOMPARE(edited.components.front().motor.back_emf_constant,0.2);
+        window.set_project(edited);
+        EditorWindow example("en",temp.path());
+        QVERIFY(example.open_project(QString(PDS_SOURCE_DIR)+"/examples/dc-motor-startup.pds"));
+        QCOMPARE(example.project().components.size(),size_t(2));
+        QCOMPARE(example.project().components[1].kind,Kind::dc_motor);
+        const auto path=temp.filePath("dc-motor-copy.pds");
+        QVERIFY(example.save_project(path));
+        QVERIFY(example.open_project(path));
+        if(const auto screenshot=qEnvironmentVariable("PDS_MOTOR_SCREENSHOT");!screenshot.isEmpty()) {
+            example.resize(1280,820);
+            example.show();
+            example.findChild<QAction *>("action_fit")->trigger();
+            QTest::qWait(80);
+            QVERIFY(example.grab().save(screenshot));
+        }
+        example.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!example.running(),5000);
+        QVERIFY(example.has_result());
+        const auto speed=std::find_if(example.result().channels.begin(),example.result().channels.end(),
+                                      [](const Channel &channel){return channel.name=="omega:DC motor";});
+        QVERIFY(speed!=example.result().channels.end());
+        QVERIFY(!example.result().samples.empty());
+        const auto index=size_t(speed-example.result().channels.begin());
+        QVERIFY(std::abs(example.result().samples.back().values[index]-76.016)<0.01);
+    }
     void ideal_transformer_palette_and_ports() {
         QTemporaryDir temp;
         QVERIFY(temp.isValid());
@@ -218,7 +257,7 @@ class DesktopTests : public QObject {
         QTest::qWait(50);
         auto *library = window.findChild<QTreeWidget *>("library");
         QVERIFY(library);
-        QCOMPARE(library->topLevelItemCount(), 5);
+        QCOMPARE(library->topLevelItemCount(), 6);
         QVERIFY(window.scope() == nullptr);
         QVERIFY(!window.project().scope_enabled);
         auto place = [&](int kind, QPointF point) {

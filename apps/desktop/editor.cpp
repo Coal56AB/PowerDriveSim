@@ -108,6 +108,7 @@ static void prune_orphan_nodes(Schematic &schematic) {
 static QString component_label(const Component &c) {
     if(c.semiconductor.model==SemiconductorModel::piecewise_linear)return "PWL";
     if(c.kind==Kind::ideal_transformer)return QString::number(c.value,'g',6)+" : 1";
+    if(c.kind==Kind::dc_motor)return engineering_value(c.value,"Ohm");
     const auto unit=component_unit(c.kind);
     if(unit.empty())return {};
     const auto value=engineering_value(c.value,unit);
@@ -963,6 +964,9 @@ class Atom final : public QGraphicsItem {
                     p->drawArc(QRectF(-25,y,18,10),-90*16,180*16);
                     p->drawArc(QRectF(7,y,18,10),90*16,180*16);
                 }
+            } else if(symbol=="DCM") {
+                p->drawEllipse(QRectF(-27,-27,54,54));
+                label(p,QRectF(-27,-27,54,54),Qt::AlignCenter,"M");
             } else if (symbol == "R")
                 p->drawRect(QRectF(-27, -12, 54, 24));
             else if (symbol == "C") {

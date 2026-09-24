@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 namespace pds {
-inline constexpr unsigned project_schema = 29;
-enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt, ideal_transformer };
+inline constexpr unsigned project_schema = 30;
+enum class Kind { resistor, capacitor, inductor, voltage, current, ideal_switch, diode, voltage_probe, current_probe, thyristor, igbt, ideal_transformer, dc_motor };
 inline bool gate_controlled(Kind kind) { return kind == Kind::ideal_switch || kind == Kind::thyristor || kind == Kind::igbt; }
 inline bool rectifying(Kind kind) { return kind == Kind::diode || kind == Kind::thyristor || kind == Kind::igbt; }
 std::string kind_name(Kind kind);
@@ -37,6 +37,14 @@ struct Semiconductor {
     bool initial_latched = false;
     bool operator==(const Semiconductor &) const = default;
 };
+struct MotorParameters {
+    double torque_constant = 0.1;
+    double back_emf_constant = 0.1;
+    double inertia = 0.01;
+    double damping = 0;
+    double load_torque = 0;
+    bool operator==(const MotorParameters &) const = default;
+};
 struct Component {
     std::string id, name;
     Kind kind = Kind::resistor;
@@ -49,8 +57,10 @@ struct Component {
     SourceWaveform source;
     Semiconductor semiconductor;
     std::string secondary_positive, secondary_negative;
+    MotorParameters motor;
     bool operator==(const Component&) const = default;
 };
+void validate_motor(const Component &component);
 struct GateEvent { double time; std::string target; bool closed; bool operator==(const GateEvent&) const = default; };
 enum class Method { backward_euler, trapezoidal };
 std::string method_name(Method method);

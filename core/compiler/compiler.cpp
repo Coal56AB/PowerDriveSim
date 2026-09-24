@@ -62,6 +62,7 @@ static SimulationIR compile_flat(const Project& p) {
         (void)kind_name(c.kind);
         validate_waveform(c);
         validate_semiconductor(c);
+        validate_motor(c);
         const auto label=c.name.empty()?c.id:c.name;
         if(!indices.count(c.positive) || !indices.count(c.negative))
             throw Diagnostic("missing_terminal",c.id,
@@ -99,6 +100,10 @@ static SimulationIR compile_flat(const Project& p) {
             s.secondary_negative=indices.at(c.secondary_negative);
             s.secondary_branch=static_cast<int>(ir.unknowns.size());
             ir.unknowns.push_back({c.id,"i_secondary:"+c.name,"A"});
+        }
+        if(c.kind==Kind::dc_motor) {
+            s.mechanical=static_cast<int>(ir.unknowns.size());
+            ir.unknowns.push_back({"omega/"+c.id,"omega:"+c.name,"rad/s"});
         }
         if(c.kind==Kind::voltage_probe)
             ir.observations.push_back({{c.id,"u:"+c.name,"V"},s.positive,s.negative});
@@ -141,8 +146,8 @@ static SimulationIR compile_flat(const Project& p) {
     }
     std::set<std::pair<int,int>> pattern;
     for(const auto& s:ir.stamps)
-        for(int a:{s.positive,s.negative,s.branch,s.secondary_positive,s.secondary_negative,s.secondary_branch})
-            for(int b:{s.positive,s.negative,s.branch,s.secondary_positive,s.secondary_negative,s.secondary_branch})
+        for(int a:{s.positive,s.negative,s.branch,s.secondary_positive,s.secondary_negative,s.secondary_branch,s.mechanical})
+            for(int b:{s.positive,s.negative,s.branch,s.secondary_positive,s.secondary_negative,s.secondary_branch,s.mechanical})
             if(a>=0 && b>=0) pattern.emplace(a,b);
     ir.sparsity.assign(pattern.begin(),pattern.end());
     return ir;

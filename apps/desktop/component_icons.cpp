@@ -173,6 +173,9 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
             p.drawArc(QRectF(7,y,7,6),-90*16,180*16);
             p.drawArc(QRectF(18,y,7,6),90*16,180*16);
         }
+    } else if(id==12) {
+        p.drawLine(1,16,6,16);p.drawEllipse(QRectF(6,6,20,20));p.drawLine(26,16,31,16);
+        title("M");
     } else if (id == 270) {
         if (framed) p.drawRoundedRect(QRectF(3, 3, 26, 21), 2, 2);
         if (framed) {
@@ -381,6 +384,7 @@ std::vector<IconPrimitive> editable_component_icon(int id) {
     case 11:return {line({{2,7},{7,7},{10,12},{7,16},{10,21},{7,25},{2,25}}),
                     line({{30,7},{25,7},{22,12},{25,16},{22,21},{25,25},{30,25}}),
                     line({{15,5},{15,27}}),line({{17,5},{17,27}})};
+    case 12:return {line({{2,16},{6,16}}),ellipse({6,6},{26,26}),label("M",11),line({{26,16},{30,16}})};
     case 3:return {ellipse({5,5},{27,27}),label("V",11)};
     case 4:return {ellipse({5,5},{27,27}),label("I",11)};
     case 5:return {line({{3,21},{10,21}}),line({{10,21},{24,10}}),line({{24,21},{29,21}})};

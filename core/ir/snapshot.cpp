@@ -27,6 +27,7 @@ std::string snapshot_contract(const SimulationIR &ir, double time) {
         const auto &c = stamp.component;
         const auto &s = c.source;
         const auto &d = c.semiconductor;
+        const auto &m = c.motor;
         text << c.id << ' ' << static_cast<int>(c.kind) << ' ' << stamp.positive << ' ' << stamp.negative
              << ' ' << stamp.branch << ' ' << c.value << ' ' << c.initial << ' ' << c.closed << ' '
              << static_cast<int>(s.kind) << ' ' << s.offset << ' ' << s.frequency << ' ' << s.phase << ' '
@@ -35,7 +36,12 @@ std::string snapshot_contract(const SimulationIR &ir, double time) {
             text << ' ' << point.x << ' ' << point.y;
         text << ' ' << static_cast<int>(d.model) << ' ' << d.ron << ' ' << d.roff << ' ' << d.forward_voltage
              << ' ' << d.charge_dynamics << ' ' << d.transit_time << ' ' << d.carrier_lifetime << ' '
-             << d.initial_charge << ' ' << d.holding_current << ' ' << d.initial_latched << '\n';
+             << d.initial_charge << ' ' << d.holding_current << ' ' << d.initial_latched;
+        if(c.kind==Kind::dc_motor)
+            text << " motor " << stamp.mechanical << ' ' << m.torque_constant << ' '
+                 << m.back_emf_constant << ' ' << m.inertia << ' '
+                 << m.damping << ' ' << m.load_torque;
+        text << '\n';
     }
     for (const auto &signal : ir.gate_signals)
         text << signal.id << ' ' << signal.initial << '\n';
@@ -168,6 +174,13 @@ void validate_snapshot(const SimulationSnapshot &s, const SimulationIR &ir) {
         if (stamp.component.kind == Kind::inductor &&
             (s.states[k] != s.values.at(stamp.branch) || s.history[k] != voltage))
             invalid("Snapshot inductor state and algebraic values disagree");
+        if (stamp.component.kind == Kind::dc_motor) {
+            const auto &motor=stamp.component.motor;
+            const double omega=s.values.at(stamp.mechanical);
+            const double force=motor.torque_constant*s.values.at(stamp.branch)-motor.damping*omega-motor.load_torque;
+            if (s.states[k] != omega || s.history[k] != force)
+                invalid("Snapshot DC motor state and algebraic values disagree");
+        }
         if (dynamic_diode(stamp.component) && s.states[k] < 0)
             invalid("Snapshot diode charge is negative");
     }

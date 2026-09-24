@@ -54,6 +54,7 @@
     <file alias="ground.json">components/ground.json</file>
     <file alias="inductor.json">components/inductor.json</file>
     <file alias="transformer.json">components/transformer.json</file>
+    <file alias="dc_motor.json">components/dc_motor.json</file>
     <file alias="node.json">components/node.json</file>
     <file alias="plot.json">components/plot.json</file>
     <file alias="pwm.json">components/pwm.json</file>
