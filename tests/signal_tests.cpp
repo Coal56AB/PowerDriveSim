@@ -457,6 +457,40 @@ int main() {
                   !carrier_sample(.4e-3).gates[comparator_index],
               "PWM comparator reads the previous accepted carrier frame through its wired Signal input");
 
+        SignalTaskIR thyristor_firing;
+        thyristor_firing.id = derived_uuid("three-phase-thyristor-code-block");
+        thyristor_firing.period = 10e-6;
+        thyristor_firing.code = R"(double delay = ramp(0, 10, 0.008333333333, 0.001111111111);
+gAp = phasepwm(50, 0.02, delay);
+gAm = phasepwm(50, 0.02, delay + 0.010000000000);
+gBp = phasepwm(50, 0.02, delay + 0.006666666667);
+gBm = phasepwm(50, 0.02, delay + 0.016666666667);
+gCp = phasepwm(50, 0.02, delay + 0.013333333333);
+gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
+        for (const auto *name : {"gAp", "gAm", "gBp", "gBm", "gCp", "gCm"})
+            thyristor_firing.outputs.push_back(port(std::string("thyristor-firing-") + name, name, "",
+                                                    SignalScalarType::boolean));
+        SignalIR firing_ir{{thyristor_firing}};
+        auto firing_state = initialize_signal_runtime(firing_ir);
+        auto check_firing = [&](double time, int active) {
+            const auto outputs = run_signal_tasks(firing_ir, firing_state, time, {});
+            std::vector<double> last(6, -1);
+            for (const auto &output : outputs)
+                for (size_t index = 0; index < thyristor_firing.outputs.size(); ++index)
+                    if (output.endpoint.port == thyristor_firing.outputs[index].id)
+                        last[index] = output.value.value;
+            for (size_t index = 0; index < last.size(); ++index)
+                check(last[index] == (int(index) == active ? 1. : 0.),
+                      "Three-phase thyristor CodeBlock emits one pulse on the expected bool output");
+        };
+        check_firing(0, -1);
+        check_firing(.0085, 0);
+        check_firing(.0118, 5);
+        check_firing(.0152, 2);
+        check_firing(.0185, 1);
+        check_firing(.0219, 4);
+        check_firing(.0252, 3);
+
         Project integrated;
         integrated.id = derived_uuid("integrated-signal-project");
         integrated.wired = true;
