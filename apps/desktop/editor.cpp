@@ -3408,6 +3408,21 @@ void EditorWindow::commit_positions() {
                                  range_contains(moved.y(), trunk[i].adjacent.y(), trunk[j].adjacent.y()))
                             target = QPointF(old_node.x(), moved.y());
                     }
+                // Match the segment-drag case when one trunk side turns at
+                // the junction and the other side contains the new position.
+                if (!target && trunk.size() == 2)
+                    for (const auto &end : trunk) {
+                        if (std::abs(end.adjacent.y() - old_node.y()) < 1e-6 &&
+                            range_contains(moved.x(), old_node.x(), end.adjacent.x())) {
+                            target = QPointF(moved.x(), old_node.y());
+                            break;
+                        }
+                        if (std::abs(end.adjacent.x() - old_node.x()) < 1e-6 &&
+                            range_contains(moved.y(), old_node.y(), end.adjacent.y())) {
+                            target = QPointF(old_node.x(), moved.y());
+                            break;
+                        }
+                    }
                 if (!target)
                     continue;
                 target = canvas_->snap_point(*target);

@@ -5006,6 +5006,27 @@ class InteractionTests : public QObject {
         schematic.wires[1].bends={{140,180}};
         schematic.wires[2].bends={{140,-20}};
         const auto branch=schematic.wires[2].id;
+        auto block_schematic=schematic;
+        block_schematic.plots.front().x=200;
+        EditorWindow moved_block("en",dir.path());
+        moved_block.set_project(block_schematic);
+        ready(moved_block);
+        const auto before_block=encoded(moved_block.project());
+        drag(moved_block,{200,-70},{160,-70});
+        QCOMPARE(moved_block.project().plots.front().x,160.0);
+        const auto block_joint=std::find_if(moved_block.project().nodes.begin(),moved_block.project().nodes.end(),
+                                             [&](const Node& node){return node.id==joint;});
+        QVERIFY(block_joint!=moved_block.project().nodes.end());
+        QCOMPARE(QPointF(block_joint->x,block_joint->y),QPointF(100,140));
+        for(const auto& wire:moved_block.project().wires) {
+            if(wire.from.object!=joint&&wire.to.object!=joint)continue;
+            const auto route=static_cast<QGraphicsPathItem*>(item(moved_block,wire.id))->path();
+            const auto endpoint=wire.from.object==joint?route.elementAt(0):route.elementAt(route.elementCount()-1);
+            QCOMPARE(QPointF(endpoint.x,endpoint.y),QPointF(100,140));
+        }
+        const auto after_block=encoded(moved_block.project());
+        moved_block.undo();QCOMPARE(encoded(moved_block.project()),before_block);
+        moved_block.redo();QCOMPARE(encoded(moved_block.project()),after_block);
         w.set_project(schematic);
         ready(w);
         w.select_object(branch);
