@@ -16,6 +16,7 @@
 #include <QApplication>
 #include <QGraphicsSceneHoverEvent>
 #include <QCheckBox>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDialog>
@@ -1500,7 +1501,13 @@ void EditorWindow::build_ui() {
     action(edit_menu, "scale_up", QKeySequence("Ctrl++"), [this] { scale_selection(1.15); });
     action(edit_menu, "scale_down", QKeySequence("Ctrl+-"), [this] { scale_selection(1.0 / 1.15); });
     action(edit_menu, "scale_reset", {}, [this] { scale_selection(0); });
-    action(edit_menu, "copy", QKeySequence::Copy, [this] { copy_selection(false); });
+    action(edit_menu, "copy", QKeySequence::Copy, [this] {
+        auto *focus = QApplication::focusWidget();
+        if (errors_ && (focus == errors_ || errors_->isAncestorOf(focus)))
+            copy_diagnostics();
+        else
+            copy_selection(false);
+    });
     action(edit_menu, "cut", QKeySequence::Cut, [this] { copy_selection(true); });
     action(edit_menu, "paste", QKeySequence::Paste, [this] { paste_selection(); });
     action(edit_menu, "duplicate", QKeySequence("Ctrl+D"), [this] { paste_selection(true); });
@@ -1800,15 +1807,28 @@ void EditorWindow::build_ui() {
     dl->addWidget(diagnostic_hint);
     errors_ = new QListWidget;
     errors_->setObjectName("diagnostics_list");
+    errors_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     errors_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+    errors_->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(errors_, &QWidget::customContextMenuRequested, this, [this](const QPoint &point) {
+        if (auto *item = errors_->itemAt(point); item && !item->isSelected())
+            errors_->setCurrentItem(item);
+        QMenu menu(errors_);
+        auto *copy = menu.addAction(text("copy"));
+        copy->setEnabled(!errors_->selectedItems().empty());
+        connect(copy, &QAction::triggered, this, [this] { copy_diagnostics(); });
+        menu.exec(errors_->viewport()->mapToGlobal(point));
+    });
     dl->addWidget(errors_, 1);
     bottom_->addTab(diagnostics, text("diagnostics"));
     connect(errors_, &QListWidget::itemClicked, this, [this](QListWidgetItem *i) {
+        const auto object = i->data(Qt::UserRole).toString().toStdString();
         std::vector<std::string> path;
         for (const auto &step : i->data(Qt::UserRole + 1).toStringList())
             path.push_back(step.toStdString());
         navigate_hierarchy(path);
-        select_object(i->data(Qt::UserRole).toString().toStdString());
+        select_object(object);
+        errors_->setFocus();
     });
     scope_page_ = new QWidget;
     scope_layout_ = new QVBoxLayout(scope_page_);
@@ -3567,6 +3587,13 @@ void EditorWindow::select_object(const std::string &id) {
     update_wires();
     canvas_->setFocus();
     update_command_state();
+}
+void EditorWindow::copy_diagnostics() {
+    QStringList messages;
+    for (auto *item : errors_->selectedItems())
+        messages.push_back(item->text());
+    if (!messages.isEmpty())
+        QApplication::clipboard()->setText(messages.join('\n'));
 }
 void EditorWindow::show_error(const std::exception &e) {
     QString message = QString::fromUtf8(e.what());

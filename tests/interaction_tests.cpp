@@ -86,6 +86,34 @@ class InteractionTests : public QObject {
         return out.str();
     }
   private slots:
+    void locked_hierarchy_navigation_keeps_definition_button_embedded() {
+        QTemporaryDir dir;
+        EditorWindow w("ru", dir.path());
+        QVERIFY(w.open_project(PDS_SOURCE_DIR "/library/converters/ac-voltage-controller-3p.pds"));
+        auto project = w.root_project();
+        project.instances.front().locked = true;
+        project.definitions.front().instances[1].locked = true;
+        w.set_project(project);
+        ready(w);
+        const auto outer = project.instances.front().id;
+        w.open_subcircuit(outer);
+        auto *button = w.findChild<QToolButton *>("edit_definition_button");
+        QVERIFY(button);
+        QVERIFY(!button->isWindow());
+        QVERIFY(button->isVisible());
+        QTest::qWait(100);
+        const auto inner = w.project().instances.at(1).id;
+        w.open_subcircuit(inner);
+        QVERIFY(!button->isWindow());
+        QTest::qWait(100);
+        w.navigate_hierarchy({});
+        QVERIFY(!button->isWindow());
+        QVERIFY(!button->isVisible());
+        w.open_subcircuit(outer);
+        QVERIFY(!button->isWindow());
+        QTest::qWait(100);
+        QCOMPARE(w.hierarchy_path(), (std::vector<std::string>{outer}));
+    }
     void results_panel_keeps_user_height_across_tabs() {
         QTemporaryDir dir;
         EditorWindow w("en", dir.path());
@@ -1260,6 +1288,10 @@ class InteractionTests : public QObject {
             diagnostics->visualItemRect(diagnostics->item(0)).center());
         QCOMPARE(w.hierarchy_path(), (std::vector<std::string>{converter.id, leg.id}));
         QVERIFY(item(w, object) && item(w, object)->isSelected());
+        QVERIFY(diagnostics->hasFocus());
+        QApplication::clipboard()->clear();
+        QTest::keyClick(diagnostics, Qt::Key_C, Qt::ControlModifier);
+        QCOMPARE(QApplication::clipboard()->text(), diagnostics->item(0)->text());
     }
     void hierarchy_graph_windows_remain_independent() {
         QTemporaryDir dir;

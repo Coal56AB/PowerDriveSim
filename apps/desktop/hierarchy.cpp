@@ -319,7 +319,7 @@ void EditorWindow::refresh_hierarchy() {
     while (auto *item = layout->takeAt(0)) {
         if (item->widget()) {
             if (item->widget() == definition_button_)
-                item->widget()->setParent(nullptr);
+                item->widget()->hide();
             else {
                 item->widget()->hide();
                 item->widget()->deleteLater();
@@ -391,12 +391,10 @@ void EditorWindow::refresh_hierarchy() {
             add_level(levels[index], index);
     }
     if (!definition_button_) {
-        definition_button_ = new QToolButton;
+        definition_button_ = new QToolButton(breadcrumbs_);
         definition_button_->setObjectName("edit_definition_button");
         definition_button_->setDefaultAction(commands_.at("edit_definition"));
         definition_button_->setToolTip(text("editing_shared_definition"));
-    } else {
-        definition_button_->setParent(nullptr);
     }
     const bool locked = current_hierarchy_locked();
     definition_button_->setVisible(depth != 0 && locked);
