@@ -64,7 +64,9 @@ static SimulationIR compile_flat(const Project& p) {
         validate_semiconductor(c);
         if(!indices.count(c.positive) || !indices.count(c.negative))
             throw Diagnostic("missing_terminal",c.id,"Connect both terminals to existing electrical nodes");
-        if(c.positive==c.negative && c.kind!=Kind::voltage_probe) throw Diagnostic("shorted_component",c.id,"Both terminals reference the same node");
+        if(c.positive==c.negative && c.kind!=Kind::voltage_probe)
+            throw Diagnostic("shorted_component",c.id,
+                             (c.name.empty()?c.id:c.name)+": Both terminals reference the same node");
         if(!std::isfinite(c.value) || !std::isfinite(c.initial) || !std::isfinite(c.x) || !std::isfinite(c.y))
             throw Diagnostic("invalid_parameter",c.id,"Parameters must be finite");
         if((c.kind==Kind::resistor || c.kind==Kind::capacitor || c.kind==Kind::inductor) && c.value<=0)

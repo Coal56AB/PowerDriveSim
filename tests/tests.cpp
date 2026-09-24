@@ -406,6 +406,15 @@ static void topology() {
     error("floating_node",[&]{compile(p);});
     p=rc(); p.components[1].positive=id(999);
     error("missing_terminal",[&]{compile(p);});
+    p=rc(); p.components[1].name="IP2"; p.components[1].negative=p.components[1].positive;
+    try {
+        compile(p);
+        require(false,"Shorted component must be diagnosed");
+    } catch(const Diagnostic& diagnostic) {
+        require(diagnostic.code=="shorted_component"&&diagnostic.object==p.components[1].id&&
+                std::string(diagnostic.what()).find("IP2")!=std::string::npos,
+                "Shorted component keeps its UUID and includes its visible name");
+    }
     p=rc(); p.components[1].value=0;
     error("invalid_parameter",[&]{compile(p);});
     p=rc(); p.profile.step=std::numeric_limits<double>::infinity();
