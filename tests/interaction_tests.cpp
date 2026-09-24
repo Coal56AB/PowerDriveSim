@@ -804,6 +804,11 @@ class InteractionTests : public QObject {
             const QString kind = type == 220 ? "buck" : type == 221 ? "boost" :
                                  type == 222 ? "buck-boost" : "bidirectional-charge";
             QVERIFY(w.open_project(QString(PDS_SOURCE_DIR "/examples/") + kind + ".pds"));
+            QToolButton *root_title = nullptr;
+            for (auto *candidate : w.findChildren<QToolButton *>("hierarchy_level_0"))
+                if (candidate->isVisible()) root_title = candidate;
+            QVERIFY(root_title);
+            QCOMPARE(root_title->text(), QString::fromStdString(w.root_project().name));
             w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
             w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
             QVERIFY(w.has_result() && !w.result().samples.empty());

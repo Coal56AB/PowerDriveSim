@@ -340,7 +340,7 @@ void EditorWindow::refresh_hierarchy() {
         auto *button = new QToolButton;
         button->setObjectName("hierarchy_level_" + QString::number(depth));
         const auto title = name.empty() ? text("untitled") : QString::fromStdString(name);
-        const int title_width = depth == 0 && hierarchy_path().empty() ? 320 : 200;
+        const int title_width = depth == 0 && hierarchy_path().empty() ? 440 : 200;
         button->setText(QFontMetrics(button->font()).elidedText(title, Qt::ElideMiddle, title_width));
         button->setToolTip(title);
         button->setCheckable(true);
