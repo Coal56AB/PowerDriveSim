@@ -32,6 +32,9 @@ constexpr std::array<SignalPortPreset, 6> two_level_gates{{
     {"B1", SignalScalarType::boolean}, {"B2", SignalScalarType::boolean},
     {"C1", SignalScalarType::boolean}, {"C2", SignalScalarType::boolean},
 }};
+constexpr std::array<SignalPortPreset, 2> leg_gates{{
+    {"gH", SignalScalarType::boolean}, {"gL", SignalScalarType::boolean},
+}};
 constexpr std::array<SignalPortPreset, 12> three_level_gates{{
     {"A1", SignalScalarType::boolean}, {"A2", SignalScalarType::boolean},
     {"A3", SignalScalarType::boolean}, {"A4", SignalScalarType::boolean},
@@ -49,7 +52,7 @@ double raw = kp * error + ki * integral;
 if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
 out = clamp(kp * error + ki * integral, -1, 1);)";
 
-constexpr std::array<SignalPreset, 19> presets{{
+constexpr std::array<SignalPreset, 20> presets{{
     {109, "out = 1;", 100e-6, {}, real_output},
     {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6, {}, real_output},
     {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6, {}, real_output},
@@ -98,6 +101,10 @@ if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
 out = clamp(kp * error + ki * integral - kd * derivative, -1, 1);)", 100e-6, regulator_inputs, real_output},
     {126, "out = 100;", 100e-6, {}, speed_output},
     {127, pi_code, 100e-6, speed_regulator_inputs, real_output},
+    {128, R"(double phase = t * 1000 - floor(t * 1000);
+double carrier = 1 - 4 * abs(phase - 0.5);
+gH = clamp(in, -1, 1) >= carrier;
+gL = !gH;)", 10e-6, real_input, leg_gates},
 }};
 } // namespace
 
@@ -136,6 +143,7 @@ std::vector<IconPrimitive> default_code_icon(int placement_id) {
     case 125:return {text("PID",8)};
     case 126:return {text("rad/s",6)};
     case 127:return {text("PI ω",8)};
+    case 128:return {text("1L",10)};
     default:return {text("{C}",8)};
     }
 }

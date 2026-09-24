@@ -1051,6 +1051,12 @@ class DesktopTests : public QObject {
             QCOMPARE(low.at(std::string(phase) + "1"), 0.0);
             QCOMPARE(low.at(std::string(phase) + "2"), 1.0);
         }
+        const auto leg_high = run(128, 0, {{"in", 0}});
+        const auto leg_low = run(128, 0.0005, {{"in", 0}});
+        QCOMPARE(leg_high.at("gH"), 1.0);
+        QCOMPARE(leg_high.at("gL"), 0.0);
+        QCOMPARE(leg_low.at("gH"), 0.0);
+        QCOMPARE(leg_low.at("gL"), 1.0);
         const auto npc = run(124, 0.0005, {{"ma", 1}, {"mb", 0}, {"mc", -1}});
         for (const auto &[phase, pattern] : {
                  std::pair{"A", std::array{1., 1., 0., 0.}},
@@ -1087,7 +1093,8 @@ class DesktopTests : public QObject {
                  std::tuple{124, size_t(3), size_t(12)},
                  std::tuple{125, size_t(2), size_t(1)},
                  std::tuple{126, size_t(0), size_t(1)},
-                 std::tuple{127, size_t(2), size_t(1)}}) {
+                 std::tuple{127, size_t(2), size_t(1)},
+                 std::tuple{128, size_t(1), size_t(2)}}) {
             QTreeWidgetItem *entry = nullptr;
             for (QTreeWidgetItemIterator it(library); *it; ++it)
                 if ((*it)->data(0, Qt::UserRole).toInt() == id) entry = *it;
@@ -1104,6 +1111,52 @@ class DesktopTests : public QObject {
             QCOMPARE(window.project().code_blocks.back().inputs.size(), inputs);
             QCOMPARE(window.project().code_blocks.back().outputs.size(), outputs);
         }
+    }
+    void half_bridge_pwm_preset_drives_library_bridge() {
+        std::ifstream input(PDS_SOURCE_DIR "/examples/half-bridge.pds");
+        QVERIFY(input.good());
+        auto project=read_project(input);
+        QVERIFY(!project.patterns.empty());
+        const auto first_pattern=project.patterns[0].id;
+        const auto second_pattern=project.patterns[1].id;
+        std::erase_if(project.wires,[&](const Wire &wire) {
+            return wire.from.object==first_pattern || wire.from.object==second_pattern;
+        });
+        project.patterns.clear();
+        auto command=make_signal_preset(*signal_preset(109),"Zero modulation",-350,-350);
+        command.code="out = 0;";
+        auto pwm=make_signal_preset(*signal_preset(128),"Half-bridge PWM",-150,-350);
+        const auto &bridge=project.instances.front();
+        const auto &ports=definition(project,bridge.definition).ports;
+        auto gate_port=[&](const std::string &name) {
+            const auto found=std::find_if(ports.begin(),ports.end(),[&](const PublicPort &port) {
+                return port.name==name;
+            });
+            if(found==ports.end())throw std::runtime_error("Missing half-bridge gate");
+            return found->id;
+        };
+        project.wires.push_back({new_uuid(),{command.id,command.outputs[0].id},
+                                 {pwm.id,pwm.inputs[0].id}});
+        project.wires.push_back({new_uuid(),{pwm.id,pwm.outputs[0].id},
+                                 {bridge.id,gate_port("gH")}});
+        project.wires.push_back({new_uuid(),{pwm.id,pwm.outputs[1].id},
+                                 {bridge.id,gate_port("gL")}});
+        project.code_blocks={command,pwm};
+        project.profile.stop=.002;
+        project.profile.step=10e-6;
+        const auto ir=compile(project);
+        QCOMPARE(ir.signal_gates.size(),size_t(2));
+        const auto result=execute(ir);
+        QVERIFY(!result.cancelled && result.accepted_steps>=200);
+        auto gate_index=[&](const CodePort &port) {
+            const auto key=signal_endpoint_key({pwm.id,port.id});
+            const auto found=std::find(result.gate_objects.begin(),result.gate_objects.end(),key);
+            if(found==result.gate_objects.end())throw std::runtime_error("Missing PWM gate channel");
+            return size_t(found-result.gate_objects.begin());
+        };
+        const auto high=gate_index(pwm.outputs[0]),low=gate_index(pwm.outputs[1]);
+        for(const auto &sample:result.samples)
+            QVERIFY(sample.gates[high]!=sample.gates[low]);
     }
     void two_level_pwm_preset_drives_library_inverter() {
         std::ifstream input(PDS_SOURCE_DIR "/examples/vsi-2l.pds");

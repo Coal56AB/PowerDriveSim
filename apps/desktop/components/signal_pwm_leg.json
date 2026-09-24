@@ -1,0 +1,12 @@
+{
+  "type": "signal_pwm_leg",
+  "fields": [],
+  "palette": {
+    "id": 128,
+    "label": "signal_pwm_leg",
+    "category": "signals",
+    "short": "PWM 1L",
+    "fixed": false,
+    "hidden": false
+  }
+}

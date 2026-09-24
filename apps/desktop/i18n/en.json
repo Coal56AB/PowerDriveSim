@@ -672,6 +672,8 @@
   "signal_speed_reference_description": "Output 100 rad/s; edit the value in the block code.",
   "signal_speed_pi": "Speed PI regulator",
   "signal_speed_pi_description": "Reference and feedback in rad/s, modulation output −1…1; edit kp and ki in the block code.",
+  "signal_pwm_leg": "Half-bridge PWM",
+  "signal_pwm_leg_description": "One modulation input −1…1, two complementary gH/gL outputs for a half bridge; 1 kHz carrier.",
   "edit_code_block": "Edit code block…",
   "code_block_icon": "Icon",
   "icon_select": "Select",
