@@ -85,7 +85,7 @@ ctest --test-dir build-core -C Release --output-on-failure
 Desktop: Qt >=6.5 Widgets/Concurrent, QtTest для UI-тестов. Локально установлен Qt 6.5.3 qtbase MSVC 2019 в игнорируемой `.deps/qt/6.5.3/msvc2019_64`.
 
 ```text
-cmake -S . -B build -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH=F:/Work/Projects/SIMULATOR/.deps/qt/6.5.3/msvc2019_64
+cmake -S . -B build -DPDS_BUILD_DESKTOP=ON '-DCMAKE_PREFIX_PATH=.deps/qt/6.5.3/msvc2019_64'
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
