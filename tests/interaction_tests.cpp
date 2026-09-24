@@ -3369,6 +3369,40 @@ class InteractionTests : public QObject {
         QVERIFY(std::any_of(w.project().components.begin(),w.project().components.end(),
                             [&](const Component& component){return component.id==probe;}));
     }
+    void single_code_block_copies_cuts_and_pastes() {
+        QTemporaryDir dir;
+        EditorWindow w("en",dir.path());
+        ready(w);
+        auto *example=w.findChild<QAction*>("example_code-block-hysteresis");
+        QVERIFY(example);
+        example->trigger();
+        QCOMPARE(w.project().code_blocks.size(),size_t(1));
+        const auto original=w.project().code_blocks.front();
+        w.select_object(original.id);
+        QTest::keyClick(w.canvas(),Qt::Key_C,Qt::ControlModifier);
+        const auto *mime=QApplication::clipboard()->mimeData();
+        QVERIFY(mime&&mime->hasFormat("application/x-powerdrivesim-project"));
+        std::istringstream input(mime->data("application/x-powerdrivesim-project").toStdString());
+        const auto fragment=read_project(input);
+        QCOMPARE(fragment.code_blocks.size(),size_t(1));
+        QCOMPARE(fragment.code_blocks.front().code,original.code);
+        QTest::keyClick(w.canvas(),Qt::Key_V,Qt::ControlModifier);
+        QTest::keyClick(w.canvas(),Qt::Key_Space);
+        QTest::mouseClick(w.canvas()->viewport(),Qt::LeftButton,Qt::NoModifier,
+                          w.canvas()->mapFromScene(QPointF(240,100)));
+        QCOMPARE(w.project().code_blocks.size(),size_t(2));
+        const auto& pasted=w.project().code_blocks.back();
+        QVERIFY(pasted.id!=original.id);
+        QCOMPARE(pasted.code,original.code);
+        QCOMPARE(pasted.orientation.quarter_turns,1u);
+        QVERIFY(std::abs(pasted.x-240.)<=20.);
+        QVERIFY(std::abs(pasted.y-100.)<=20.);
+        w.select_object(original.id);
+        QTest::keyClick(w.canvas(),Qt::Key_X,Qt::ControlModifier);
+        QCOMPARE(w.project().code_blocks.size(),size_t(1));
+        w.undo();
+        QCOMPARE(w.project().code_blocks.size(),size_t(2));
+    }
     void selected_wire_group_is_available_from_background_menu() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

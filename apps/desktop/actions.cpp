@@ -467,6 +467,7 @@ void EditorWindow::transform_selection(int turns, bool mirror) {
         transform(paste_fragment_->tags);
         transform(paste_fragment_->patterns);
         transform(paste_fragment_->plots);
+        transform(paste_fragment_->code_blocks);
         transform(paste_fragment_->instances);
         for (auto &w : paste_fragment_->wires)
             for (auto &p : w.bends)
@@ -512,12 +513,14 @@ void EditorWindow::scale_selection(double factor) {
         collect(paste_fragment_->tags);
         collect(paste_fragment_->patterns);
         collect(paste_fragment_->plots);
+        collect(paste_fragment_->code_blocks);
         collect(paste_fragment_->instances);
         apply_scale(paste_fragment_->components, ids);
         apply_scale(paste_fragment_->nodes, ids);
         apply_scale(paste_fragment_->tags, ids);
         apply_scale(paste_fragment_->patterns, ids);
         apply_scale(paste_fragment_->plots, ids);
+        apply_scale(paste_fragment_->code_blocks, ids);
         apply_scale(paste_fragment_->instances, ids);
         set_placement_preview();
         return;
@@ -535,6 +538,7 @@ void EditorWindow::scale_selection(double factor) {
             apply_scale(p.tags, ids);
             apply_scale(p.patterns, ids);
             apply_scale(p.plots, ids);
+            apply_scale(p.code_blocks, ids);
             apply_scale(p.instances, ids);
         });
         refresh();
@@ -587,7 +591,7 @@ bool EditorWindow::copy_selection(bool cut) {
         return false;
     auto fragment = copy_visible_selection(ids);
     if (fragment.components.empty() && fragment.nodes.empty() && fragment.tags.empty() && fragment.patterns.empty() &&
-        fragment.plots.empty() && fragment.instances.empty())
+        fragment.plots.empty() && fragment.code_blocks.empty() && fragment.instances.empty())
         return false;
     try {
         std::ostringstream out;
@@ -623,7 +627,7 @@ void EditorWindow::paste_selection(bool duplicate) {
             fragment = read_project(in);
         }
         if (fragment.components.empty() && fragment.nodes.empty() && fragment.tags.empty() && fragment.patterns.empty() &&
-            fragment.plots.empty() && fragment.instances.empty())
+            fragment.plots.empty() && fragment.code_blocks.empty() && fragment.instances.empty())
             return;
         canvas_->cancel_gesture();
         double x = 0, y = 0;
@@ -640,6 +644,7 @@ void EditorWindow::paste_selection(bool duplicate) {
         center(fragment.tags);
         center(fragment.patterns);
         center(fragment.plots);
+        center(fragment.code_blocks);
         center(fragment.instances);
         x = count ? std::round(x / count / 20) * 20 : 0;
         y = count ? std::round(y / count / 20) * 20 : 0;
@@ -654,6 +659,7 @@ void EditorWindow::paste_selection(bool duplicate) {
         shift(fragment.tags);
         shift(fragment.patterns);
         shift(fragment.plots);
+        shift(fragment.code_blocks);
         shift(fragment.instances);
         for (auto &w : fragment.wires)
             for (auto &p : w.bends) {
