@@ -201,7 +201,78 @@ gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
     check(std::abs(output_at(.005)) < 1, "Thyristors block before the CodeBlock firing pulse");
     check(output_at(.0085) > 20, "Positive thyristor conducts after the CodeBlock firing pulse");
     check(output_at(.0185) < -20, "Negative thyristor conducts after the CodeBlock firing pulse");
-    std::cout << "PASS single/three-phase AC controller hierarchy, waveform, RMS, power, holding and blocking\n";
+    auto three_phase_driven = three_phase;
+    three_phase_driven.profile.stop = .04;
+    three_phase_driven.profile.step = 10e-6;
+    const auto neutral = derived_uuid("three-phase-code-neutral");
+    three_phase_driven.nodes.push_back({neutral, "Neutral", true});
+    three_phase_driven.code_blocks.push_back(firing);
+    const auto &module = definition(three_phase_driven, three_phase_driven.instances.front().definition);
+    auto module_port = [&](const std::string &name) {
+        const auto found = std::find_if(module.ports.begin(), module.ports.end(),
+                                        [&](const auto &entry) { return entry.name == name; });
+        check(found != module.ports.end(), "Three-phase controller public port exists");
+        return found->id;
+    };
+    auto connect = [&](const std::string &name, Endpoint from, Endpoint to) {
+        three_phase_driven.wires.push_back({derived_uuid("three-phase-code-" + name),
+                                            std::move(from), std::move(to)});
+    };
+    const auto module_id = three_phase_driven.instances.front().id;
+    std::vector<std::string> loads;
+    for (size_t phase = 0; phase < 3; ++phase) {
+        const std::string label(1, char('A' + phase));
+        Component source;
+        source.id = derived_uuid("three-phase-code-supply-" + label);
+        source.name = "Supply " + label;
+        source.kind = Kind::voltage;
+        source.value = 100;
+        source.source.kind = Waveform::sine;
+        source.source.frequency = 50;
+        source.source.phase = phase == 1 ? -2 * std::numbers::pi / 3
+                                         : phase == 2 ? 2 * std::numbers::pi / 3 : 0;
+        Component load;
+        load.id = derived_uuid("three-phase-code-load-" + label);
+        load.name = "Load " + label;
+        load.kind = Kind::resistor;
+        load.value = 10;
+        three_phase_driven.components.push_back(source);
+        three_phase_driven.components.push_back(load);
+        loads.push_back(load.id);
+        connect("supply-p-" + label, {source.id, "p"}, {module_id, module_port(label)});
+        connect("supply-n-" + label, {source.id, "n"}, {neutral, "node"});
+        connect("load-p-" + label, {module_id, module_port(label + "'")}, {load.id, "p"});
+        connect("load-n-" + label, {load.id, "n"}, {neutral, "node"});
+    }
+    for (size_t gate = 0; gate < firing.outputs.size(); ++gate) {
+        const std::string label(1, char('A' + gate / 2));
+        connect("gate-" + std::to_string(gate), {firing.id, firing.outputs[gate].id},
+                {module_id, module_port("g" + label + (gate % 2 ? "-" : "+"))});
+    }
+    std::ostringstream code_saved;
+    write_project(three_phase_driven, code_saved);
+    std::istringstream code_reopened(code_saved.str());
+    auto code_restored = read_project(code_reopened);
+    check(code_restored == three_phase_driven, "Three-phase CodeBlock and gate wiring survive save/reopen");
+    const auto phases = execute(compile(code_restored));
+    auto current_at = [&](size_t phase, double time) {
+        const auto channel = std::find_if(phases.channels.begin(), phases.channels.end(),
+                                          [&](const auto &entry) { return entry.object == loads[phase]; });
+        check(channel != phases.channels.end(), "Three-phase load current channel exists");
+        const auto sample = std::find_if(phases.samples.begin(), phases.samples.end(), [&](const auto &entry) {
+            return std::abs(entry.time - time) < 1e-12;
+        });
+        check(sample != phases.samples.end(), "Three-phase gate checkpoint exists");
+        return sample->values[size_t(channel - phases.channels.begin())];
+    };
+    check(std::abs(current_at(0, .005)) < .1, "Phase A blocks before firing");
+    check(current_at(0, .0085) > 2 && current_at(0, .0185) < -2,
+          "CodeBlock drives positive and negative phase A thyristors");
+    check(current_at(1, .0152) > 2 && current_at(1, .0252) < -2,
+          "CodeBlock drives positive and negative phase B thyristors");
+    check(current_at(2, .0219) > 2 && current_at(2, .0118) < -2,
+          "CodeBlock drives positive and negative phase C thyristors");
+    std::cout << "PASS AC controller hierarchy, waveform, RMS, power, holding and six CodeBlock gates\n";
     return 0;
 } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
