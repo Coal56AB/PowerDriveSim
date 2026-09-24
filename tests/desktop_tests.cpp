@@ -4,6 +4,7 @@
 #include "apps/desktop/signal_presets.hpp"
 #include "core/model/c_program.hpp"
 #include "core/model/connectivity.hpp"
+#include "core/compiler/signal.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/editor/properties.hpp"
 #include "formats/project/project.hpp"
@@ -77,6 +78,15 @@ class DesktopTests : public QObject {
         QCOMPARE(example.project().plots.size(),size_t(1));
         QCOMPARE(plot_source_channels(example.project(),example.project().plots[0].id),
                  std::vector<std::string>{"omega/"+example.project().components[1].id});
+        auto speed_control=example.project();
+        auto reference=make_signal_preset(*signal_preset(126),"Speed reference",300,-220);
+        auto regulator=make_signal_preset(*signal_preset(127),"Speed PI",500,-220);
+        speed_control.code_blocks={reference,regulator};
+        speed_control.wires.push_back({new_uuid(),{reference.id,reference.outputs[0].id},
+                                       {regulator.id,regulator.inputs[0].id}});
+        speed_control.wires.push_back({new_uuid(),{speed_control.components[1].id,"speed"},
+                                       {regulator.id,regulator.inputs[1].id}});
+        QCOMPARE(compile_signal_ir(speed_control).tasks.size(),size_t(2));
         const auto path=temp.filePath("dc-motor-copy.pds");
         QVERIFY(example.save_project(path));
         QVERIFY(example.open_project(path));
@@ -1053,6 +1063,14 @@ class DesktopTests : public QObject {
         const auto recovered = run(122, 0.0001, {{"reference", 0}, {"feedback", 0}}, &state);
         QCOMPARE(saturated.at("out"), 1.0);
         QCOMPARE(recovered.at("out"), 0.0);
+        const auto speed_reference = make_signal_preset(*signal_preset(126), "Speed reference", 0, 0);
+        const auto speed_pi = make_signal_preset(*signal_preset(127), "Speed PI", 0, 0);
+        QCOMPARE(speed_reference.outputs[0].unit, std::string("rad/s"));
+        QCOMPARE(speed_pi.inputs[0].unit, std::string("rad/s"));
+        QCOMPARE(speed_pi.inputs[1].unit, std::string("rad/s"));
+        QCOMPARE(speed_pi.outputs[0].unit, std::string());
+        QCOMPARE(run(126, 0, {}).at("out"), 100.0);
+        QCOMPARE(run(127, 0, {{"reference", 2}, {"feedback", 0}}).at("out"), 1.0);
         CProgramState pid_state;
         const auto pid_initial = run(125, 0, {{"reference", 0}, {"feedback", 0}}, &pid_state);
         const auto pid_step = run(125, 0.0001, {{"reference", 0}, {"feedback", 0.1}}, &pid_state);
@@ -1067,7 +1085,9 @@ class DesktopTests : public QObject {
                  std::tuple{122, size_t(2), size_t(1)},
                  std::tuple{123, size_t(3), size_t(6)},
                  std::tuple{124, size_t(3), size_t(12)},
-                 std::tuple{125, size_t(2), size_t(1)}}) {
+                 std::tuple{125, size_t(2), size_t(1)},
+                 std::tuple{126, size_t(0), size_t(1)},
+                 std::tuple{127, size_t(2), size_t(1)}}) {
             QTreeWidgetItem *entry = nullptr;
             for (QTreeWidgetItemIterator it(library); *it; ++it)
                 if ((*it)->data(0, Qt::UserRole).toInt() == id) entry = *it;

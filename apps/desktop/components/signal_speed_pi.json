@@ -1,0 +1,12 @@
+{
+  "type": "signal_speed_pi",
+  "fields": [],
+  "palette": {
+    "id": 127,
+    "label": "signal_speed_pi",
+    "category": "signals",
+    "short": "PI ω",
+    "fixed": false,
+    "hidden": false
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "signal_speed_reference",
+  "fields": [],
+  "palette": {
+    "id": 126,
+    "label": "signal_speed_reference",
+    "category": "signals",
+    "short": "rad/s",
+    "fixed": false,
+    "hidden": false
+  }
+}

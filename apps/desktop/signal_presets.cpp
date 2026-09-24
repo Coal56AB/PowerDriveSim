@@ -20,6 +20,10 @@ constexpr std::array<SignalPortPreset, 2> boolean_pair{{
 constexpr std::array<SignalPortPreset, 2> regulator_inputs{{
     {"reference", SignalScalarType::real}, {"feedback", SignalScalarType::real},
 }};
+constexpr std::array<SignalPortPreset, 1> speed_output{{{"out", SignalScalarType::real, "rad/s"}}};
+constexpr std::array<SignalPortPreset, 2> speed_regulator_inputs{{
+    {"reference", SignalScalarType::real, "rad/s"}, {"feedback", SignalScalarType::real, "rad/s"},
+}};
 constexpr std::array<SignalPortPreset, 3> three_phase_modulation{{
     {"ma", SignalScalarType::real}, {"mb", SignalScalarType::real}, {"mc", SignalScalarType::real},
 }};
@@ -37,7 +41,15 @@ constexpr std::array<SignalPortPreset, 12> three_level_gates{{
     {"C3", SignalScalarType::boolean}, {"C4", SignalScalarType::boolean},
 }};
 
-constexpr std::array<SignalPreset, 17> presets{{
+constexpr const char *pi_code = R"(static double integral = 0;
+double kp = 1;
+double ki = 100;
+double error = reference - feedback;
+double raw = kp * error + ki * integral;
+if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
+out = clamp(kp * error + ki * integral, -1, 1);)";
+
+constexpr std::array<SignalPreset, 19> presets{{
     {109, "out = 1;", 100e-6, {}, real_output},
     {110, "out = t >= 5e-3 ? 1 : 0;", 100e-6, {}, real_output},
     {111, "out = t < 10e-3 ? t / 10e-3 : 1;", 100e-6, {}, real_output},
@@ -51,13 +63,7 @@ constexpr std::array<SignalPreset, 17> presets{{
     {119, "double phase = t * 1000 - floor(t * 1000);\nout = 1 - 4 * abs(phase - 0.5);", 100e-6, {}, real_output},
     {120, "out = reference >= carrier;", 100e-6, real_reference_carrier, boolean_output},
     {121, "static double held = 0;\nif (sample) held = in;\nout = held;", 100e-6, real_sample_inputs, real_output},
-    {122, R"(static double integral = 0;
-double kp = 1;
-double ki = 100;
-double error = reference - feedback;
-double raw = kp * error + ki * integral;
-if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
-out = clamp(kp * error + ki * integral, -1, 1);)", 100e-6, regulator_inputs, real_output},
+    {122, pi_code, 100e-6, regulator_inputs, real_output},
     {123, R"(double phase = t * 1000 - floor(t * 1000);
 double carrier = 1 - 4 * abs(phase - 0.5);
 A1 = clamp(ma, -1, 1) >= carrier; A2 = !A1;
@@ -90,6 +96,8 @@ previous_feedback = feedback;
 double raw = kp * error + ki * integral - kd * derivative;
 if ((raw < 1 || error < 0) && (raw > -1 || error > 0)) integral += error * dt;
 out = clamp(kp * error + ki * integral - kd * derivative, -1, 1);)", 100e-6, regulator_inputs, real_output},
+    {126, "out = 100;", 100e-6, {}, speed_output},
+    {127, pi_code, 100e-6, speed_regulator_inputs, real_output},
 }};
 } // namespace
 
@@ -126,6 +134,8 @@ std::vector<IconPrimitive> default_code_icon(int placement_id) {
     case 123:return {text("2L",10)};
     case 124:return {text("3L",10)};
     case 125:return {text("PID",8)};
+    case 126:return {text("rad/s",6)};
+    case 127:return {text("PI ω",8)};
     default:return {text("{C}",8)};
     }
 }
@@ -140,9 +150,9 @@ CodeBlock make_signal_preset(const SignalPreset &preset, const std::string &name
     block.code = preset.code;
     block.icon = default_code_icon(preset.placement_id);
     for (const auto &port : preset.inputs)
-        block.inputs.push_back({new_uuid(), port.name, "", port.type, 0});
+        block.inputs.push_back({new_uuid(), port.name, port.unit, port.type, 0});
     for (const auto &port : preset.outputs)
-        block.outputs.push_back({new_uuid(), port.name, "", port.type, 0});
+        block.outputs.push_back({new_uuid(), port.name, port.unit, port.type, 0});
     return block;
 }
 

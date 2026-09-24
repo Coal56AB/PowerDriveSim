@@ -12,6 +12,7 @@ namespace pds::desktop {
 struct SignalPortPreset {
     const char *name;
     SignalScalarType type;
+    const char *unit = "";
 };
 
 struct SignalPreset {

@@ -23,6 +23,8 @@
     <file alias="signal_pwm_2l.json">components/signal_pwm_2l.json</file>
     <file alias="signal_pwm_3l.json">components/signal_pwm_3l.json</file>
     <file alias="signal_pid.json">components/signal_pid.json</file>
+    <file alias="signal_speed_reference.json">components/signal_speed_reference.json</file>
+    <file alias="signal_speed_pi.json">components/signal_speed_pi.json</file>
     <file alias="differential_plot.json">components/differential_plot.json</file>
     <file alias="open-end-winding.json">components/open-end-winding.json</file>
     <file alias="npc-3l.json">components/npc-3l.json</file>
