@@ -160,6 +160,47 @@ int main(int argc, char **argv) try {
             for (size_t k = 0; k < a.samples.size(); ++k)
                 check(a.samples[k].values == b.samples[k].values, "Deterministic AC commutation");
         }
+    std::ifstream code_input(std::string(argv[1]) + "/examples/ac-voltage-controller.pds");
+    auto code_driven = read_project(code_input);
+    const auto positive_gate = code_driven.patterns[0].id;
+    const auto negative_gate = code_driven.patterns[1].id;
+    CodeBlock firing;
+    firing.id = derived_uuid("ac-controller-code-firing");
+    firing.name = "Three-phase firing";
+    firing.period = 10e-6;
+    firing.code = R"(double delay = ramp(0, 10, 0.008333333333, 0.001111111111);
+gAp = phasepwm(50, 0.02, delay);
+gAm = phasepwm(50, 0.02, delay + 0.010000000000);
+gBp = phasepwm(50, 0.02, delay + 0.006666666667);
+gBm = phasepwm(50, 0.02, delay + 0.016666666667);
+gCp = phasepwm(50, 0.02, delay + 0.013333333333);
+gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
+    for (const auto *name : {"gAp", "gAm", "gBp", "gBm", "gCp", "gCm"})
+        firing.outputs.push_back({derived_uuid(std::string("ac-controller-code-") + name), name, "",
+                                  SignalScalarType::boolean, 0});
+    for (auto &wire : code_driven.wires) {
+        if (wire.from.object == positive_gate)
+            wire.from = {firing.id, firing.outputs[0].id};
+        if (wire.from.object == negative_gate)
+            wire.from = {firing.id, firing.outputs[1].id};
+    }
+    code_driven.patterns.clear();
+    code_driven.code_blocks.push_back(firing);
+    const auto driven = execute(compile(code_driven));
+    const auto voltage = std::find_if(driven.channels.begin(), driven.channels.end(),
+                                      [](const auto &channel) { return channel.name == "u:Uload"; });
+    check(voltage != driven.channels.end(), "CodeBlock-driven AC controller records load voltage");
+    const auto voltage_index = static_cast<size_t>(voltage - driven.channels.begin());
+    auto output_at = [&](double time) {
+        const auto sample = std::find_if(driven.samples.begin(), driven.samples.end(), [&](const auto &entry) {
+            return std::abs(entry.time - time) < 1e-12;
+        });
+        check(sample != driven.samples.end(), "CodeBlock-driven AC controller records the requested time");
+        return sample->values[voltage_index];
+    };
+    check(std::abs(output_at(.005)) < 1, "Thyristors block before the CodeBlock firing pulse");
+    check(output_at(.0085) > 20, "Positive thyristor conducts after the CodeBlock firing pulse");
+    check(output_at(.0185) < -20, "Negative thyristor conducts after the CodeBlock firing pulse");
     std::cout << "PASS single/three-phase AC controller hierarchy, waveform, RMS, power, holding and blocking\n";
     return 0;
 } catch (const std::exception &e) {
