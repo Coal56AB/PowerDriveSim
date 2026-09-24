@@ -417,6 +417,38 @@ int main(int argc,char** argv) {
         check(net(a_local)!=net(root_local)&&net(a_local)!=net(b_local),"Local tag scope isolates instances");
         check(net(a_up)==net(root_up)&&net(b_up)==net(root_up),"Ancestor tag scope reaches the parent bus");
         check(net(a_global)==net(root_global)&&net(b_global)==net(root_global),"Global tag scope spans instances");
+        Project deep_tags;deep_tags.id=new_uuid();deep_tags.wired=true;
+        Definition leaf;leaf.id=derived_uuid("deep-tag-leaf");leaf.wired=true;
+        Definition wrapper;wrapper.id=derived_uuid("deep-tag-wrapper");wrapper.wired=true;
+        const auto repeated_local=derived_uuid("deep-tag-repeated-local");
+        const auto repeated_up=derived_uuid("deep-tag-repeated-up");
+        leaf.tags.push_back({repeated_local,"LOCAL",0,0,Domain::electrical});
+        leaf.tags.push_back({repeated_up,"UP",0,20,Domain::electrical,{},TagScope::ancestors});
+        wrapper.tags.push_back({repeated_local,"LOCAL",0,0,Domain::electrical});
+        wrapper.tags.push_back({repeated_up,"UP",0,20,Domain::electrical});
+        const auto nested=derived_uuid("deep-tag-inner-instance");
+        wrapper.instances.push_back({nested,"Inner",leaf.id,0,0});
+        deep_tags.definitions={leaf,wrapper};
+        const auto outer_a=derived_uuid("deep-tag-outer-a"),outer_b=derived_uuid("deep-tag-outer-b");
+        deep_tags.instances.push_back({outer_a,"Same display name",wrapper.id,0,0});
+        deep_tags.instances.push_back({outer_b,"Same display name",wrapper.id,200,0});
+        const auto deep_root_local=derived_uuid("deep-tag-root-local");
+        const auto deep_root_up=derived_uuid("deep-tag-root-up");
+        deep_tags.tags.push_back({deep_root_local,"LOCAL",0,100,Domain::electrical});
+        deep_tags.tags.push_back({deep_root_up,"UP",20,100,Domain::electrical});
+        auto deep_graph=resolve_connections(flatten(deep_tags).project);
+        auto deep_net=[&](const std::string &object){return deep_graph.nets.at(endpoint_key({object,"io"}));};
+        const auto wrapper_local_a=expanded_uuid({outer_a},repeated_local);
+        const auto leaf_local_a=expanded_uuid({outer_a,nested},repeated_local);
+        const auto leaf_local_b=expanded_uuid({outer_b,nested},repeated_local);
+        check(wrapper_local_a!=leaf_local_a&&deep_net(wrapper_local_a)!=deep_net(leaf_local_a)&&
+              deep_net(leaf_local_a)!=deep_net(leaf_local_b)&&deep_net(leaf_local_a)!=deep_net(deep_root_local),
+              "Repeated tag UUIDs in different definitions do not connect local scopes");
+        check(deep_net(expanded_uuid({outer_a,nested},repeated_up))==deep_net(deep_root_up)&&
+              deep_net(expanded_uuid({outer_b,nested},repeated_up))==deep_net(deep_root_up),
+              "Two-level ancestor tags reach the root across independent instances");
+        std::istringstream deep_input(save(deep_tags));
+        check(read_project(deep_input)==deep_tags,"Repeated tag UUIDs across definitions survive roundtrip");
         std::istringstream scoped_input(save(scoped));auto scoped_roundtrip=read_project(scoped_input);
         check(scoped_roundtrip.definitions.front().tags.back().scope==TagScope::global&&
               !scoped_roundtrip.definitions.front().tags.back().listed,"Tag scope and list visibility roundtrip");
