@@ -351,6 +351,56 @@ int main() {
         motor_signal.code_blocks[0].inputs[0].unit = "";
         error("incompatible_signal_value", [&] { (void)compile_signal_ir(motor_signal); });
 
+        Definition motor_definition;
+        motor_definition.id = derived_uuid("motor-speed-definition");
+        motor_definition.wired = true;
+        motor_definition.components.push_back(motor);
+        motor_definition.ports = {
+            {derived_uuid("motor-speed-public-p"), "p", {motor.id, "p"},
+             Domain::electrical, Direction::conserving},
+            {derived_uuid("motor-speed-public-n"), "n", {motor.id, "n"},
+             Domain::electrical, Direction::conserving},
+            {derived_uuid("motor-speed-public-signal"), "speed", {motor.id, "speed"},
+             Domain::signal, Direction::output},
+        };
+        Project nested_motor;
+        nested_motor.id = derived_uuid("motor-speed-nested-project");
+        nested_motor.wired = true;
+        nested_motor.profile = motor_signal.profile;
+        nested_motor.definitions.push_back(motor_definition);
+        const auto motor_instance = derived_uuid("motor-speed-instance");
+        nested_motor.instances.push_back({motor_instance, "Motor module", motor_definition.id});
+        nested_motor.components.push_back(motor_supply);
+        nested_motor.nodes.push_back({motor_ground, "GND", true});
+        nested_motor.code_blocks.push_back(speed_reader);
+        nested_motor.wires = {
+            {derived_uuid("motor-speed-nested-p"), {motor_supply.id, "p"},
+             {motor_instance, motor_definition.ports[0].id}},
+            {derived_uuid("motor-speed-nested-supply-n"), {motor_supply.id, "n"},
+             {motor_ground, "node"}},
+            {derived_uuid("motor-speed-nested-motor-n"), {motor_instance, motor_definition.ports[1].id},
+             {motor_ground, "node"}},
+            {derived_uuid("motor-speed-nested-output"), {motor_instance, motor_definition.ports[2].id},
+             {speed_reader.id, speed_reader.inputs[0].id}},
+        };
+        const auto nested_motor_ir = compile(nested_motor);
+        const auto expanded_motor = expanded_uuid({motor_instance}, motor.id);
+        check(nested_motor_ir.signal_inputs.size() == 1 &&
+                  nested_motor_ir.signal_inputs[0].endpoint.object == expanded_motor &&
+                  nested_motor_ir.signal_inputs[0].endpoint.port == "speed" &&
+                  nested_motor_ir.unknowns[nested_motor_ir.signal_inputs[0].index].object ==
+                      "omega/" + expanded_motor,
+              "Public motor speed resolves to the expanded mechanical unknown");
+        const auto nested_motor_run = execute(nested_motor_ir);
+        const auto nested_speed = std::find_if(nested_motor_run.channels.begin(),
+                                               nested_motor_run.channels.end(),
+                                               [&](const Channel &channel) {
+                                                   return channel.object == speed_output;
+                                               });
+        check(nested_speed != nested_motor_run.channels.end() &&
+                  nested_motor_run.samples.back().values[size_t(nested_speed - nested_motor_run.channels.begin())] > 0,
+              "Nested motor speed reaches the outer code block");
+
         Project operators;
         operators.id = derived_uuid("signal-operator-project");
         operators.wired = true;
