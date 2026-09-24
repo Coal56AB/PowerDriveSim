@@ -493,6 +493,7 @@ FlattenedProject flatten(const Project &source) {
                 add(c.id,"sp");
                 add(c.id,"sn");
             }
+            if(c.kind==Kind::dc_motor)add(c.id,"speed");
             if (gate_controlled(c.kind))
                 add(c.id, "gate");
             if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)

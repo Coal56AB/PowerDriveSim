@@ -3,6 +3,7 @@
 #include "apps/desktop/code_icon_editor.hpp"
 #include "apps/desktop/signal_presets.hpp"
 #include "core/model/c_program.hpp"
+#include "core/model/connectivity.hpp"
 #include "core/model/hierarchy.hpp"
 #include "core/editor/properties.hpp"
 #include "formats/project/project.hpp"
@@ -56,6 +57,13 @@ class DesktopTests : public QObject {
         QVERIFY(window.findChild<QAction *>("insert_component_12"));
         const auto id=window.add_component(Kind::dc_motor,{0,0});
         QVERIFY(!id.empty());
+        bool speed_port=false;
+        for(auto *item:window.canvas()->scene()->items())
+            if(item->data(0).toString().toStdString()==id && item->data(2).toString()=="speed") {
+                QCOMPARE(item->pos(),QPointF(0,-40));
+                speed_port=true;
+            }
+        QVERIFY(speed_port);
         QCOMPARE(window.project().components.front().value,2.0);
         auto edited=window.project();
         write_property(edited,id,"motor_torque_constant",0.2);
@@ -66,6 +74,9 @@ class DesktopTests : public QObject {
         QVERIFY(example.open_project(QString(PDS_SOURCE_DIR)+"/examples/dc-motor-startup.pds"));
         QCOMPARE(example.project().components.size(),size_t(2));
         QCOMPARE(example.project().components[1].kind,Kind::dc_motor);
+        QCOMPARE(example.project().plots.size(),size_t(1));
+        QCOMPARE(plot_source_channels(example.project(),example.project().plots[0].id),
+                 std::vector<std::string>{"omega/"+example.project().components[1].id});
         const auto path=temp.filePath("dc-motor-copy.pds");
         QVERIFY(example.save_project(path));
         QVERIFY(example.open_project(path));

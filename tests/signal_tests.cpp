@@ -294,6 +294,63 @@ int main() {
         disconnected.wires.pop_back();
         error("missing_signal_source", [&] { (void)compile_signal_ir(disconnected); });
 
+        Project motor_signal;
+        motor_signal.id = derived_uuid("motor-speed-signal-project");
+        motor_signal.wired = true;
+        motor_signal.profile = {.02, .001, Method::backward_euler};
+        Component motor_supply;
+        motor_supply.id = derived_uuid("motor-speed-supply");
+        motor_supply.kind = Kind::voltage;
+        motor_supply.value = 10;
+        Component motor;
+        motor.id = derived_uuid("motor-speed-motor");
+        motor.kind = Kind::dc_motor;
+        motor.value = 2;
+        motor.motor = {.1, .1, .01, .001, .02};
+        motor_signal.components = {motor_supply, motor};
+        const auto motor_ground = derived_uuid("motor-speed-ground");
+        motor_signal.nodes.push_back({motor_ground, "GND", true});
+        CodeBlock speed_reader;
+        speed_reader.id = derived_uuid("motor-speed-reader");
+        speed_reader.name = "Speed reader";
+        speed_reader.period = .001;
+        speed_reader.code = "out = speed;";
+        speed_reader.inputs = {{derived_uuid("motor-speed-input"), "speed", "rad/s",
+                                SignalScalarType::real, 0}};
+        speed_reader.outputs = {{derived_uuid("motor-speed-output"), "out", "rad/s",
+                                 SignalScalarType::real, 0}};
+        motor_signal.code_blocks.push_back(speed_reader);
+        PlotBlock speed_plot;
+        speed_plot.id = derived_uuid("motor-speed-plot");
+        speed_plot.inputs = 1;
+        motor_signal.plots.push_back(speed_plot);
+        motor_signal.wires = {
+            {derived_uuid("motor-speed-wire-p"), {motor_supply.id, "p"}, {motor.id, "p"}},
+            {derived_uuid("motor-speed-wire-supply-n"), {motor_supply.id, "n"}, {motor_ground, "node"}},
+            {derived_uuid("motor-speed-wire-motor-n"), {motor.id, "n"}, {motor_ground, "node"}},
+            {derived_uuid("motor-speed-wire-input"), {motor.id, "speed"},
+             {speed_reader.id, speed_reader.inputs[0].id}},
+            {derived_uuid("motor-speed-wire-plot"), {motor.id, "speed"}, {speed_plot.id, "in1"}},
+        };
+        const auto speed_type = port_type(motor_signal, {motor.id, "speed"});
+        check(speed_type.domain == Domain::signal && speed_type.direction == Direction::output &&
+                  plot_source_channels(motor_signal, speed_plot.id) == std::vector<std::string>{"omega/" + motor.id},
+              "Motor speed is a signal source for CodeBlock and Plot");
+        const auto motor_ir = compile(motor_signal);
+        check(motor_ir.signal_inputs.size() == 1 &&
+                  motor_ir.signal_inputs[0].source == SignalInputSource::unknown &&
+                  motor_ir.unknowns[motor_ir.signal_inputs[0].index].object == "omega/" + motor.id,
+              "Motor speed input reads the mechanical MNA unknown");
+        const auto motor_run = execute(motor_ir);
+        const auto speed_output = signal_endpoint_key({speed_reader.id, speed_reader.outputs[0].id});
+        const auto speed_channel = std::find_if(motor_run.channels.begin(), motor_run.channels.end(),
+                                                [&](const Channel &channel) { return channel.object == speed_output; });
+        check(speed_channel != motor_run.channels.end(), "Motor speed CodeBlock output is recorded");
+        check(motor_run.samples.back().values[size_t(speed_channel - motor_run.channels.begin())] > 0,
+              "CodeBlock receives nonzero accepted motor speed");
+        motor_signal.code_blocks[0].inputs[0].unit = "";
+        error("incompatible_signal_value", [&] { (void)compile_signal_ir(motor_signal); });
+
         Project operators;
         operators.id = derived_uuid("signal-operator-project");
         operators.wired = true;

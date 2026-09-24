@@ -291,7 +291,14 @@ SimulationIR compile(const Project& source) {
                 const auto component=std::find_if(expanded.project.components.begin(),expanded.project.components.end(),
                     [&](const Component& candidate){return candidate.id==input.source.object;});
                 if(component!=expanded.project.components.end()) {
-                    if(component->kind==Kind::current_probe) {
+                    if(component->kind==Kind::dc_motor && input.source.port=="speed") {
+                        const auto channel=std::find_if(ir.unknowns.begin(),ir.unknowns.end(),[&](const Channel& candidate) {
+                            return candidate.object=="omega/"+component->id;
+                        });
+                        if(channel==ir.unknowns.end())throw Diagnostic("missing_signal_source",task.id,"Motor speed is absent from electrical IR");
+                        binding.source=SignalInputSource::unknown;
+                        binding.index=static_cast<std::size_t>(channel-ir.unknowns.begin());
+                    } else if(component->kind==Kind::current_probe) {
                         const auto channel=std::find_if(ir.unknowns.begin(),ir.unknowns.end(),[&](const Channel& candidate) {
                             return candidate.object==component->id&&candidate.unit=="A";
                         });

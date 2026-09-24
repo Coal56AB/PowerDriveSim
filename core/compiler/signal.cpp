@@ -24,6 +24,11 @@ void validate_source(const Project &project, const Endpoint &source, const CodeB
                     found = true;
                 }
     for (const auto &component : project.components)
+        if(component.id==source.object && source.port=="speed" && component.kind==Kind::dc_motor) {
+            unit="rad/s";
+            found=true;
+        }
+    for (const auto &component : project.components)
         if (component.id == source.object && source.port == "out") {
             if (component.kind == Kind::voltage_probe || component.kind == Kind::current_probe) {
                 unit = component.kind == Kind::voltage_probe ? "V" : "A";

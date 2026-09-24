@@ -557,6 +557,7 @@ void EditorWindow::edit_public_interface(const std::string &definition_id) {
             terminal(c.id, c.name, "sp");
             terminal(c.id, c.name, "sn");
         }
+        if(c.kind==Kind::dc_motor)terminal(c.id,c.name,"speed");
         if (gate_controlled(c.kind))
             terminal(c.id, c.name, "gate");
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)

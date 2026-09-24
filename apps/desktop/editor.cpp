@@ -966,6 +966,7 @@ class Atom final : public QGraphicsItem {
                 }
             } else if(symbol=="DCM") {
                 p->drawEllipse(QRectF(-27,-27,54,54));
+                p->drawLine(0,-27,0,-40);
                 label(p,QRectF(-27,-27,54,54),Qt::AlignCenter,"M");
             } else if (symbol == "R")
                 p->drawRect(QRectF(-27, -12, 54, 24));
@@ -1198,6 +1199,8 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
         }
         if (gate_controlled(c.kind))
             a->port("gate", {0, -40}, QColor("#17866d"));
+        if (c.kind == Kind::dc_motor)
+            a->port("speed", {0, -40}, QColor("#8c67c8"));
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
             a->port("out", {0, -40}, QColor("#8c67c8"));
     }
@@ -2589,6 +2592,8 @@ void EditorWindow::rebuild_scene() {
             list={{"p",{-60,-20}},{"n",{-60,20}},{"sp",{60,-20}},{"sn",{60,20}}};
         if (gate_controlled(c.kind))
             list.push_back({"gate", {0, -40}});
+        if (c.kind == Kind::dc_motor)
+            list.push_back({"speed", {0, -40}});
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
             list.push_back({"out", {0, -40}});
         ports(a, list, QColor("#146cca"));
@@ -2596,6 +2601,10 @@ void EditorWindow::rebuild_scene() {
             for (auto *child : a->childItems())
                 if (child->data(2).toString() == "gate")
                     child->setData(11, QColor("#17866d").name(QColor::HexRgb));
+        if (c.kind == Kind::dc_motor)
+            for (auto *child : a->childItems())
+                if (child->data(2).toString() == "speed")
+                    child->setData(11, QColor("#8c67c8").name(QColor::HexRgb));
     }
     for (const auto &n : project().nodes) {
         auto *a = atom(n.id, n.ground ? n.name : std::string(), {}, 1);

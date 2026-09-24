@@ -61,6 +61,8 @@ PortType port_type(const Project& p,const Endpoint& e) {
         if(e.port=="p" || e.port=="n") return {Domain::electrical,Direction::conserving};
         if(c.kind==Kind::ideal_transformer && (e.port=="sp" || e.port=="sn"))
             return {Domain::electrical,Direction::conserving};
+        if(c.kind==Kind::dc_motor && e.port=="speed")
+            return {Domain::signal,Direction::output};
         if(gate_controlled(c.kind) && e.port=="gate") return {Domain::gate,Direction::input};
         if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && e.port=="out") return {Domain::signal,Direction::output};
     }
@@ -349,6 +351,7 @@ std::string tagged_source(const Project& p,const ConnectionTag& source) {
             if(type.direction==Direction::output) {
                 const auto code_channel=code_output_channel(p,*other);
                 if(!code_channel.empty())return code_channel;
+                if(other->port=="speed")return "omega/"+other->object;
                 return type.domain==Domain::gate?"gate/"+other->object:other->object;
             }
         }
@@ -368,6 +371,7 @@ std::string plot_source(const Project& p,const Endpoint& input) {
         }
         const auto code_channel=code_output_channel(p,*source);
         if(!code_channel.empty())return code_channel;
+        if(source->port=="speed")return "omega/"+source->object;
         if(domain==Domain::gate)return "gate/"+source->object;
         if(domain==Domain::electrical)return resolve_connections(p).nets.at(endpoint_key(*source));
         return source->object;
