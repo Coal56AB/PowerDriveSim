@@ -2,17 +2,17 @@ name: PowerDriveSim verification
 on: [push, pull_request]
 jobs:
   headless:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --config Release --parallel 2
       - name: Core tests
         run: ctest --test-dir build -C Release --output-on-failure
   desktop:
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       QT_VERSION: 6.5.3
     steps:
@@ -32,7 +32,7 @@ jobs:
         if: steps.qt-cache.outputs.cache-hit != 'true'
         run: python -m aqt install-qt windows desktop 6.5.3 win64_msvc2019_64 --outputdir "${{ runner.temp }}/qt" --archives qtbase
       - name: Configure desktop
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH="${{ runner.temp }}/qt/6.5.3/msvc2019_64"
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -DCMAKE_BUILD_TYPE=Release -DPDS_BUILD_DESKTOP=ON -DCMAKE_PREFIX_PATH="${{ runner.temp }}/qt/6.5.3/msvc2019_64"
       - name: Build desktop
         run: cmake --build build --config Release --parallel 2
       - name: Tests
