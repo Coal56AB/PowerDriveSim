@@ -498,6 +498,7 @@ class EditorWindow : public QMainWindow {
     void scale_selection(double factor);
     void arrange_selection(const std::string &mode);
     bool copy_selection(bool cut);
+    Project copy_visible_selection(const std::vector<std::string>& ids) const;
     void copy_diagnostics();
     void paste_selection(bool duplicate = false);
     void show_context(const std::string &id, QPoint global);

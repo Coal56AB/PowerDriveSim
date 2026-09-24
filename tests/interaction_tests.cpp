@@ -3341,6 +3341,34 @@ class InteractionTests : public QObject {
                              [&](const std::string& record){return record.find(probe)!=std::string::npos;}));
         w.undo();QCOMPARE(encoded(w.project()),observed);
     }
+    void copying_observed_conductor_preserves_electrical_wire() {
+        QTemporaryDir dir;
+        EditorWindow w("en",dir.path());
+        QVERIFY(w.open_project(QString(PDS_SOURCE_DIR) + "/examples/rc.pds"));
+        ready(w);
+        const auto original=w.project().wires.front();
+        QVERIFY(original.from.object!=original.to.object);
+        w.observe_wires({original.id},true);
+        const auto probe=w.project().components.back().id;
+        w.select_object(original.from.object);
+        item(w,original.to.object)->setSelected(true);
+        QTest::keyClick(w.canvas(),Qt::Key_C,Qt::ControlModifier);
+        const auto *mime=QApplication::clipboard()->mimeData();
+        QVERIFY(mime&&mime->hasFormat("application/x-powerdrivesim-project"));
+        std::istringstream input(mime->data("application/x-powerdrivesim-project").toStdString());
+        const auto fragment=read_project(input);
+        QCOMPARE(fragment.wires.size(),size_t(1));
+        QVERIFY(fragment.wires.front().from==original.from);
+        QVERIFY(fragment.wires.front().to==original.to);
+        QVERIFY(std::none_of(fragment.components.begin(),fragment.components.end(),
+                             [&](const Component& component){return component.id==probe;}));
+        QTest::keyClick(w.canvas(),Qt::Key_X,Qt::ControlModifier);
+        QVERIFY(std::none_of(w.project().components.begin(),w.project().components.end(),
+                             [&](const Component& component){return component.id==probe;}));
+        w.undo();
+        QVERIFY(std::any_of(w.project().components.begin(),w.project().components.end(),
+                            [&](const Component& component){return component.id==probe;}));
+    }
     void selected_wire_group_is_available_from_background_menu() {
         QTemporaryDir dir;
         EditorWindow w("ru", dir.path());

@@ -2,6 +2,7 @@
 #include "apps/desktop/editor.hpp"
 #include "apps/desktop/code_editor.hpp"
 #include "apps/desktop/code_icon_editor.hpp"
+#include "apps/desktop/instrumentation.hpp"
 #include "apps/desktop/signal_presets.hpp"
 #include "apps/desktop/number_input.hpp"
 #include "apps/desktop/routing.hpp"
@@ -561,6 +562,21 @@ void EditorWindow::arrange_selection(const std::string &mode) {
         show_error(e);
     }
 }
+Project EditorWindow::copy_visible_selection(const std::vector<std::string>& ids) const {
+    auto fragment = document_->copy(ids);
+    const std::set<std::string> selected(ids.begin(),ids.end());
+    for(const auto& wire:project().wires) {
+        const auto view=hidden_current_wire_view(project(),wire.id);
+        if(!view||wire.id!=view->primary||!selected.count(view->from.object)||!selected.count(view->to.object))
+            continue;
+        auto visible=wire;
+        visible.from=view->from;
+        visible.to=view->to;
+        visible.bends=view->bends;
+        fragment.wires.push_back(std::move(visible));
+    }
+    return fragment;
+}
 bool EditorWindow::copy_selection(bool cut) {
     if (cut && running())
         return false;
@@ -569,7 +585,7 @@ bool EditorWindow::copy_selection(bool cut) {
     auto ids = selected_ids();
     if (ids.empty())
         return false;
-    auto fragment = document_->copy(ids);
+    auto fragment = copy_visible_selection(ids);
     if (fragment.components.empty() && fragment.nodes.empty() && fragment.tags.empty() && fragment.patterns.empty() &&
         fragment.plots.empty() && fragment.instances.empty())
         return false;
@@ -598,7 +614,7 @@ void EditorWindow::paste_selection(bool duplicate) {
     try {
         Project fragment;
         if (duplicate)
-            fragment = document_->copy(selected_ids());
+            fragment = copy_visible_selection(selected_ids());
         else {
             const auto *mime = QApplication::clipboard()->mimeData();
             if (!mime->hasFormat("application/x-powerdrivesim-project"))
