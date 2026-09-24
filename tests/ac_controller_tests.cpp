@@ -202,10 +202,20 @@ gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
     check(output_at(.0085) > 20, "Positive thyristor conducts after the CodeBlock firing pulse");
     check(output_at(.0185) < -20, "Negative thyristor conducts after the CodeBlock firing pulse");
     auto three_phase_driven = three_phase;
+    three_phase_driven.id = derived_uuid("three-phase-code-example");
+    three_phase_driven.name = "Three-phase AC controller with CodeBlock";
     three_phase_driven.profile.stop = .04;
     three_phase_driven.profile.step = 10e-6;
     const auto neutral = derived_uuid("three-phase-code-neutral");
     three_phase_driven.nodes.push_back({neutral, "Neutral", true});
+    three_phase_driven.nodes.back().x = 0;
+    three_phase_driven.nodes.back().y = 420;
+    three_phase_driven.instances.front().x = 0;
+    three_phase_driven.instances.front().y = 0;
+    const auto phase_plot = derived_uuid("three-phase-code-phase-plot");
+    three_phase_driven.plots.push_back({phase_plot, "Phase load voltages", 840, -430, 3});
+    firing.x = -320;
+    firing.y = -420;
     three_phase_driven.code_blocks.push_back(firing);
     const auto &module = definition(three_phase_driven, three_phase_driven.instances.front().definition);
     auto module_port = [&](const std::string &name) {
@@ -231,11 +241,15 @@ gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
         source.source.frequency = 50;
         source.source.phase = phase == 1 ? -2 * std::numbers::pi / 3
                                          : phase == 2 ? 2 * std::numbers::pi / 3 : 0;
+        source.x = -520;
+        source.y = int(phase) * 220 - 220;
         Component load;
         load.id = derived_uuid("three-phase-code-load-" + label);
         load.name = "Load " + label;
         load.kind = Kind::resistor;
         load.value = 10;
+        load.x = 520;
+        load.y = int(phase) * 220 - 220;
         three_phase_driven.components.push_back(source);
         three_phase_driven.components.push_back(load);
         loads.push_back(load.id);
@@ -243,6 +257,7 @@ gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
         connect("supply-n-" + label, {source.id, "n"}, {neutral, "node"});
         connect("load-p-" + label, {module_id, module_port(label + "'")}, {load.id, "p"});
         connect("load-n-" + label, {load.id, "n"}, {neutral, "node"});
+        connect("plot-" + label, {load.id, "p"}, {phase_plot, "in" + std::to_string(phase + 1)});
     }
     for (size_t gate = 0; gate < firing.outputs.size(); ++gate) {
         const std::string label(1, char('A' + gate / 2));
@@ -254,7 +269,11 @@ gCm = phasepwm(50, 0.02, delay + 0.023333333333);)";
     std::istringstream code_reopened(code_saved.str());
     auto code_restored = read_project(code_reopened);
     check(code_restored == three_phase_driven, "Three-phase CodeBlock and gate wiring survive save/reopen");
-    const auto phases = execute(compile(code_restored));
+    std::ifstream shipped_input(std::string(argv[1]) + "/examples/ac-voltage-controller-3p-code.pds");
+    check(bool(shipped_input), "Three-phase CodeBlock example is shipped");
+    const auto shipped = read_project(shipped_input);
+    check(shipped == code_restored, "Shipped three-phase CodeBlock example matches the verified circuit");
+    const auto phases = execute(compile(shipped));
     auto current_at = [&](size_t phase, double time) {
         const auto channel = std::find_if(phases.channels.begin(), phases.channels.end(),
                                           [&](const auto &entry) { return entry.object == loads[phase]; });

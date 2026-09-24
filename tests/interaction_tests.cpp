@@ -688,6 +688,19 @@ class InteractionTests : public QObject {
             QTest::qWait(30); QVERIFY(w.grab().save(screenshot + "-inside.png"));
         }
         QVERIFY(w.open_project(path)); QCOMPARE(encoded(w.root_project()), expected);
+        QVERIFY(w.open_project(PDS_SOURCE_DIR "/examples/ac-voltage-controller-3p-code.pds"));
+        QCOMPARE(w.project().code_blocks.size(), size_t(1));
+        QCOMPARE(w.project().code_blocks.front().outputs.size(), size_t(6));
+        QCOMPARE(w.project().plots.size(), size_t(1));
+        w.canvas()->fitInView(w.canvas()->scene()->itemsBoundingRect().adjusted(-60, -60, 60, 60), Qt::KeepAspectRatio);
+        w.start_simulation(); QTRY_VERIFY_WITH_TIMEOUT(!w.running(), 3000);
+        QVERIFY(w.has_result() && !w.result().samples.empty());
+        if (auto screenshot = qEnvironmentVariable("PDS_AC_CODE_SCREENSHOT"); !screenshot.isEmpty()) {
+            QTest::qWait(30); QVERIFY(w.grab().save(screenshot));
+            w.open_plot(w.project().plots.front().id);
+            auto *graph = w.findChild<QDialog *>("plot_" + QString::fromStdString(w.project().plots.front().id));
+            QVERIFY(graph); QTest::qWait(30); QVERIFY(graph->grab().save(screenshot + "-plot.png")); graph->close();
+        }
     }
     void dc_link_library_and_run() {
         QTemporaryDir dir; EditorWindow w("ru", dir.path());
