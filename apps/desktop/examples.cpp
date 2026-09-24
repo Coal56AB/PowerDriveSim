@@ -57,6 +57,7 @@ void EditorWindow::build_examples_menu(QMenu *menu) {
                                                 {"half-bridge", "converters/inverters"},
                                                 {"full-bridge", "converters/inverters"},
                                                 {"vsi-2l", "converters/inverters"},
+                                                {"vsi-2l-signal-pwm", "converters/inverters"},
                                                 {"npc-3l", "converters/inverters"},
                                                 {"open-end-winding", "converters/inverters"},
                                                 {"ac-voltage-controller", "converters/ac_ac"},

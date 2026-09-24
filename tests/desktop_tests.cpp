@@ -3,6 +3,8 @@
 #include "apps/desktop/code_icon_editor.hpp"
 #include "apps/desktop/signal_presets.hpp"
 #include "core/model/c_program.hpp"
+#include "core/model/hierarchy.hpp"
+#include "formats/project/project.hpp"
 #include "formats/snapshot/snapshot.hpp"
 #include "tests/qt_test_main.hpp"
 #include <tuple>
@@ -38,6 +40,7 @@
 #include <QtTest/QtTest>
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <sstream>
 using namespace pds;
 using namespace pds::desktop;
@@ -990,6 +993,87 @@ class DesktopTests : public QObject {
             QCOMPARE(window.project().code_blocks.size(), size_t(id - 121));
             QCOMPARE(window.project().code_blocks.back().inputs.size(), inputs);
             QCOMPARE(window.project().code_blocks.back().outputs.size(), outputs);
+        }
+    }
+    void two_level_pwm_preset_drives_library_inverter() {
+        std::ifstream input(PDS_SOURCE_DIR "/examples/vsi-2l.pds");
+        QVERIFY(input.good());
+        auto project = read_project(input);
+        auto gate_instance = std::find_if(project.instances.begin(), project.instances.end(),
+                                          [](const Instance &item) { return item.name == "Programmable gates"; });
+        QVERIFY(gate_instance != project.instances.end());
+        const auto gate_id = gate_instance->id;
+        const auto gate_definition_id = gate_instance->definition;
+        const auto gate_definition = definition(project, gate_instance->definition);
+        const auto *preset = signal_preset(123);
+        QVERIFY(preset);
+        auto pwm = make_signal_preset(*preset, "2L signal PWM", -560, -60);
+        pwm.id = derived_uuid("example:vsi-2l-signal-pwm:modulator");
+        for (auto &port : pwm.inputs)
+            port.id = derived_uuid("example:vsi-2l-signal-pwm:input:" + port.name);
+        for (auto &port : pwm.outputs)
+            port.id = derived_uuid("example:vsi-2l-signal-pwm:output:" + port.name);
+        const auto pwm_id = pwm.id;
+        for (auto &wire : project.wires) {
+            if (wire.from.object != gate_id) continue;
+            const auto old_port = std::find_if(gate_definition.ports.begin(), gate_definition.ports.end(),
+                                                [&](const PublicPort &port) { return port.id == wire.from.port; });
+            QVERIFY(old_port != gate_definition.ports.end());
+            const auto new_port = std::find_if(pwm.outputs.begin(), pwm.outputs.end(),
+                                                [&](const CodePort &port) { return port.name == old_port->name; });
+            QVERIFY(new_port != pwm.outputs.end());
+            wire.from = {pwm_id, new_port->id};
+        }
+        project.instances.erase(gate_instance);
+        std::erase_if(project.definitions, [&](const Definition &item) { return item.id == gate_definition_id; });
+        const auto *sine_preset = signal_preset(112);
+        QVERIFY(sine_preset);
+        for (int phase = 0; phase < 3; ++phase) {
+            auto sine = make_signal_preset(*sine_preset, std::string("Modulation ") + char('A' + phase),
+                                           -820, -220 + phase * 140);
+            sine.id = derived_uuid("example:vsi-2l-signal-pwm:sine:" + std::to_string(phase));
+            sine.outputs.front().id = derived_uuid("example:vsi-2l-signal-pwm:sine-output:" + std::to_string(phase));
+            sine.period = 10e-6;
+            sine.code = "out = 0.7 * sin(2 * PI * 50 * t + " + std::to_string(phase * -2.0 * 3.141592653589793 / 3.0) + ");";
+            project.wires.push_back({derived_uuid("example:vsi-2l-signal-pwm:signal-wire:" + std::to_string(phase)),
+                                     {sine.id, sine.outputs.front().id},
+                                     {pwm_id, pwm.inputs[phase].id}});
+            project.code_blocks.push_back(std::move(sine));
+        }
+        project.code_blocks.push_back(std::move(pwm));
+        project.id = derived_uuid("example:vsi-2l-signal-pwm:project");
+        project.name = "2L VSI with signal PWM";
+        project.profile.stop = 0.006;
+        const auto ir = compile(project);
+        QCOMPARE(ir.signal_gates.size(), size_t(6));
+        const auto result = execute(ir);
+        QVERIFY(!result.cancelled && result.accepted_steps >= 600);
+        bool positive = false, negative = false;
+        const auto phase_voltage = std::find_if(result.channels.begin(), result.channels.end(),
+                                                [](const Channel &channel) { return channel.name == "u:UA"; });
+        QVERIFY(phase_voltage != result.channels.end());
+        const auto index = size_t(phase_voltage - result.channels.begin());
+        for (const auto &sample : result.samples) {
+            positive |= sample.values[index] > 100;
+            negative |= sample.values[index] < -100;
+        }
+        QVERIFY(positive && negative);
+        const auto example_path = qEnvironmentVariable("PDS_PWM_EXAMPLE_PATH");
+        if (!example_path.isEmpty()) {
+            std::ofstream output(example_path.toStdString());
+            QVERIFY(output.good());
+            write_project(project, output);
+            QVERIFY(output.good());
+            output.close();
+            if (const auto screenshot = qEnvironmentVariable("PDS_PWM_EXAMPLE_SCREENSHOT"); !screenshot.isEmpty()) {
+                QTemporaryDir temp;
+                EditorWindow window("en", temp.path());
+                window.resize(1400, 900);
+                window.show();
+                QVERIFY(window.open_project(example_path));
+                QTest::qWait(30);
+                QVERIFY(window.grab().save(screenshot));
+            }
         }
     }
     void signal_presets_are_editable_code_blocks() {
