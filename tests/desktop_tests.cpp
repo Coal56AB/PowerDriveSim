@@ -10,6 +10,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QDockWidget>
 #include <QGraphicsItem>
 #include <QGraphicsPathItem>
 #include <QGraphicsScene>
@@ -260,6 +261,14 @@ class DesktopTests : public QObject {
         QVERIFY(window.project().cursor_b > window.project().cursor_a);
         const auto screenshot = qEnvironmentVariable("PDS_SCREENSHOT_PATH");
         if (!screenshot.isEmpty()) {
+            window.resize(1600, 1000);
+            auto *results = window.findChild<QDockWidget *>("results");
+            auto *inspector = window.findChild<QDockWidget *>("inspector");
+            QVERIFY(results);
+            QVERIFY(inspector);
+            window.resizeDocks({results}, {420}, Qt::Vertical);
+            window.resizeDocks({inspector}, {350}, Qt::Horizontal);
+            QTest::qWait(50);
             window.select_object(c);
             QTest::qWait(50);
             window.findChild<QAction *>("action_fit")->trigger();
