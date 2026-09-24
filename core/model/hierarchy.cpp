@@ -488,6 +488,10 @@ FlattenedProject flatten(const Project &source) {
         for (const auto &c : s.components) {
             add(c.id, "p");
             add(c.id, "n");
+            if(c.kind==Kind::ideal_transformer) {
+                add(c.id,"sp");
+                add(c.id,"sn");
+            }
             if (gate_controlled(c.kind))
                 add(c.id, "gate");
             if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)

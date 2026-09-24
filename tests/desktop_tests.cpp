@@ -47,6 +47,46 @@ using namespace pds::desktop;
 class DesktopTests : public QObject {
     Q_OBJECT
   private slots:
+    void ideal_transformer_palette_and_ports() {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        EditorWindow window("en",temp.path());
+        window.show();
+        auto *action=window.findChild<QAction *>("insert_component_11");
+        QVERIFY(action);
+        const auto id=window.add_component(Kind::ideal_transformer,{0,0});
+        QVERIFY(!id.empty());
+        QCOMPARE(window.project().components.front().value,1.0);
+        for(const auto &[name,position]:std::vector<std::pair<QString,QPointF>>{
+                {"p",{-60,-20}},{"n",{-60,20}},{"sp",{60,-20}},{"sn",{60,20}}}) {
+            auto found=false;
+            for(auto *item:window.canvas()->scene()->items())
+                if(item->data(0).toString().toStdString()==id && item->data(2).toString()==name) {
+                    QCOMPARE(item->pos(),position);
+                    found=true;
+                }
+            QVERIFY(found);
+        }
+        EditorWindow example("en",temp.path());
+        QVERIFY(example.open_project(QString(PDS_SOURCE_DIR)+"/examples/ideal-transformer.pds"));
+        QCOMPARE(example.project().components.size(),size_t(3));
+        QCOMPARE(example.project().wires.size(),size_t(6));
+        if(const auto screenshot=qEnvironmentVariable("PDS_TRANSFORMER_SCREENSHOT");!screenshot.isEmpty()) {
+            example.resize(1280,820);
+            example.show();
+            example.findChild<QAction *>("action_fit")->trigger();
+            QTest::qWait(80);
+            QVERIFY(example.grab().save(screenshot));
+        }
+        const auto path=temp.filePath("transformer-copy.pds");
+        QVERIFY(example.save_project(path));
+        QVERIFY(example.open_project(path));
+        QCOMPARE(example.project().components[1].kind,Kind::ideal_transformer);
+        example.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!example.running(),5000);
+        QVERIFY(example.has_result());
+        QVERIFY(example.result().max_scaled_residual<1e-12);
+    }
     void code_editor_find_replace_and_help() {
         init_language("en");
         CCodeEdit editor(false);editor.resize(600,400);editor.setPlainText("alpha beta alpha");editor.show();editor.setFocus();

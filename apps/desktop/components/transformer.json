@@ -1,0 +1,27 @@
+{
+  "type": "Transformer",
+  "fields": [
+    {
+      "key": "name",
+      "editor": "text",
+      "label": "name",
+      "inline": "name"
+    },
+    {
+      "key": "value",
+      "editor": "number",
+      "label": "transformer_ratio",
+      "min": 0,
+      "exclusiveMin": true,
+      "inline": "value"
+    }
+  ],
+  "palette": {
+    "id": 11,
+    "label": "transformer",
+    "category": "passive",
+    "short": "TR",
+    "fixed": false,
+    "hidden": false
+  }
+}

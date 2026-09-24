@@ -66,12 +66,19 @@ static SimulationIR compile_flat(const Project& p) {
         if(!indices.count(c.positive) || !indices.count(c.negative))
             throw Diagnostic("missing_terminal",c.id,
                              label+": Connect both terminals to existing electrical nodes");
+        if(c.kind==Kind::ideal_transformer &&
+           (!indices.count(c.secondary_positive) || !indices.count(c.secondary_negative)))
+            throw Diagnostic("missing_terminal",c.id,
+                             label+": Connect all four transformer terminals to existing electrical nodes");
         if(c.positive==c.negative && c.kind!=Kind::voltage_probe)
             throw Diagnostic("shorted_component",c.id,label+": Both terminals reference the same node");
+        if(c.kind==Kind::ideal_transformer && c.secondary_positive==c.secondary_negative)
+            throw Diagnostic("shorted_component",c.id,label+": Both secondary terminals reference the same node");
         if(!std::isfinite(c.value) || !std::isfinite(c.initial) || !std::isfinite(c.x) || !std::isfinite(c.y))
             throw Diagnostic("invalid_parameter",c.id,"Parameters must be finite");
-        if((c.kind==Kind::resistor || c.kind==Kind::capacitor || c.kind==Kind::inductor) && c.value<=0)
-            throw Diagnostic("invalid_parameter",c.id,"R, L and C must be strictly positive");
+        if((c.kind==Kind::resistor || c.kind==Kind::capacitor || c.kind==Kind::inductor ||
+            c.kind==Kind::ideal_transformer) && c.value<=0)
+            throw Diagnostic("invalid_parameter",c.id,"R, L, C and transformer ratio must be strictly positive");
         if(c.parallel_resistance_enabled) {
             if(c.kind!=Kind::inductor)
                 throw Diagnostic("invalid_parameter",c.id,"Parallel resistance is supported only for inductors");
@@ -87,6 +94,12 @@ static SimulationIR compile_flat(const Project& p) {
             s.branch=static_cast<int>(ir.unknowns.size());
             ir.unknowns.push_back({c.id,"i:"+c.name,"A"});
         }
+        if(c.kind==Kind::ideal_transformer) {
+            s.secondary_positive=indices.at(c.secondary_positive);
+            s.secondary_negative=indices.at(c.secondary_negative);
+            s.secondary_branch=static_cast<int>(ir.unknowns.size());
+            ir.unknowns.push_back({c.id,"i_secondary:"+c.name,"A"});
+        }
         if(c.kind==Kind::voltage_probe)
             ir.observations.push_back({{c.id,"u:"+c.name,"V"},s.positive,s.negative});
         else ir.stamps.push_back(s);
@@ -100,6 +113,10 @@ static SimulationIR compile_flat(const Project& p) {
         for(const auto& c:components) if(c.kind!=Kind::current && c.kind!=Kind::voltage_probe) {
             if(reached.count(c.positive)) reached.insert(c.negative);
             if(reached.count(c.negative)) reached.insert(c.positive);
+            if(c.kind==Kind::ideal_transformer) {
+                if(reached.count(c.secondary_positive)) reached.insert(c.secondary_negative);
+                if(reached.count(c.secondary_negative)) reached.insert(c.secondary_positive);
+            }
         }
     for(const auto& n:nodes) if(!reached.count(n.id))
         throw Diagnostic("floating_node",n.id,"No structural voltage-reference path; connect an explicit reference path");
@@ -124,7 +141,8 @@ static SimulationIR compile_flat(const Project& p) {
     }
     std::set<std::pair<int,int>> pattern;
     for(const auto& s:ir.stamps)
-        for(int a:{s.positive,s.negative,s.branch}) for(int b:{s.positive,s.negative,s.branch})
+        for(int a:{s.positive,s.negative,s.branch,s.secondary_positive,s.secondary_negative,s.secondary_branch})
+            for(int b:{s.positive,s.negative,s.branch,s.secondary_positive,s.secondary_negative,s.secondary_branch})
             if(a>=0 && b>=0) pattern.emplace(a,b);
     ir.sparsity.assign(pattern.begin(),pattern.end());
     return ir;

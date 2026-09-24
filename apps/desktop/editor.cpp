@@ -107,6 +107,7 @@ static void prune_orphan_nodes(Schematic &schematic) {
 }
 static QString component_label(const Component &c) {
     if(c.semiconductor.model==SemiconductorModel::piecewise_linear)return "PWL";
+    if(c.kind==Kind::ideal_transformer)return QString::number(c.value,'g',6)+" : 1";
     const auto unit=component_unit(c.kind);
     if(unit.empty())return {};
     const auto value=engineering_value(c.value,unit);
@@ -933,13 +934,20 @@ class Atom final : public QGraphicsItem {
                 ++index;
             }
         } else {
-            p->drawLine(-60, 0, -27, 0);
-            p->drawLine(27, 0, 60, 0);
+            if(symbol=="Transformer") {
+                p->drawLine(-60,-20,-24,-20);
+                p->drawLine(-60,20,-24,20);
+                p->drawLine(24,-20,60,-20);
+                p->drawLine(24,20,60,20);
+            } else {
+                p->drawLine(-60, 0, -27, 0);
+                p->drawLine(27, 0, 60, 0);
+            }
             p->save();
             auto port_font = p->font();
             port_font.setPointSize(8);
             p->setFont(port_font);
-            if (symbol != "R" && symbol != "L" && symbol != "C" && symbol != "S") {
+            if (symbol != "R" && symbol != "L" && symbol != "C" && symbol != "S" && symbol != "Transformer") {
                 const auto left = symbol == "V" || symbol == "I" ? QString("+") : QString("p");
                 const auto right = symbol == "V" || symbol == "I" ? QString("-") : QString("n");
                 label(p, QRectF(-61, 4, 18, 16), Qt::AlignLeft, left);
@@ -948,7 +956,14 @@ class Atom final : public QGraphicsItem {
             p->restore();
             if(!code_icon.empty())
                 paint_code_icon(*p,code_icon,QRectF(-25,-25,50,50));
-            else if (symbol == "R")
+            else if(symbol=="Transformer") {
+                p->drawLine(-5,-24,-5,24);
+                p->drawLine(5,-24,5,24);
+                for(int y=-20;y<20;y+=10) {
+                    p->drawArc(QRectF(-25,y,18,10),-90*16,180*16);
+                    p->drawArc(QRectF(7,y,18,10),90*16,180*16);
+                }
+            } else if (symbol == "R")
                 p->drawRect(QRectF(-27, -12, 54, 24));
             else if (symbol == "C") {
                 p->drawLine(-27, 0, -7, 0);
@@ -1168,8 +1183,15 @@ QGraphicsItem *EditorWindow::make_atom_preview(const Project &fragment) {
     };
     for (const auto &c : fragment.components) {
         auto *a = add(c, 0, q(kind_name(c.kind)), component_label(c));
-        a->port("p", {-60, 0}, QColor("#146cca"));
-        a->port("n", {60, 0}, QColor("#146cca"));
+        if(c.kind==Kind::ideal_transformer) {
+            a->port("p", {-60, -20}, QColor("#146cca"));
+            a->port("n", {-60, 20}, QColor("#146cca"));
+            a->port("sp", {60, -20}, QColor("#146cca"));
+            a->port("sn", {60, 20}, QColor("#146cca"));
+        } else {
+            a->port("p", {-60, 0}, QColor("#146cca"));
+            a->port("n", {60, 0}, QColor("#146cca"));
+        }
         if (gate_controlled(c.kind))
             a->port("gate", {0, -40}, QColor("#17866d"));
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
@@ -2559,6 +2581,8 @@ void EditorWindow::rebuild_scene() {
         std::vector<std::pair<QString, QPointF>> list = hidden_probe
             ? std::vector<std::pair<QString, QPointF>>{{"p", {0, 0}}, {"n", {0, 0}}}
             : std::vector<std::pair<QString, QPointF>>{{"p", {-60, 0}}, {"n", {60, 0}}};
+        if(c.kind==Kind::ideal_transformer)
+            list={{"p",{-60,-20}},{"n",{-60,20}},{"sp",{60,-20}},{"sn",{60,20}}};
         if (gate_controlled(c.kind))
             list.push_back({"gate", {0, -40}});
         if (c.kind == Kind::voltage_probe || c.kind == Kind::current_probe)
@@ -2828,9 +2852,11 @@ QPointF EditorWindow::port_stub(const Endpoint &e, QPointF point) const {
         else
             delta = {0, local.y() < 0 ? -20. : 20.};
     }
-    else if (e.port == "p" || e.port.rfind("in", 0) == 0)
+    else if (e.port == "p" || (e.port == "n" && atom->symbol == "Transformer") ||
+             e.port.rfind("in", 0) == 0)
         delta = {-20, 0};
-    else if (e.port == "n" || (e.port.rfind("out",0)==0 && atom->type == 2))
+    else if (e.port == "n" || e.port == "sp" || e.port == "sn" ||
+             (e.port.rfind("out",0)==0 && atom->type == 2))
         delta = {20, 0};
     return point + atom->mapToScene(delta) - atom->mapToScene(QPointF());
 }

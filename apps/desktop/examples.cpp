@@ -35,6 +35,7 @@ void EditorWindow::build_examples_menu(QMenu *menu) {
     const std::map<QString, QString> categories{{"rc", "examples_basics"},
                                                 {"rc-trapezoidal", "examples_basics"},
                                                 {"rlc", "examples_basics"},
+                                                {"ideal-transformer", "examples_basics"},
                                                 {"switch", "examples_basics"},
                                                 {"rc-sine", "examples_sources"},
                                                 {"rc-pulse", "examples_sources"},

@@ -59,6 +59,8 @@ PortType port_type(const Project& p,const Endpoint& e) {
     for(const auto& n:p.nodes) if(n.id==e.object && e.port=="node") return {Domain::electrical,Direction::conserving};
     for(const auto& c:p.components) if(c.id==e.object) {
         if(e.port=="p" || e.port=="n") return {Domain::electrical,Direction::conserving};
+        if(c.kind==Kind::ideal_transformer && (e.port=="sp" || e.port=="sn"))
+            return {Domain::electrical,Direction::conserving};
         if(gate_controlled(c.kind) && e.port=="gate") return {Domain::gate,Direction::input};
         if((c.kind==Kind::voltage_probe || c.kind==Kind::current_probe) && e.port=="out") return {Domain::signal,Direction::output};
     }
@@ -121,7 +123,12 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
         uuid(n.id); add({n.id,"node"},n.name);
         if(!std::isfinite(n.x)||!std::isfinite(n.y)) throw Diagnostic("invalid_geometry",n.id,"Node position must be finite");
     }
-    for(const auto& c:p.components) { uuid(c.id); add({c.id,"p"},c.name+".p"); add({c.id,"n"},c.name+".n"); }
+    for(const auto& c:p.components) {
+        uuid(c.id); add({c.id,"p"},c.name+".p"); add({c.id,"n"},c.name+".n");
+        if(c.kind==Kind::ideal_transformer) {
+            add({c.id,"sp"},c.name+".sp"); add({c.id,"sn"},c.name+".sn");
+        }
+    }
     for(const auto& t:p.tags) {
         uuid(t.id);
         if(t.name.empty())throw Diagnostic("invalid_tag",t.id,"Connection tag name must not be empty");
@@ -258,6 +265,10 @@ ResolvedGraph resolve_connections(const Project& source, const std::map<std::str
     for(auto& c:p.components) {
         c.positive=result.nets.at(endpoint_key({c.id,"p"}));
         c.negative=result.nets.at(endpoint_key({c.id,"n"}));
+        if(c.kind==Kind::ideal_transformer) {
+            c.secondary_positive=result.nets.at(endpoint_key({c.id,"sp"}));
+            c.secondary_negative=result.nets.at(endpoint_key({c.id,"sn"}));
+        }
         auto driver=drivers.find(c.id);
         if(driver!=drivers.end()) {
             const auto object=endpoint_object(driver->second);
@@ -395,9 +406,21 @@ Project make_wired(const Project& source) {
             auto node=port=="p"?c.positive:c.negative;
             if(node.empty()) continue;
             p.wires.push_back({derived_uuid("wire:"+c.id+"/"+port),{c.id,port},{node,"node"},{}});
-            terminals[node].push_back({c.x+(port=="p"?-60:60),c.y});
+            terminals[node].push_back(c.kind==Kind::ideal_transformer
+                                          ? Point{c.x-60,c.y+(port=="p"?-20:20)}
+                                          : Point{c.x+(port=="p"?-60:60),c.y});
         }
+        if(c.kind==Kind::ideal_transformer)
+            for(const auto& port:{std::string("sp"),std::string("sn")}) {
+                const auto& node=port=="sp"?c.secondary_positive:c.secondary_negative;
+                if(node.empty())continue;
+                p.wires.push_back({derived_uuid("wire:"+c.id+"/"+port),{c.id,port},{node,"node"},{}});
+                terminals[node].push_back({c.x+60,c.y+(port=="sp"?-20:20)});
+            }
         c.positive.clear(); c.negative.clear();
+        if(c.kind==Kind::ideal_transformer) {
+            c.secondary_positive.clear(); c.secondary_negative.clear();
+        }
     }
     for(auto& n:p.nodes) {
         const auto& points=terminals[n.id];

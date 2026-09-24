@@ -88,6 +88,7 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
     std::map<std::string,SourceWaveform> sources;
     std::map<std::string,Semiconductor> semiconductors;
     std::map<std::string,std::pair<bool,double>> parallel_resistances;
+    std::map<std::string,std::pair<std::string,std::string>> transformer_secondaries;
     struct ChargeData { bool enabled; double transit, lifetime, initial; };
     std::map<std::string,ChargeData> charges;
     std::map<std::string,std::pair<double,bool>> thyristors;
@@ -508,7 +509,13 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
                 throw Diagnostic("schema_version",c.id,"Probes require schema 4");
             if(c.kind==Kind::igbt && p.schema<12)throw Diagnostic("schema_version",c.id,"IGBT requires schema 12");
             if(c.kind==Kind::thyristor && p.schema<11)throw Diagnostic("schema_version",c.id,"Thyristors require schema 11");
+            if(c.kind==Kind::ideal_transformer && p.schema<29)throw Diagnostic("schema_version",c.id,"Ideal transformers require schema 29");
             p.components.push_back(c);
+        } else if(tag=="transformer_secondary" && p.schema>=29) {
+            std::string id,positive,negative;
+            row>>std::quoted(id)>>std::quoted(positive)>>std::quoted(negative);
+            if(!transformer_secondaries.emplace(id,std::make_pair(positive,negative)).second)
+                throw Diagnostic("parse_error",id,"Duplicate transformer secondary terminals");
         } else if(tag=="parallel_resistance" && p.schema>=17) {
             std::string id;int enabled=-1;double resistance=0;
             row>>std::quoted(id)>>enabled>>resistance;
@@ -574,6 +581,16 @@ static Project read_project_impl(std::istream& in,bool definitions_allowed) {
             throw Diagnostic("invalid_parameter",id,"Parallel resistance target must be an inductor");
         c->parallel_resistance_enabled=data.first;c->parallel_resistance=data.second;
     }
+    for(const auto& [id,terminals]:transformer_secondaries) {
+        auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& component){return component.id==id;});
+        if(c==p.components.end()||c->kind!=Kind::ideal_transformer)
+            throw Diagnostic("invalid_parameter",id,"Secondary terminals require an ideal transformer");
+        c->secondary_positive=terminals.first;
+        c->secondary_negative=terminals.second;
+    }
+    for(const auto& c:p.components)
+        if(c.kind==Kind::ideal_transformer&&!transformer_secondaries.contains(c.id))
+            throw Diagnostic("missing_terminal",c.id,"Transformer secondary terminals are missing");
     for(const auto& [id,data]:charges) {
         auto c=std::find_if(p.components.begin(),p.components.end(),[&](const auto& c){return c.id==id;});
         if(c==p.components.end()||c->kind!=Kind::diode)throw Diagnostic("invalid_diode_charge",id,"Charge model target must be a diode");
@@ -773,6 +790,8 @@ void write_project(const Project& p, std::ostream& out) {
     for(const auto& c:p.components) out << "component " << std::quoted(c.id) << ' ' << std::quoted(c.name) << ' '
         << kind_name(c.kind) << ' ' << std::quoted(c.positive) << ' ' << std::quoted(c.negative) << ' '
         << c.value << ' ' << c.initial << ' ' << c.x << ' ' << c.y << ' ' << c.closed << '\n';
+    for(const auto& c:p.components)if(c.kind==Kind::ideal_transformer)
+        out<<"transformer_secondary "<<std::quoted(c.id)<<' '<<std::quoted(c.secondary_positive)<<' '<<std::quoted(c.secondary_negative)<<'\n';
     for(const auto& c:p.components)if(c.kind==Kind::inductor&&(c.parallel_resistance_enabled||std::abs(c.parallel_resistance-1e12)>1e-9))
         out<<"parallel_resistance "<<std::quoted(c.id)<<' '<<c.parallel_resistance_enabled<<' '<<c.parallel_resistance<<'\n';
     for(const auto& e:p.events) out << "event " << e.time << ' ' << std::quoted(e.target) << ' ' << e.closed << '\n';

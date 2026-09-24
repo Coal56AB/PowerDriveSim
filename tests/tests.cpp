@@ -2,6 +2,7 @@
 #include "results/csv.hpp"
 #include "core/solver/reference/factorization.hpp"
 #include "core/model/expression.hpp"
+#include "core/model/connectivity.hpp"
 #include "core/model/c_program.hpp"
 #include <algorithm>
 #include <cmath>
@@ -10,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <numbers>
 #include <sstream>
 using namespace pds;
 static int checks=0;
@@ -69,7 +71,8 @@ static void unit() {
     require(valid_uuid(id(1)),"UUID");
     require(!valid_uuid("display-name"),"Invalid UUID");
     require(!valid_uuid("00000000-0000-4000-8000-00000000000A"),"Canonical UUID");
-    for(auto k:{Kind::resistor,Kind::capacitor,Kind::inductor,Kind::voltage,Kind::current,Kind::ideal_switch})
+    for(auto k:{Kind::resistor,Kind::capacitor,Kind::inductor,Kind::voltage,Kind::current,
+                Kind::ideal_switch,Kind::ideal_transformer})
         require(parse_kind(kind_name(k))==k,"Component type round trip");
     error("unknown_component",[]{parse_kind("Controller");});
     auto p=base(); p.nodes.pop_back();
@@ -122,6 +125,27 @@ static void numerical() {
         require(energy<=previous+1e-14,"Passive RLC energy cannot increase"); previous=energy;
     }
     require(r.max_scaled_residual<1e-12,"KCL/KVL residual");
+
+    // Ideal transformer with Np/Ns=2 feeding an 8-ohm resistive load.
+    // Its reflected primary resistance is n^2 R = 32 ohms.
+    p=base(); p.profile={.04,.0001};
+    p.components={part(10,Kind::voltage,3,2,10),part(11,Kind::ideal_transformer,3,2,2),
+                  part(12,Kind::resistor,4,2,8)};
+    p.components[0].source.kind=Waveform::sine;
+    p.components[0].source.frequency=50;
+    p.components[1].secondary_positive=id(4);
+    p.components[1].secondary_negative=id(2);
+    r=execute(compile(p));
+    for(const auto& s:r.samples) {
+        const double primary=10*std::sin(2*std::numbers::pi*50*s.time);
+        const double secondary=primary/2;
+        near(value(r,s,3),primary,1e-12,"Transformer primary AC voltage");
+        near(value(r,s,4),secondary,1e-12,"Transformer turns ratio");
+        near(value(r,s,11),primary/32,1e-12,"Transformer reflected load current");
+        const double source_power=primary*value(r,s,10);
+        const double load_power=secondary*secondary/8;
+        near(source_power+load_power,0,1e-12,"Transformer source/load power conservation");
+    }
 }
 static void trapezoidal_tests() {
     auto p=rc(); p.profile.method=Method::trapezoidal; p.profile.step=0.00001;
@@ -361,6 +385,27 @@ static void serialization() {
     p.profile.method=Method::trapezoidal;
     auto method_text=saved(p); std::istringstream method_in(method_text);
     require(read_project(method_in).profile.method==Method::trapezoidal,"Method round trip");
+    {
+        auto transformer=base();
+        transformer.components={part(10,Kind::voltage,3,2,10),part(11,Kind::ideal_transformer,3,2,2),
+                                part(12,Kind::resistor,4,2,8)};
+        transformer.components[1].secondary_positive=id(4);
+        transformer.components[1].secondary_negative=id(2);
+        const auto encoded=saved(transformer);
+        std::istringstream input(encoded);
+        const auto restored=read_project(input);
+        require(restored.components[1].secondary_positive==id(4) &&
+                restored.components[1].secondary_negative==id(2),"Transformer four terminals round trip");
+        require(saved(restored)==encoded,"Transformer serialization is stable");
+        const auto wired=make_wired(transformer);
+        require(wired.wires.size()==8 &&
+                wired.components[1].secondary_positive.empty() &&
+                wired.components[1].secondary_negative.empty(),
+                "Legacy transformer nets convert to four explicit pins");
+        const auto wired_result=execute(compile(wired));
+        near(value(wired_result,wired_result.samples.back(),4),5,1e-12,
+             "Converted transformer retains its secondary voltage");
+    }
 
     // CTest uses build as cwd, so migration also has a self-contained fixture.
     auto downgrade_nodes=[](std::string original) {

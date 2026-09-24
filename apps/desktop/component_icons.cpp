@@ -165,6 +165,14 @@ void paint_component_symbol(QPainter &p, int id, bool framed) {
         for (int i = 0; i < 4; ++i)
             line.cubicTo(2 + i * 7, 7, 8 + i * 7, 7, 8 + i * 7, 22);
         p.drawPath(line);
+    } else if (id == 11) {
+        p.drawLine(1,7,7,7); p.drawLine(1,25,7,25);
+        p.drawLine(25,7,31,7); p.drawLine(25,25,31,25);
+        p.drawLine(15,5,15,27); p.drawLine(17,5,17,27);
+        for(int y=7;y<25;y+=6) {
+            p.drawArc(QRectF(7,y,7,6),-90*16,180*16);
+            p.drawArc(QRectF(18,y,7,6),90*16,180*16);
+        }
     } else if (id == 270) {
         if (framed) p.drawRoundedRect(QRectF(3, 3, 26, 21), 2, 2);
         if (framed) {
@@ -370,6 +378,9 @@ std::vector<IconPrimitive> editable_component_icon(int id) {
     case 1:return {line({{5,16},{12,16}}),line({{12,6},{12,26}}),
                    line({{20,6},{20,26}}),line({{20,16},{27,16}})};
     case 2:return {line({{3,20},{7,11},{11,20},{15,11},{19,20},{23,11},{29,20}})};
+    case 11:return {line({{2,7},{7,7},{10,12},{7,16},{10,21},{7,25},{2,25}}),
+                    line({{30,7},{25,7},{22,12},{25,16},{22,21},{25,25},{30,25}}),
+                    line({{15,5},{15,27}}),line({{17,5},{17,27}})};
     case 3:return {ellipse({5,5},{27,27}),label("V",11)};
     case 4:return {ellipse({5,5},{27,27}),label("I",11)};
     case 5:return {line({{3,21},{10,21}}),line({{10,21},{24,10}}),line({{24,21},{29,21}})};

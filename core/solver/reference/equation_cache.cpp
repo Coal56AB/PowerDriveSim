@@ -37,6 +37,17 @@ const std::vector<double> &EquationCache::solve(double time, double h, bool init
             if (b >= 0)
                 system.incidence(p, n, b);
             switch (c.kind) {
+            case Kind::ideal_transformer:
+                system.incidence(s.secondary_positive, s.secondary_negative, s.secondary_branch);
+                // Vp = (Np/Ns) Vs. Currents use the passive sign convention,
+                // hence Is = -(Np/Ns) Ip and instantaneous power is conserved.
+                system.add(b, p, 1);
+                system.add(b, n, -1);
+                system.add(b, s.secondary_positive, -c.value);
+                system.add(b, s.secondary_negative, c.value);
+                system.add(s.secondary_branch, s.secondary_branch, 1);
+                system.add(s.secondary_branch, b, c.value);
+                break;
             case Kind::resistor:
                 system.conductance(p, n, 1 / c.value);
                 break;

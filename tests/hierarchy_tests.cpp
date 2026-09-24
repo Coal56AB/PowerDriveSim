@@ -139,7 +139,43 @@ static void embedded_appearance_bounds() {
     project.definitions.front().appearance.image_png = "bm90IGEgUE5H";
     error("invalid_definition_appearance", [&] { validate_hierarchy(project); });
 }
+static void transformer_four_ports_through_instance() {
+    Project project;
+    project.id=id(100);
+    project.wired=true;
+    project.profile={.001,.0001};
+    project.nodes={{id(101),"primary ground",true},{id(102),"secondary ground",true},
+                   {id(103),"primary",false},{id(104),"secondary",false}};
+    project.components={{id(105),"AC source",Kind::voltage,"","",10},
+                        {id(106),"load",Kind::resistor,"","",8}};
+    Definition definition;
+    definition.id=id(107);
+    definition.name="Transformer module";
+    definition.wired=true;
+    definition.components={{id(108),"ideal transformer",Kind::ideal_transformer,"","",2}};
+    definition.ports={{id(109),"primary +",{id(108),"p"}},
+                      {id(110),"primary -",{id(108),"n"}},
+                      {id(111),"secondary +",{id(108),"sp"}},
+                      {id(112),"secondary -",{id(108),"sn"}}};
+    project.definitions.push_back(definition);
+    project.instances={{id(113),"wrapped transformer",definition.id}};
+    wire(project,{id(105),"p"},{id(103),"node"});
+    wire(project,{id(105),"n"},{id(101),"node"});
+    wire(project,{id(106),"p"},{id(104),"node"});
+    wire(project,{id(106),"n"},{id(102),"node"});
+    wire(project,{id(113),id(109)},{id(103),"node"});
+    wire(project,{id(113),id(110)},{id(101),"node"});
+    wire(project,{id(113),id(111)},{id(104),"node"});
+    wire(project,{id(113),id(112)},{id(102),"node"});
+    const auto flat=flatten(project).project;
+    require(flat.wires.size()==8 && flat.components.size()==3,
+            "Transformer four public ports survive flattening");
+    const auto result=execute(compile(project));
+    require(std::abs(output(result,id(104))-5)<1e-12,
+            "Wrapped transformer preserves secondary voltage");
+}
 int main() try {
+    transformer_four_ports_through_instance();
     net_display_names();
     embedded_appearance_bounds();
     auto p = fixture();

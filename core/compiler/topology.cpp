@@ -108,6 +108,10 @@ std::optional<Diagnostic> diagnose_singular_topology(const SimulationIR &ir, boo
                           (rectifying(k) && (diodes[i] || resistive_semiconductor(s.component)));
         if (path)
             islands.join(node(s.positive), node(s.negative), 0);
+        if (k == Kind::ideal_transformer) {
+            islands.join(node(s.positive), node(s.negative), 0);
+            islands.join(node(s.secondary_positive), node(s.secondary_negative), 0);
+        }
     }
     std::vector<long double> injection(ir.node_count + 1), magnitude(ir.node_count + 1);
     std::vector<std::string> source(ir.node_count + 1);

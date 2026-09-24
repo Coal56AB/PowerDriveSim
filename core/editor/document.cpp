@@ -324,7 +324,7 @@ void Document::set_experiments(const std::vector<Experiment>& experiments) {
 std::string Document::add_component(Kind kind,double x,double y) {
     auto id=new_uuid();
     apply("Add component",[&](Project& p) {
-        double value=kind==Kind::resistor?1000:(kind==Kind::capacitor?1e-6:(kind==Kind::inductor?.01:(kind==Kind::voltage?1:(kind==Kind::current?.001:0))));
+        double value=kind==Kind::resistor?1000:(kind==Kind::capacitor?1e-6:(kind==Kind::inductor?.01:(kind==Kind::voltage||kind==Kind::ideal_transformer?1:(kind==Kind::current?.001:0))));
         p.components.push_back({id,kind_name(kind)+std::to_string(p.components.size()+1),kind,"","",value,0,x,y,false});
     }); return id;
 }
