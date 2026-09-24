@@ -228,6 +228,25 @@ class DesktopTests : public QObject {
         });
         QVERIFY(peak!=result.samples.end());
         QVERIFY(std::abs(peak->values[size_t(voltage-result.channels.begin())]-5)<1e-12);
+        auto changed=example.project();
+        write_property(changed,changed.instances[0].id,
+                       "parameter/"+changed.definitions[0].parameters[0].id,4.0);
+        example.set_project(changed);
+        const auto overridden=temp.filePath("transformer-yy-4-to-1.pds");
+        QVERIFY(example.save_project(overridden));
+        QVERIFY(example.open_project(overridden));
+        example.start_simulation();
+        QTRY_VERIFY_WITH_TIMEOUT(!example.running(),5000);
+        QVERIFY(example.has_result());
+        const auto &scaled=example.result();
+        const auto scaled_voltage=std::find_if(scaled.channels.begin(),scaled.channels.end(),
+                                               [](const Channel &channel){return channel.name=="u:Voltage A";});
+        QVERIFY(scaled_voltage!=scaled.channels.end());
+        const auto scaled_peak=std::find_if(scaled.samples.begin(),scaled.samples.end(),[](const Sample &sample) {
+            return std::abs(sample.time-.005)<1e-12;
+        });
+        QVERIFY(scaled_peak!=scaled.samples.end());
+        QVERIFY(std::abs(scaled_peak->values[size_t(scaled_voltage-scaled.channels.begin())]-2.5)<1e-12);
     }
     void code_editor_find_replace_and_help() {
         init_language("en");
